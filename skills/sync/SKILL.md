@@ -5,4 +5,11 @@ disable-model-invocation: true
 ---
 # keeldocs sync
 
-Run `keeldocs sync --json` and walk the per-section proposals with the y/n/e/s/w grammar (accept / reject / edit / snooze / why - `w` prints the evidence chain). Sections with human edits are proposal-only: show the diff, never auto-apply. Rejections and snoozes are recorded in the decisions journal and will not be re-proposed. If prose slots need rewriting, generate the prose and submit it via `keeldocs slot-write` - never edit the doc file directly.
+1. `keeldocs sync --json` previews proposals (kinds: regenerate, restore, rebind, tombstone, unrenderable), each with evidence. Nothing is written.
+2. Walk the user through them; apply decisions via the CLI, never by editing docs directly:
+   - `keeldocs sync --apply <id>` (rebind honors `--to <fact-id>` to pick a different candidate)
+   - `keeldocs sync --apply-all` for the regenerate/restore set
+   - `keeldocs sync --reject <id>` - records a rejection; an identical proposal is never re-made (the user's hand edit stands; check reports it as held, not drift)
+   - `keeldocs sync --snooze <id> [--days N]`
+3. `restore` proposals DISCARD a human's hand edit inside a gen region - always show the diff and get explicit consent, or reject to keep it.
+4. After applying, run `keeldocs check` to confirm the loop closed clean. Journal writes are disabled in CI by design; decisions happen locally.

@@ -38,6 +38,12 @@ if (cmd === "init") {
   process.exit(exit);
 }
 
+if (cmd === "sync") {
+  const { runSync } = await import("../src/sync.js");
+  const exit = runSync({ root: process.cwd(), json, args });
+  if (exit !== null) process.exit(exit); // null = interactive loop owns exit
+}
+
 const msg = `keeldocs ${cmd}: not implemented yet - engine lands per docs/design/07-scope-roadmap.md`;
 if (json) console.log(envelope(false, "NOT_IMPLEMENTED", msg, ["see docs/design/02-architecture.md"]));
 else console.error(msg);

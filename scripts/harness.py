@@ -142,8 +142,76 @@ def main():
     except Exception as e:
         failures.append(f"init integration: {e}")
 
-    # CLI envelope smoke: a stubbed command must be exit 2 with a parseable envelope
-    r = subprocess.run(["node", "bin/keeldocs.js", "sync", "--json"],
+    # ---- sync integration: the full retention loop ----
+    # Journal writes are CI-guarded by design; the harness explicitly clears CI to
+    # simulate the local interactive decisions these steps represent.
+    local_env = {**os.environ, "CI": ""}
+    KD = os.path.join(ROOT, "bin", "keeldocs.js")
+    def kd(cwd, *a, env=None):
+        return subprocess.run(["node", KD, *a], cwd=cwd, capture_output=True, text=True,
+                              timeout=180, env=env or os.environ)
+    try:
+        import shutil, tempfile, re as _re
+        tmp = tempfile.mkdtemp(prefix="keeldocs-sync-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        assert kd(dst, "init", "--yes", "--json").returncode == 0
+        # mutate: new endpoint + new schema column
+        app = os.path.join(dst, "app.js")
+        src = open(app).read().replace("app.post('/items', (req, res) => res.status(201).end());",
+            "app.post('/items', (req, res) => res.status(201).end());\napp.get('/archive', (req, res) => res.json([]));")
+        open(app, "w").write(src)
+        sch = os.path.join(dst, "prisma", "schema.prisma")
+        # NB: read fully BEFORE opening for write - open(x,"w").write(open(x).read())
+        # truncates before reading (this exact bug ate the schema in an earlier run)
+        sch_src = open(sch).read().replace("  status Status @default(ACTIVE)",
+            "  status Status @default(ACTIVE)\n  createdAt DateTime @default(now())")
+        open(sch, "w").write(sch_src)
+        r = kd(dst, "check", "--json")
+        assert r.returncode == 1 and json.loads(r.stdout)["data"]["counts"]["stale"] == 3, "expected 3 stale after mutation"
+        r = kd(dst, "sync", "--json", env=local_env)
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 1 and env_["code"] == "PROPOSALS" and len(env_["data"]["proposals"]) == 3
+        assert all(p["kind"] == "regenerate" for p in env_["data"]["proposals"])
+        r = kd(dst, "sync", "--apply-all", "--json", env=local_env)
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and env_["code"] == "APPLIED" and len(env_["data"]["applied"]) == 3
+        r = kd(dst, "check", "--json")
+        assert r.returncode == 0 and json.loads(r.stdout)["code"] == "CLEAN", "loop must close: sync -> clean"
+        # tamper -> restore
+        dm = os.path.join(dst, "docs", "architecture", "data-model.md")
+        dm_src = open(dm).read().replace("| name | String |  |", "| name | Text |  |")
+        open(dm, "w").write(dm_src)
+        r = kd(dst, "sync", "--apply", "db.item.columns", "--json", env=local_env)
+        assert json.loads(r.stdout)["data"]["applied"][0]["action"] == "restore"
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
+        # tamper again -> reject -> held (human edit stands; check goes quiet, exit 0)
+        dm_src = open(dm).read().replace("| name | String |  |", "| name | Text |  |")
+        open(dm, "w").write(dm_src)
+        r = kd(dst, "sync", "--reject", "db.item.columns", "--json", env=local_env)
+        assert r.returncode == 0 and json.loads(r.stdout)["code"] == "DECISION_RECORDED"
+        r = kd(dst, "check", "--json")
+        c = json.loads(r.stdout)["data"]["counts"]
+        assert r.returncode == 0 and c.get("held") == 1 and c["driftTotal"] == 0, "rejection must hold the proposal"
+        r = kd(dst, "sync", "--json", env=local_env)
+        assert json.loads(r.stdout)["code"] == "NOTHING_TO_SYNC"
+        # rebind on a drift-scenario copy
+        dst2 = os.path.join(tmp, "rebind")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "drift-scenario"), dst2,
+                        ignore=shutil.ignore_patterns("golden"))
+        r = kd(dst2, "sync", "--apply", "api.create-item", "--json", env=local_env)
+        assert json.loads(r.stdout)["data"]["applied"][0]["to"] == "fact:http-endpoints/POST /orders"
+        assert "binds=fact:http-endpoints/POST /orders " in open(os.path.join(dst2, "docs", "api.md")).read()
+        c = json.loads(kd(dst2, "check", "--json").stdout)["data"]["counts"]
+        assert c["clean"] == 4 and c["driftTotal"] == 2, "rebound anchor now clean; unrelated drift untouched"
+        shutil.rmtree(tmp)
+        print("  PASS  sync integration: retention loop (drift->apply->clean), restore, reject->held, rebind")
+    except Exception as e:
+        failures.append(f"sync integration: {e}")
+
+    # CLI envelope smoke: the remaining stub (new) must be exit 2 with a parseable envelope
+    r = subprocess.run(["node", "bin/keeldocs.js", "new", "--json"],
                        cwd=ROOT, capture_output=True, text=True)
     try:
         env = json.loads(r.stdout)

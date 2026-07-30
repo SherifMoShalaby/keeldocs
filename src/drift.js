@@ -4,7 +4,7 @@
 // Re-anchoring here is proposal-grade only: candidates are suggested for dead
 // bindings; auto-rebind needs the two-signal rule and belongs to sync (ADR-007).
 
-import { factHash, contentHash, hashesMatch } from "./hash.js";
+import { factHash, contentHash, hashesMatch, display } from "./hash.js";
 import { inheritBinds } from "./anchors.js";
 
 function resolveBind(bind, factsById) {
@@ -13,6 +13,13 @@ function resolveBind(bind, factsById) {
     return { ids, wildcard: true };
   }
   return { ids: factsById.has(bind.raw) ? [bind.raw] : [], wildcard: false };
+}
+
+// Resolved fact ids for a bind set (wildcards expanded) - shared with sync/proposals.
+export function resolveBindIds(binds, factsById) {
+  const ids = new Set();
+  for (const b of binds) for (const id of resolveBind(b, factsById).ids) ids.add(id);
+  return [...ids].sort();
 }
 
 // Aggregate hash over a bind set: JCS of sorted [id, fullHash] pairs (spec §1 wildcard rule).
@@ -101,18 +108,27 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
             candidates: bs.state === "dead" ? bs.missing.flatMap((m) => candidatesFor(m, factsById)) : undefined });
       continue;
     }
+    // Rejection memory (spec §6 / DX 4d): a recorded rejection holds an identical
+    // proposal - identical = the current content/fact hash matches what was rejected.
+    const rejectedAt = journal.rejection.get(region.id);
     // tamper check first: hand-edited generated content (ADR-009)
     if (region.content !== undefined) {
       const cur = contentHash(region.body ?? "");
       const cmp = hashesMatch(region.content, cur);
       if (cmp === "version-mismatch") { add({ ...base, state: "rebaseline" }); continue; }
-      if (!cmp) { add({ ...base, state: "tampered", detail: "gen region content edited by hand" }); continue; }
+      if (!cmp) {
+        if (rejectedAt && rejectedAt === display(cur)) { add({ ...base, state: "held", detail: "restore proposal rejected; human edit stands" }); continue; }
+        add({ ...base, state: "tampered", detail: "gen region content edited by hand" }); continue;
+      }
     }
     if (region.hash !== undefined) {
       const cur = aggregateHash(bs.ids, factsById);
       const cmp = hashesMatch(region.hash, cur);
       if (cmp === "version-mismatch") { add({ ...base, state: "rebaseline" }); continue; }
-      if (!cmp) { add({ ...base, state: "stale", currentHash: cur.slice(0, 19), recorded: region.hash }); continue; }
+      if (!cmp) {
+        if (rejectedAt && rejectedAt === display(cur)) { add({ ...base, state: "held", detail: "regenerate proposal rejected for this fact state" }); continue; }
+        add({ ...base, state: "stale", currentHash: cur.slice(0, 19), recorded: region.hash }); continue;
+      }
     }
     add({ ...base, state: "clean" });
   }

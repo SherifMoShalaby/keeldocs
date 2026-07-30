@@ -8,7 +8,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { jcs } from "./jcs.js";
 import { factHash } from "./hash.js";
@@ -145,7 +145,10 @@ export function extractAll(repoRootIn) {
   }
 
   // Canonical fact files - byte-stable, diffable, gitignored (ADR-004).
+  // The dir is a pure cache: clear it first so a capability that dropped to
+  // zero facts can't leave a stale file lying about the current state.
   const factsDir = join(repoRoot, ".keeldocs", "cache", "facts");
+  rmSync(factsDir, { recursive: true, force: true });
   mkdirSync(factsDir, { recursive: true });
   const byCap = {};
   for (const f of factsById.values()) {

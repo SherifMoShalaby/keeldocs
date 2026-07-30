@@ -1,0 +1,46 @@
+// Marker-precise doc patching (sync). Byte-surgical: only the targeted region's
+// body and marker attrs (or the targeted anchor's bind string) change; every
+// other byte of the file is preserved. Patching a file the tool doesn't fully
+// understand is how you destroy human work - so anything ambiguous throws.
+
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function findRegion(text, regionId) {
+  const openRe = new RegExp(`<!--\\s*keeldocs:gen\\s+([^>]*?\\bid=${esc(regionId)}(?:\\s[^>]*?)?)\\s*-->`, "g");
+  const m = openRe.exec(text);
+  if (!m) throw new Error(`gen region ${regionId} not found`);
+  if (openRe.exec(text)) throw new Error(`gen region ${regionId} appears more than once`);
+  const openStart = m.index, openEnd = m.index + m[0].length;
+  const close = text.indexOf("<!-- /keeldocs:gen -->", openEnd);
+  if (close === -1) throw new Error(`gen region ${regionId} has no close marker`);
+  return { openStart, openEnd, openMarker: m[0], bodyStart: openEnd, bodyEnd: close };
+}
+
+// Replace a gen region's body and refresh its hash=/content= attrs in place.
+export function patchRegion(text, regionId, newBody, newHash, newContent) {
+  const r = findRegion(text, regionId);
+  let marker = r.openMarker;
+  marker = marker.replace(/\bhash=h[0-9]+:[0-9a-f]+/, `hash=${newHash}`);
+  if (/\bcontent=h[0-9]+:[0-9a-f]+/.test(marker)) {
+    marker = marker.replace(/\bcontent=h[0-9]+:[0-9a-f]+/, `content=${newContent}`);
+  } else {
+    marker = marker.replace(/\s*-->$/, ` content=${newContent} -->`);
+  }
+  if (!marker.includes(`hash=${newHash}`)) {
+    // region had no hash attr at all - insert both before the close of the marker
+    marker = marker.replace(/\s*-->$/, ` hash=${newHash} content=${newContent} -->`);
+  }
+  return text.slice(0, r.openStart) + marker + "\n" + newBody + "\n" + text.slice(r.bodyEnd);
+}
+
+// Rewrite one bind inside one anchor/gen marker identified by id.
+export function patchBind(text, markerId, oldBind, newBind) {
+  const re = new RegExp(`<!--\\s*keeldocs(?::gen)?:?\\s+[^>]*?\\bid=${esc(markerId)}(?:\\s[^>]*?)?\\s*-->`, "g");
+  const m = re.exec(text);
+  if (!m) throw new Error(`marker ${markerId} not found`);
+  if (re.exec(text)) throw new Error(`marker ${markerId} appears more than once`);
+  const marker = m[0];
+  if (!marker.includes(oldBind)) throw new Error(`bind "${oldBind}" not present in marker ${markerId}`);
+  const updated = marker.replace(oldBind, newBind);
+  return text.slice(0, m.index) + updated + text.slice(m.index + marker.length);
+}

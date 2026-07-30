@@ -5,8 +5,28 @@
 // entry {type:"revoke", of:<type>, target} - lines are never edited or deleted.
 // The engine NEVER writes this file from check/CI paths - reading only, here.
 
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, existsSync, appendFileSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { jcs } from "./jcs.js";
+
+// Append human decisions. HARD GUARD (spec §6): journal writes are disabled in
+// CI - only interactive/explicitly-flagged local commands may append. Entries
+// are JCS-canonical single lines; revocation is a new entry, never an edit.
+export function appendDecisions(repoRoot, entries) {
+  if (process.env.CI === "true" || process.env.CI === "1") {
+    throw new Error("journal writes are disabled in CI (decisions are made by humans, locally)");
+  }
+  const path = join(repoRoot, ".keeldocs", "decisions.jsonl");
+  mkdirSync(dirname(path), { recursive: true });
+  const lines = entries.map((e) => {
+    if (typeof e.type !== "string" || typeof e.target !== "string" || typeof e.at !== "string") {
+      throw new Error("journal entry requires type, target, at");
+    }
+    return jcs(e);
+  });
+  appendFileSync(path, lines.join("\n") + "\n");
+  return lines.length;
+}
 
 export function loadJournal(repoRoot) {
   const path = join(repoRoot, ".keeldocs", "decisions.jsonl");
