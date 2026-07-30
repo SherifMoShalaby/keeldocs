@@ -1,6 +1,9 @@
 # Data model
 <!-- keeldocs: id=db.root recipe=erd@1 binds=fact:db-schema/* hash-kind=fact -->
 
+<!-- keeldocs:slot id=db.overview binds=fact:db-schema/* max-words=120 -->
+<!-- /keeldocs:slot -->
+
 ## Diagram
 <!-- keeldocs:gen id=db.root.diagram hash=h1:6bab4b5bd95d86a6 content=h1:f57b958a6d65d469 -->
 ```mermaid

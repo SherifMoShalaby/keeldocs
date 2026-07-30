@@ -1,6 +1,9 @@
 # API endpoints
 <!-- keeldocs: id=api.inventory recipe=endpoint-inventory@1 binds=fact:http-endpoints/* hash-kind=fact -->
 
+<!-- keeldocs:slot id=api.inventory.overview binds=fact:http-endpoints/* max-words=120 -->
+<!-- /keeldocs:slot -->
+
 <!-- keeldocs:gen id=api.inventory.table hash=h1:1cfd69848c3c9b7c content=h1:bd6ae23471554e3a -->
 | method | path | source |
 |---|---|---|

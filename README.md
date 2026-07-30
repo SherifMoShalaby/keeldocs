@@ -2,7 +2,7 @@
 
 **Test coverage for your docs.** keeldocs anchors every doc section to the code it describes, deterministically flags drift with receipts — *"README references `scripts/setup.sh` — deleted in `8f21ac9`, 4 months ago"* — and proposes reviewable, section-level patches. Any stack, any agent, no SaaS.
 
-> Status: **pre-0.1 scaffold.** The design is complete (nine-expert panel, 13 ADRs), the core assumptions passed their validation experiments on real repos, and the anchor engine and `keeldocs check` are real and running today - drift (stale/dead/tampered/intentionally-removed/unresolvable), tamper detection, journal semantics, coverage, envelope + exit codes, all under CI determinism gates. only `new` (recipes + slot-write) remains.
+> Status: **v0.1 surface complete.** Design (nine-expert panel, 13 ADRs) -> validation experiments on real repos -> all four commands live: `init` (lie-detector + born-clean starter docs), `check` (deterministic drift/verify/coverage), `sync` (the retention loop with journal-backed decision memory), `new` + `slot-write`/`approve` (the mechanical LLM boundary). 22 unit tests + 9 harness suites under CI determinism gates. Next: publish placeholders, real-repo beta, full E-series corpus runs.
 
 ## Why
 
@@ -22,12 +22,12 @@ AI agents optimize the forward direction: spec → plan → code. Nothing mainta
 | `keeldocs init` | **LIVE.** Detection card → **doc lie-detector with receipts** → anchored starter docs (born clean, never overwrites) + plan. Dry-run by default, `--yes` applies. Zero LLM. |
 | `keeldocs check` | **LIVE.** Drift + verify + coverage. Deterministic, CI-ready: exit 0/1/2/3, `--json` envelope. |
 | `keeldocs sync` | **LIVE.** Reviewable proposals (regenerate/restore/rebind/tombstone) with evidence; `--apply`/`--reject`/`--snooze` + interactive `y/n/s/w`; journal-backed rejection memory; human edits never overwritten. |
-| `keeldocs new <type>` | erd · system-map · endpoint-inventory · config-reference · adr |
+| `keeldocs new <type>` | **LIVE.** erd · endpoint-inventory (born clean, never overwrite) · adr capture; plus `slot-write` (7-gate prose validator, tool-applied draft labels) and `approve` (human attestation). system-map/config-reference honestly NOT_AVAILABLE until their providers land. |
 
 ## Repo layout
 
 ```
-bin/            CLI entry - init/check/sync live; new stubbed
+bin/            CLI entry - init/check/sync/new + slot-write/approve, all live
 skills/         Agent Skills (open standard) — init/check/sync/new + core rules
 adapters/       per-agent install manifests (Claude Code, Codex, Cursor)
 providers/      capability providers — declarative (.scm + mapping) and code-tier

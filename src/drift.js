@@ -95,6 +95,28 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
     return { state: "resolved", ids, missing };
   };
 
+  // Prose slots: unfilled slots (no hash) are silent; a filled slot's recorded
+  // hash= is the fact state its prose was written against - mismatch = stale
+  // (the agent re-proses via slot-write; the engine never rewrites prose).
+  for (const region of regions) {
+    if (region.kind !== "slot" || region.hash === undefined) continue;
+    const binds = inheritBinds(region, anchors);
+    const bs = bindState(binds, region);
+    const base = { id: region.id, doc: region.doc, line: region.line, kind: "slot" };
+    if (journal.snooze.has(region.id)) { add({ ...base, state: "snoozed" }); continue; }
+    if (bs.state === "unresolvable") { add({ ...base, state: "unresolvable" }); continue; }
+    if (bs.state !== "resolved") { add({ ...base, state: bs.state, missing: bs.missing }); continue; }
+    const cur = aggregateHash(bs.ids, factsById);
+    const cmp = hashesMatch(region.hash, cur);
+    if (cmp === "version-mismatch") { add({ ...base, state: "rebaseline" }); continue; }
+    if (!cmp) {
+      const rejectedAt = journal.rejection.get(region.id);
+      if (rejectedAt && rejectedAt === display(cur)) { add({ ...base, state: "held" }); continue; }
+      add({ ...base, state: "stale", currentHash: cur.slice(0, 19), recorded: region.hash }); continue;
+    }
+    add({ ...base, state: "clean" });
+  }
+
   // Gen regions: the committed hash= records what the content was rendered from.
   for (const region of regions) {
     if (region.kind !== "gen") continue;

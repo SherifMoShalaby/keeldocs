@@ -109,3 +109,27 @@ Three clarifications the first engine implementation forced, now normative:
 3. **Value parsing.** Endpoint natural keys contain spaces ("GET /orders"), so marker values run from `<key>=` until the next token from that marker's fixed key set or end of marker; multiple binds separate with `,`. An attempted unknown `key=` inside a marker quarantines the whole marker (schema-strictness is the injection defense).
 
 Policy clock rule restated for implementers: fact extraction and drift comparison never read the clock; snooze expiry evaluates against wall clock locally and the HEAD commit timestamp under `--ci`, and reports carry no timestamps - CI output is a pure function of (SHA, committed journal).
+
+## 10. Prose slots (v0.1, 2026-07-30)
+
+Slot markers carry `id`, optional `binds`, optional numeric `max-words`, and - once
+filled - `hash`, the fact state the prose was written against, set by the TOOL at
+`slot-write` time. Unfilled slots are silent in drift. A filled slot whose bound
+fact-hash no longer matches is **stale**, and its sync proposal is `reprose`:
+deliberately not machine-appliable - the engine never writes prose; the agent
+rewrites it through `slot-write`, whose gates are the LLM boundary (ADR-009):
+
+1. unknown-slot (slots are declared by templates, never invented by the model)
+2. marker-injection (payload may not contain keeldocs markers)
+3. word-cap (`max-words`, default 150)
+4. unresolved-citations (every backticked identifier must match an extracted fact -
+   hallucinated identifiers are rejected, not softened)
+5. zero-citations (prose must cite at least one known entity so it stays falsifiable)
+6. numbers-in-prose (digits outside backticks rot silently; counts belong in gen regions)
+7. prose-stability (rewording while bound facts are unchanged is diff churn - rejected)
+
+On pass, the tool - never the model - prepends the visible draft label
+(`> ⚠ Inferred draft - not human-reviewed.`) and records `hash`. `approve <doc> <slot>`
+replaces the label with `> ✎ Reviewed by <actor>, <sha>.` - attestation, not
+derivation: approval never renders as machine-"verified". Both `slot-write` and
+`approve` are disabled in CI; prose and attestations happen locally, under review.

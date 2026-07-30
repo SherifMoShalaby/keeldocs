@@ -210,12 +210,78 @@ def main():
     except Exception as e:
         failures.append(f"sync integration: {e}")
 
-    # CLI envelope smoke: the remaining stub (new) must be exit 2 with a parseable envelope
-    r = subprocess.run(["node", "bin/keeldocs.js", "new", "--json"],
+    # ---- new + slot-write/approve integration: the honesty loop ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-new-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        assert kd(dst, "init", "--yes", "--json").returncode == 0
+        # slot-write: good prose accepted, labeled, hash recorded; check stays CLEAN
+        good = "The service exposes `/items` for listing and creation and `/health` for liveness."
+        r = subprocess.run(["node", KD, "slot-write", "docs/reference/endpoints.md", "api.inventory.overview", "--json"],
+                           cwd=dst, input=good, capture_output=True, text=True, env=local_env)
+        assert r.returncode == 0 and json.loads(r.stdout)["code"] == "SLOT_WRITTEN", r.stdout[:200]
+        doc = open(os.path.join(dst, "docs", "reference", "endpoints.md")).read()
+        assert "Inferred draft" in doc and "hash=h1:" in doc.split("api.inventory.overview")[1][:120]
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN", "slot draft must be born clean"
+        # bad prose rejected by named gates, file untouched
+        bad = "We handle 3 requests via `GhostRouter`."
+        r = subprocess.run(["node", KD, "slot-write", "docs/architecture/data-model.md", "db.overview", "--json"],
+                           cwd=dst, input=bad, capture_output=True, text=True, env=local_env)
+        gates = json.loads(r.stdout)["data"]["gates"]
+        assert r.returncode == 1 and any("unresolved-citations" in g for g in gates) and any("numbers-in-prose" in g for g in gates)
+        # fill db slot, then facts change -> slot stale -> reprose proposal -> re-prose -> approve -> CLEAN
+        ok2 = "Each `Item` carries a `Status` lifecycle."
+        r = subprocess.run(["node", KD, "slot-write", "docs/architecture/data-model.md", "db.overview", "--json"],
+                           cwd=dst, input=ok2, capture_output=True, text=True, env=local_env)
+        assert json.loads(r.stdout)["code"] == "SLOT_WRITTEN"
+        # prose-stability: rewording without fact change is rejected
+        r = subprocess.run(["node", KD, "slot-write", "docs/architecture/data-model.md", "db.overview", "--json"],
+                           cwd=dst, input="Reworded `Item` prose.", capture_output=True, text=True, env=local_env)
+        assert r.returncode == 1 and json.loads(r.stdout)["data"]["gate"] == "prose-stability"
+        sch = os.path.join(dst, "prisma", "schema.prisma")
+        sch_src = open(sch).read().replace("  name   String", "  name   String\n  note   String?")
+        open(sch, "w").write(sch_src)
+        r = kd(dst, "check", "--json")
+        states = {t["id"]: t["state"] for t in json.loads(r.stdout)["data"]["top"]}
+        assert states.get("db.overview") == "stale", f"filled slot must go stale on fact change: {states}"
+        r = kd(dst, "sync", "--json", env=local_env)
+        props = {p["id"]: p["kind"] for p in json.loads(r.stdout)["data"]["proposals"]}
+        assert props.get("db.overview") == "reprose", f"stale slot must yield a reprose proposal: {props}"
+        assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
+        r = subprocess.run(["node", KD, "slot-write", "docs/architecture/data-model.md", "db.overview", "--json"],
+                           cwd=dst, input="Each `Item` carries a `Status` lifecycle and an optional `note`.",
+                           capture_output=True, text=True, env=local_env)
+        assert json.loads(r.stdout)["code"] == "SLOT_WRITTEN", r.stdout[:200]
+        r = subprocess.run(["node", KD, "approve", "docs/architecture/data-model.md", "db.overview", "--by", "harness", "--json"],
+                           cwd=dst, capture_output=True, text=True, env=local_env)
+        assert json.loads(r.stdout)["code"] == "APPROVED"
+        assert "Reviewed by harness" in open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN", "honesty loop must close clean"
+        # slot-write refused in CI
+        r = subprocess.run(["node", KD, "slot-write", "docs/architecture/data-model.md", "db.overview", "--json"],
+                           cwd=dst, input="x", capture_output=True, text=True, env={**os.environ, "CI": "true"})
+        assert r.returncode == 2 and "disabled in CI" in json.loads(r.stdout)["summary"]
+        # new: adr numbering + NOT_AVAILABLE honesty + EXISTS never-overwrite
+        r = kd(dst, "new", "adr", "--title", "Use keeldocs for living docs", "--json", env=local_env)
+        assert json.loads(r.stdout)["data"]["path"] == "docs/decisions/0001-use-keeldocs-for-living-docs.md"
+        r = kd(dst, "new", "adr", "--title", "Second decision", "--json", env=local_env)
+        assert json.loads(r.stdout)["data"]["number"] == "0002"
+        assert json.loads(kd(dst, "new", "system-map", "--json").stdout)["code"] == "NOT_AVAILABLE"
+        assert json.loads(kd(dst, "new", "erd", "--json").stdout)["code"] == "EXISTS"
+        shutil.rmtree(tmp)
+        print("  PASS  new/slot-write/approve integration: honesty loop (gates, stability, stale->reprose->attest->clean, CI guard)")
+    except Exception as e:
+        failures.append(f"new/slot-write integration: {e}")
+
+    # CLI envelope smoke: usage error must be exit 2 with a parseable envelope
+    r = subprocess.run(["node", "bin/keeldocs.js", "bogus-command", "--json"],
                        cwd=ROOT, capture_output=True, text=True)
     try:
         env = json.loads(r.stdout)
-        assert r.returncode == 2 and env["v"] == 1 and env["code"] == "NOT_IMPLEMENTED"
+        assert r.returncode == 2 and env["v"] == 1 and env["code"] == "USAGE"
         assert len(env["summary"]) <= 300
         print("  PASS  CLI envelope smoke (stub exit 2, valid envelope)")
     except Exception:
@@ -226,7 +292,7 @@ def main():
         for f in failures:
             print(f"  FAIL  {f}")
         sys.exit(1)
-    print(f"\nAll green: {len(MATRIX)} extractor cases + 2 check + 1 init integrations + envelope smoke.")
+    print(f"\nAll green: {len(MATRIX)} extractor + 2 check + init + sync + honesty-loop integrations + envelope smoke.")
 
 
 if __name__ == "__main__":

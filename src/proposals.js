@@ -19,9 +19,17 @@ export function buildProposals({ findings, regions, anchors, factsById }) {
   const proposals = [];
 
   for (const f of findings) {
+    // Stale prose slot: the engine NEVER rewrites prose - the agent re-proses
+    // via slot-write. Listed with evidence, deliberately not appliable here.
+    if (f.state === "stale" && f.kind === "slot") {
+      proposals.push({ id: f.id, kind: "reprose", doc: f.doc, line: f.line,
+        evidence: `bound facts changed since this prose was written (recorded ${f.recorded}, current ${f.currentHash}); rewrite it via: keeldocs slot-write ${f.doc} ${f.id}` });
+      continue;
+    }
     if (f.state === "stale" || f.state === "tampered") {
       const region = regionById.get(f.id);
       if (!region) continue;
+      if (region.kind !== "gen") continue;
       const binds = region.binds?.length ? region.binds : inheritBinds(region, anchors);
       const ids = resolveBindIds(binds, factsById);
       const newBody = renderRegionBody(f.id, ids, factsById);

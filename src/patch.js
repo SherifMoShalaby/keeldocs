@@ -33,6 +33,20 @@ export function patchRegion(text, regionId, newBody, newHash, newContent) {
   return text.slice(0, r.openStart) + marker + "\n" + newBody + "\n" + text.slice(r.bodyEnd);
 }
 
+// Replace a slot region's body and record the fact state it was written against.
+export function patchSlot(text, slotId, newBody, newHash) {
+  const openRe = new RegExp(`<!--\\s*keeldocs:slot\\s+([^>]*?\\bid=${esc(slotId)}(?:\\s[^>]*?)?)\\s*-->`, "g");
+  const m = openRe.exec(text);
+  if (!m) throw new Error(`slot ${slotId} not found`);
+  if (openRe.exec(text)) throw new Error(`slot ${slotId} appears more than once`);
+  const close = text.indexOf("<!-- /keeldocs:slot -->", m.index + m[0].length);
+  if (close === -1) throw new Error(`slot ${slotId} has no close marker`);
+  let marker = m[0];
+  if (/\bhash=h[0-9]+:[0-9a-f]+/.test(marker)) marker = marker.replace(/\bhash=h[0-9]+:[0-9a-f]+/, `hash=${newHash}`);
+  else marker = marker.replace(/\s*-->$/, ` hash=${newHash} -->`);
+  return text.slice(0, m.index) + marker + "\n" + newBody + "\n" + text.slice(close);
+}
+
 // Rewrite one bind inside one anchor/gen marker identified by id.
 export function patchBind(text, markerId, oldBind, newBind) {
   const re = new RegExp(`<!--\\s*keeldocs(?::gen)?:?\\s+[^>]*?\\bid=${esc(markerId)}(?:\\s[^>]*?)?\\s*-->`, "g");

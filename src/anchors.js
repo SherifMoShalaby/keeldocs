@@ -13,7 +13,7 @@
 
 const ANCHOR_KEYS = ["id", "recipe", "binds", "hash-kind"];
 const GEN_KEYS = ["id", "binds", "hash", "content"];
-const SLOT_KEYS = ["id", "binds"];
+const SLOT_KEYS = ["id", "binds", "hash", "max-words"]; // hash = fact state at last slot-write
 const MAX_VALUE = 200;
 
 const ID_RE = /^[A-Za-z0-9_.:\-]{1,200}$/;
@@ -100,8 +100,12 @@ export function parseDoc(text, docPath) {
         bodyStart: m.index + whole.length,
       };
       if (kv.binds !== undefined && region.binds === null) { quarantined.push({ doc: docPath, line, reason: "bad-binds" }); continue; }
-      if (region.kind === "gen" && kv.hash !== undefined && !HASH_RE.test(kv.hash)) {
+      if (kv.hash !== undefined && !HASH_RE.test(kv.hash)) {
         quarantined.push({ doc: docPath, line, reason: "bad-hash" }); continue;
+      }
+      if (kv["max-words"] !== undefined) {
+        if (!/^[0-9]{1,4}$/.test(kv["max-words"])) { quarantined.push({ doc: docPath, line, reason: "bad-max-words" }); continue; }
+        region.maxWords = parseInt(kv["max-words"], 10);
       }
       if (kv.content !== undefined && !HASH_RE.test(kv.content)) {
         quarantined.push({ doc: docPath, line, reason: "bad-content-hash" }); continue;

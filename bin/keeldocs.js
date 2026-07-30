@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8"));
-const COMMANDS = ["init", "check", "sync", "new"];
+const COMMANDS = ["init", "check", "sync", "new", "slot-write", "approve"]; // last two: plumbing (ADR-012)
 const args = process.argv.slice(2);
 const cmd = args[0];
 const json = args.includes("--json");
@@ -44,7 +44,17 @@ if (cmd === "sync") {
   if (exit !== null) process.exit(exit); // null = interactive loop owns exit
 }
 
-const msg = `keeldocs ${cmd}: not implemented yet - engine lands per docs/design/07-scope-roadmap.md`;
-if (json) console.log(envelope(false, "NOT_IMPLEMENTED", msg, ["see docs/design/02-architecture.md"]));
-else console.error(msg);
-process.exit(2);
+if (cmd === "new") {
+  const { runNew } = await import("../src/newcmd.js");
+  process.exit(runNew({ root: process.cwd(), json, args }));
+}
+
+if (cmd === "slot-write") {
+  const { runSlotWrite } = await import("../src/slots.js");
+  process.exit(runSlotWrite({ root: process.cwd(), json, args }));
+}
+
+if (cmd === "approve") {
+  const { runApprove } = await import("../src/slots.js");
+  process.exit(runApprove({ root: process.cwd(), json, args }));
+}
