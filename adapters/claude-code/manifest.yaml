@@ -1,0 +1,5 @@
+agent: claude-code
+skills_dir: .claude/skills          # or install as plugin via .claude-plugin/
+agents_md_block: false               # skills are native; AGENTS.md not required
+strip_fields: []                     # supports disable-model-invocation, user-invocable
+smoke_test: headless run detects seeded drift in fixtures/express-mounts

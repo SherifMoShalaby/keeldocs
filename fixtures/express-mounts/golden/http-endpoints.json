@@ -1,0 +1,29 @@
+{
+ "endpoints": [
+  {
+   "file": "app.js",
+   "method": "GET",
+   "path": "/health",
+   "line": 5
+  },
+  {
+   "file": "routes/api.js",
+   "method": "GET",
+   "path": "/api/orders",
+   "line": 5
+  },
+  {
+   "file": "routes/api.js",
+   "method": "POST",
+   "path": "/api/orders",
+   "line": 6
+  },
+  {
+   "file": "routes/v1.js",
+   "method": "GET",
+   "path": "/api/v1/users/:id",
+   "line": 4
+  }
+ ],
+ "warnings": []
+}

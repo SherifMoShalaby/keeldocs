@@ -1,0 +1,187 @@
+# Deliverable 3 — ADR Set
+
+Thirteen decisions, each recorded as context → options → decision → consequences. "Panel" notes name who argued what; dissent is preserved.
+
+---
+
+## ADR-001 — Orthogonal capabilities with a two-tier provider model (Option B, refined)
+
+**Context.** Option A (one pattern file per framework) explodes combinatorially and cannot express ORM/DB/workspace axes. Option B (capabilities × providers) was the brief's hypothesis. The panel stress-tested its two weak points: the "~15 lines of YAML" declarative tier and the assumption that every listed capability deserves to exist.
+
+**Options.** (a) Option A; (b) Option B as written, YAML-pattern declarative tier; (c) Option B with the declarative tier redefined as tree-sitter queries + capture-mapping manifest, and the capability list pruned.
+
+**Decision.** (c). Capabilities are orthogonal axes resolved independently. The declarative tier is a `.scm` tree-sitter query + small YAML manifest (regex-over-lines is vetoed; any regex used in matching must be RE2-class). Capability list at v0.1: workspace-layout, module-graph, http-endpoints, db-schema, config-surface, services-topology (compose only), decision-history (git-log only). Deferred: async-messaging (v0.3), helm/k8s topology (v0.3), pr/issue-mining (opt-in, v0.3 — network-coupled, injection + secret-resurrection channel). **Cut from the roadmap until determinism is proven: auth-model** (lowest static extractability, highest fabrication and secret-adjacency risk — three experts independently).
+
+**Consequences.** Contribution funnel is honest: declarative tier targets decorator-shaped frameworks (NestJS, FastAPI, Spring) with ≥90% recall / ≥98% precision gates; dynamic-registration frameworks (Express: `app.use('/api', router)` prefix composition, table-driven registration) are first-party code providers from day one — Compilers estimated only ~70% declarative recall for Express, which is disqualifying for a flagship artifact. Precision outranks recall everywhere: a missing endpoint is a coverage gap; a wrong one is a lie. Both tiers compile to the same interface and emit identical fact schemas + provenance — no second-class outputs, or resolution breaks.
+
+---
+
+## ADR-002 — Provider interface: purity, declared I/O, sandbox, trust tiers
+
+**Context.** The brief asked for detection, confidence, output schema, failure modes, sandboxing, timeouts. The Architect added the clause that cannot be retrofitted: declared inputs, without which incremental extraction and cache correctness are undecidable. Security added: community code execution in the post-Shai-Hulud npm ecosystem needs a real sandbox contract before a marketplace exists.
+
+**Options.** (a) Duck-typed plugins, free I/O; (b) declared-I/O pure providers, sandboxed subprocesses, trust tiers.
+
+**Decision.** (b). Registration manifest: `{id, semver, capability, tier, inputs: [globs], requires: [network:db]?, timeout_class}`. Lifecycle: `detect(ManifestIndex) → {applicable, scope, evidence}` (no source reads, ≤100ms); `extract(shard, config) → FactBatch` where the engine hands the provider only glob-matched files. Purity rule: output is a function of (declared inputs, config, provider version); violations corrupt the cache and are contract breaches. Failure envelope is enumerated: `ok | not_applicable | partial{facts, gaps[]} | failed{timeout|parse|crash|denied}`; gaps are first-class facts so a crashed provider can never masquerade as "these symbols were deleted." Timeouts by class (D 10s, C 60s, N 120s — network class requires explicit user opt-in); on timeout the previous facts are retained marked `stale_cache`, never dropped. Sandbox: short-lived subprocess, JSON on stdio, network deny-all (sole exception `network:db` to the runtime-resolved host), read-only FS scoped to declared globs minus the security exclusion set, no undeclared child processes, 5MB output cap. Trust tiers: **T0** declarative — safe by construction under the query/RE2/typed-output constraints, community-contributable via repo PR from v0.1; **T1** first-party code — signed with the release; **T2** third-party code — hash-pinned, signature-verified, installed only via explicit `provider trust` showing the permission manifest; machinery ships v0.2+, and resolution never auto-fetches a provider (missing provider = honest coverage gap).
+
+**Consequences.** MAJOR version is mandatory whenever identical input can yield different output. Every artifact stamps `provider_set_hash`; comparisons across different hashes are invalid by definition and trigger silent re-baseline — this kills "upgraded the tool, got 500 stale flags" permanently. Cost: providers that legitimately need broad reads (whole-repo import graphs) must declare broad globs and pay the cache-invalidation price honestly.
+
+---
+
+## ADR-003 — Deterministic resolution: enumerated lattice, versioned precedence, conflicts as facts
+
+**Context.** The brief flagged nondeterministic resolution as a known weak point that would poison drift detection. The Architect identified the root cause: float confidence scores and ambient tie-breaks.
+
+**Options.** (a) Float confidence scoring; (b) ML-ranked resolution; (c) enumerated confidence lattice + versioned static precedence + total-order backstop.
+
+**Decision.** (c). `resolve()` is a pure fold over facts sorted by `(fact_id, provider_id)`. Lattice (no floats, total order): `INTROSPECTED > PARSED > PATTERN > GENERIC > OBSERVED > INFERRED`. Tier assignment is constrained so the lattice cannot contradict ADR-005: `INTROSPECTED` is reserved for introspection of *repo-derived* database instances (the v0.2 migration-replay engine; a committed declared baseline snapshot); ad-hoc live-environment reads are `OBSERVED` and never enter canonical resolution at all — they exist only in the disagreement-fact comparison. Merge semantics: union across distinct fact IDs; identical ID → pick-one whole fact (no attribute-level merging in v0.x — it multiplies conflict surface for marginal gain). Tie-break chain: lattice tier → static per-capability precedence table (versioned, shipped with the engine) → lexicographic provider id. Same-tier different-attrs conflicts emit `{kind: conflict, claims[+provenance], winner, deciding_rule}` — rendered in `check`, pinnable via committed `docsmith.toml` overrides. Banned inputs: timestamps, iteration order, locale, float formatting, filesystem enumeration order. `resolution-report.json` records every decision. CI golden test: resolve twice on linux/macos/windows, require empty byte-diff.
+
+**Consequences.** Determinism becomes a *tested invariant*, not a hope. The rendered "tier" ladder of the brief's §3.2 becomes a projection of this machine lattice: `INTROSPECTED/PARSED/PATTERN/GENERIC` all render as unbadged "verified" (brief tiers 1–2); `OBSERVED` renders with an explicit "observed (sampled N docs at T / env E)" label; `INFERRED` renders with the loud `⚠ inferred` badge (tier 3). The §3.2 "feature or clutter" question is thereby decided: label the exception, not the rule — absence-of-warning is the signal, universal ✅ badges train banner blindness within a week, and the one badge that matters stays loud (unanimous ballot, argued independently by five experts). Cost: genuinely ambiguous cases surface as conflicts users must occasionally pin — which is the honest behavior; silent averaging is the dishonest one.
+
+---
+
+## ADR-004 — Layered fact store: JSONL canonical-derived, SQLite index, nothing derived committed
+
+**Context.** §3.1 asked whether capabilities compose into one unified graph or stay separate. Hidden inside: what gets committed — the panel's sharpest structural disagreement (Architect: baseline digests only; Data: commit fact files; Platform: veto any routinely-mutated committed file).
+
+**Options.** (a) One unified graph artifact; (b) per-capability artifacts only; (c) layered: per-(capability, shard) JSONL fact files + derived SQLite graph index; sub-options commit/gitignore each layer.
+
+**Decision.** (c), all of it gitignored. JSONL with JCS canonicalization (sorted keys, sorted fact IDs, no floats) is byte-stable → determinism testable with `diff`, debuggable with `grep`. SQLite is not byte-stable across library versions and imposes a single-writer lock — disqualifying for the record, ideal for the disposable index. Facts are pure functions of (repo content, provider set, config) and are therefore *derived*: committing them creates a second source of truth that is wrong the moment anyone merges without running the tool. Exception, from the D2 synthesis: **environment-derived observations that the user chooses to keep are promoted to declared sources** — committed deliberately, labeled `source: live-snapshot, env, at` — because they are *not* reproducible from the repo. Cross-shard edges are half-edges joined by a linker so shard caches stay independent.
+
+**Consequences.** Fresh clones and CI re-derive facts (fast, cached); "works without the tool" is satisfied by anchors alone. Dissent recorded: the Architect wanted a small committed `baseline.json` of fact digests as a reproducibility tripwire; the chair moved that check into CI (double-extraction comparison) to preserve the zero-committed-derived-state rule, and it can be revisited if CI cost proves material.
+
+---
+
+## ADR-005 — db-schema: three-claim model; declared beats live; disagreement is the documentation
+
+**Context.** The brief modeled `live-connection | migrations | orm-models` as competing providers with a winner. The Data engineer showed this breaks determinism (live is env-relative and time-varying) and buries the most valuable information — the disagreement itself.
+
+**Options.** (a) Precedence with live on top; (b) precedence with migrations on top, live discarded; (c) three-claim model: sources answer different questions; deltas are first-class facts.
+
+**Decision.** (c). Migrations/declarative schema files state what the repo says the schema *should* be (deterministic, canonical for docs); ORM models state what the application *believes*; a live connection states what environment E *actually is* at time T (labeled observation, never canonical). `check --live` compares canonical facts to a live catalog and emits **disagreement facts** classed `pending-migration` (repo ahead), `out-of-band-drift` (env ahead — someone ran DDL in prod), `belief-mismatch` (ORM vs migrations — a latent app bug worth documenting more than either schema). These render as a "Schema drift" section — tier-1 verified, because the disagreement itself is deterministically true. Live's second role: brownfield bootstrap where no schema source exists — the snapshot is committed as the declared baseline, labeled. Normalization: a versioned, golden-file-tested per-dialect spec (canonical types, identifier case/quoting, default-expression normalization, constraint identity keys); drift fires only on canonical-form deltas. Mongo: ODM models (Mongoose/Prisma) as declared facts; `--sample` opt-in yields *shape only* under the *OBSERVED* tier; no ODM and no opt-in → honestly reported as not deterministically documentable. v0.1 parse set: prisma, drizzle, rails-schema/`structure.sql` (which also covers generic SQL-dump repos); v0.2 investment: the ephemeral-replay engine (real DB in Docker/pglite) unlocking flyway/alembic/liquibase at once; knex cut (imperative chain, no declarative artifact). Live provider v0.1: Postgres-wire only (covers Supabase) via tbls, `--live` flag, off the critical path (D2). Supabase overlay: platform schemas excluded by default; **RLS access matrix** (role × operation → USING/WITH CHECK) from catalogs — the wedge-cohort differentiator (Prisma skips RLS; Atlas paywalls it) — with static `CREATE POLICY` parsing from `supabase/migrations/*.sql` as the degraded, labeled fallback.
+
+**Consequences.** Docs are reproducible from the repo alone; drift detection is not self-referential; out-of-band prod drift — the demo-able core claim — is a labeled comparison, not a corruption of canon. Cost: repos whose only truth is a hand-managed prod DB get one extra deliberate step (bootstrap + commit baseline).
+
+---
+
+## ADR-006 — Anchors: in-doc identity only; volatile state in a gitignored index; durable human decisions in a committed append-only journal
+
+**Context.** The brief proposed 7-field in-doc anchors and asked whether a separate lockfile should also exist. The Technical Writer showed volatile fields (`last_verified_sha`, `confidence`, `human_edited`) make every sync touch every section — diff noise and merge-conflict bait. The Compilers engineer needed tombstones/rejections to survive doc deletion and fresh clones; the Platform engineer vetoed committed routinely-mutated files. This was the panel's hardest fight (D1).
+
+**Options.** (a) Fat in-doc anchors, no lockfile; (b) committed lockfile/index; (c) slim identity-only anchors + gitignored index + committed append-only human-decisions journal.
+
+**Decision.** (c), with both former opponents conceding on the record. Anchors carry identity only — target ≤3 lines, one per section, fixed key order. Everything volatile lives in the derived gitignored index. `.docsmith/decisions.jsonl` holds *only durable human decisions*: tombstones (intentionally-removed), rejections, snoozes, waivers, adjudicated rebinds (accepted S2/S3 proposals — else fresh clones re-propose every adjudicated ambiguity). Journal contract, from the rebuttal refinements: entries keyed on durable IDs (symbol IDs / fact natural keys + decision SHA), never volatile hashes; JCS-canonical one object per line; `init` writes a `.gitattributes` `merge=union` rule; entries are self-contained, idempotent, order-independent; revocation by new entry, never edit/delete; latest-timestamp-wins per ID; **read-only in CI, enforced by the tool**; no facts or hashes ever (that would be "the lockfile by the back door"); compaction only via explicit `gc` producing a reviewable PR.
+
+**Consequences.** Ordinary PRs never touch tool state; human decisions survive clones and doc deletions; never-re-prompt holds. `human_edited` is computed from git blame, never stored. Cost: two artifacts to understand instead of one — mitigated by the journal being human-readable and human-caused by definition.
+
+---
+
+## ADR-007 — Symbol identity: SCIP grammar, not SCIP toolchain; two namespaces; evidence-gated re-anchoring
+
+**Context.** Anchors must survive renames/moves without line numbers (brief §3.3). SCIP's symbol grammar is precise and language-neutral (verified against scip.proto), but SCIP *indexers* require per-language build toolchains, which kills one-command install on arbitrary repos.
+
+**Options.** (a) Invent an ID scheme; (b) require SCIP indexers; (c) adopt the SCIP grammar shape, emit syntactic IDs from tree-sitter.
+
+**Decision.** (c). Scheme: `ds <pkg> <version|.> <descriptors>` — package from workspace-layout (this alone makes cross-language monorepos collision-free with zero cross-language analysis); module descriptor = file path for file-as-module languages (TS/JS/Python/Go) or declared namespace (Java/C#); SCIP descriptor suffixes; overload disambiguator = arity, then 4-hex FNV of normalized parameter types. Anchoring to document-scoped locals is forbidden. **Second namespace for non-code facts:** `fact:<capability-id>/<natural-key>`, with the *full* capability id — `fact:http-endpoints/GET /orders/{id}`, `fact:db-schema/public.orders.customer_id`, `fact:config-surface/DATABASE_URL` (db keys are always schema-qualified). Natural keys are provider-agnostic, so provider swaps preserve identity; capability ids are never abbreviated, so the namespace has exactly one form. Re-anchoring pipeline: S0 exact ID → S1 git rename detection (≥60% similarity) rewriting path prefixes → S2 signature match within package → S3 body 5-gram shingle similarity. Auto-rebind only when metadata-only, logged, reversible, exactly one candidate AND two independent agreeing signals (S1+body≥0.95, or S2+body≥0.85); S3 alone never auto-rebinds; everything else is a ranked-evidence proposal. Orphan taxonomy is disjoint: **stale** (ID resolves, hash mismatch) / **rebound** / **dead** (no candidate ≥0.75, deletion confirmed via git) / **intentionally-removed** (dead + intent evidence; journal tombstone; never re-prompts) / **unresolvable** (extractor failure; tooling health, never drift).
+
+**Consequences.** Known failure cases are accepted and documented: TS/Python file moves change IDs (handled by S1); duplicate declarations (partials, open classes) use a site-set digest; generated code redirects anchors to its source of truth (`.prisma`, `.proto`); runtime-defined symbols are invisible syntactically (tier-3 or code provider). Accuracy gates are testable numbers (Deliverable 9): file move ≥99%, in-file rename ≥97%, move+rename+edit ≥90% top-1, **false auto-rebind <0.5% — the go/no-go**, because a silently wrong rebind is strictly worse than an orphan.
+
+**Amendment (2026-07-30, from the E2/E3 mini-run on 12 months of hono + zod history).** Three evidence-driven adjustments: (1) *S2 as "identical normalized signature" is too strict* — both real renames observed co-changed the signature in the same commit (0/2 recall); S2 relaxes to near-identical signature (same arity, ≥threshold type overlap), with body similarity + unique-candidate as the corroborating signals (the relaxed probe scored 2/2 with 0 wrong). (2) *Add a move-matcher stage*: symbols lost to cross-file consolidation dominated orphans (21/24) and are invisible to git rename detection when the target file already exists — but every one had a unique same-name candidate repo-wide; new stage S1b = same name + unique candidate + body/signature corroboration, proposal-grade by default. (3) *Exclude overload implementation signatures from the fact hash* — the only false drift observed (1/26) was an overloaded function whose non-callable implementation signature churned while its public overloads were byte-identical. The two-signal auto-rebind rule and the <0.5% gate are unchanged.
+
+---
+
+## ADR-008 — Drift is defined over extracted-fact hashes, with versioned algorithms and re-baselining
+
+**Context.** §3.3's "hash normalized content, define normalization precisely" leaves normalization per-language and upgrade-fragile. The Compilers engineer reframed it in build-system terms: a doc section is a derived artifact; drift = its input hash changed (Bazel action keys, Nix derivations).
+
+**Options.** (a) Raw source bytes (dead on arrival — formatting churn); (b) normalized source text (requires a canonical pretty-printer per language; every normalizer bump is global false drift); (c) canonical serialization of extracted facts.
+
+**Decision.** (c). Facts serialize per RFC 8785 JCS; each fact-schema field is declared `ordered` (parameter lists, SQL column order — semantic) or `set` (sorted by natural key); SHA-256, displayed truncated to 64 bits/16 hex (the brief's 6-hex example birthday-collides at repo scale), full digest in the index. The fact-type `schema_version` is inside the hashed payload; provider name/version is provenance *outside* it — so provider swaps and upgrades don't manufacture drift. Algorithm version is embedded (`h1:`); cross-version comparison is invalid by definition → silent re-baseline (recompute + rewrite), never a drift report. For prose anchored to a symbol with no structured fact: `shape_hash` = normalized declaration-AST hash; each anchor declares which hash kind it binds. Behavior: formatting-only change → no drift; comment change → no drift unless a recipe declared consumption; docstring change → drifts only recipes that consume docstrings (per-recipe fact selection, not a global toggle).
+
+**Consequences.** Noise control falls out structurally: an ERD drifts only on schema facts; handler-body refactors page no one. Cost: fact schemas become API surface with versioning discipline — accepted; that discipline is needed for the contribution model anyway.
+
+---
+
+## ADR-009 — LLM boundary: prose-only slots behind a deterministic validator; the engine never calls a model
+
+**Context.** The brief's own evidence (fix accuracy 15–25%; judge self-preference bias) says models can't be trusted to respect "draft-only" instructions — and local models will ignore prompt-level rules outright. The PM independently demanded zero model SDKs in v0.1 (maintenance death); the AI engineer demanded the boundary be mechanical.
+
+**Options.** (a) Prompt-level rules in SKILL.md; (b) tool-enforced validation, host agent as the only model; (c) built-in inference clients (BYO key/Ollama) from v0.1.
+
+**Decision.** (b); (c) deferred to v0.3 for headless prose. Templates define three region kinds: *generated* (`docsmith:gen` begin/end, hash-verified, written only by extract), *prose slots* (`docsmith:slot` with charter, bound fact set, max_words), *human* (never touched). The model never edits doc files: it pipes markdown to `slot-write`, which hard-fails on unknown slot, gen-marker intrusion, over-length, any backticked identifier or `[fact:ID]` citation that doesn't resolve against the known-entities index, zero citations in a paragraph, and — the anti-thrash gate — any prose change whose bound fact-hash is unchanged. On pass, the tool (never the model) applies `⚠ Inferred draft — not human-reviewed`; `approve` flips to `✎ Reviewed by <author>, <sha>` — attestation, not derivation. `check` lints for unlabeled prose and gen-region tampering; `restore` repairs mangled gen regions. Weak-model degradation is graceful in quality (rejected writes, bounded retries) and hard-failing in integrity. No LLM-as-judge in v0.1; if ever added for style it must be reference-guided, cross-family, and warn-only. Sentence-per-line prose, controlled per-repo glossary, no numbers/dates/counts inside prose (those belong in deterministic slots).
+
+**Consequences.** "Never fabricate rationale" survives contact with a 7B model because it is enforced by a parser, not a plea. Cost: interactive friction — "just fix the paragraph" still routes through slot-write. The AI engineer's position ("a rule that holds 95% of the time is not a rule, it's a vibe") was adopted over DX convenience; recorded as a deliberate trade.
+
+---
+
+## ADR-010 — Distribution: deterministic CLI spine + Agent Skills standard + generated adapters; no MCP through v0.2
+
+**Context.** Verified current state (mid-2026): Agent Skills / SKILL.md is a multi-vendor open standard natively consumed by Claude Code, Codex, Cursor, Gemini CLI, Copilot/VS Code and ~25+ others; Claude Code merged commands into skills; Codex caps the skills listing at 8,000 chars; Claude truncates description fields at 1,536 chars and compaction keeps the first 5k tokens per skill. MCP remains broadly adopted but costs 1.5–2.7k resident tokens per session for a tool surface like this, carries no procedural knowledge, and cannot be a CI primitive.
+
+**Options.** (a) MCP server primary; (b) skills + CLI + adapters primary, MCP shim later; (c) skills + CLI + adapters, no MCP at all until a concrete demand exists.
+
+**Decision.** (c) through v0.2, converting to a v0.3 decision point (D4). The CLI is the product: exit codes 0/1/2/3, `--json` envelopes (≤8KB, summary ≤300 chars, spill to `.docsmith/out/`), runnable in CI/cron/pre-commit with no agent. Five skills map to user intents — `init`, `check`, `sync`, `new`, plus a non-invocable `core` knowledge skill (~400 tokens); resident cost ~400 tokens vs MCP's 1.5–2.7k in every session. Side-effecting skills are `disable-model-invocation` (user pulls the trigger); `init` runs in a forked context. Adapters shrink to installer path-maps + frontmatter strip-lists + an AGENTS.md fallback block + per-agent CI smoke tests ("is drift detected headlessly?"); ≤300 LOC each; a broken adapter is dropped from a release, never blocks it. First-class at v0.1: **Claude Code (plugin + marketplace), Codex, Cursor** (the standard makes Codex marginal-cost; the PM's two-adapter honesty cap is met by counting maintenance surfaces, not directories — Codex shares the canonical layout). Committed-to-repo skills give teammates zero-install. Gemini/Copilot: standard-layout best-effort, promoted when smoke tests stay green. Two-year-rule backstop: the "side-effecting skills are user-triggered" property must not depend on any vendor frontmatter key (`disable-model-invocation` is Claude-specific) — on agents that lack or strip it, the *CLI itself* refuses side-effecting operations (`sync` apply, journal writes, `init` writes) without an interactive confirmation or explicit `--yes`, so the safety property is tool-enforced and agent-independent.
+
+**Consequences.** Agent-API churn is quarantined; the two-year-correctness bet is on (i) the CLI and (ii) an open standard, not on any vendor's extension API. Cost: shell-less surfaces (some web agents) are unserved until the v0.3 decision point — accepted; those surfaces cannot run the deterministic spine anyway.
+
+---
+
+## ADR-011 — Portfolio manifest: defer to v0.3; thin envelope embedding OpenAPI/AsyncAPI; Backstage as an export projection, not a dependency
+
+**Context.** The brief's author owns many single-app repos across stacks and proposed manifest-level stitching. Verified: Backstage's `catalog-info.yaml` has the right relational shape (`providesApis`/`consumesApis`/`dependsOn`) but is explicitly Backstage's own evolving `v1alpha1` format; OpenAPI 3.2.0 and AsyncAPI 3.x are current.
+
+**Options.** (a) Portfolio in v0.1; (b) invent a full manifest schema; (c) adopt catalog-info.yaml as canonical; (d) defer to v0.3; thin envelope whose exposes/consumes entries embed OpenAPI/AsyncAPI fragments; ship `export --backstage`.
+
+**Decision.** (d). The envelope schema, designed now so v0.3 is a projection rather than an invention:
+
+```yaml
+# .docsmith/portfolio.yaml (emitted per repo by `export`, v0.3)
+schema_version: 1
+app: {id: orders-api, repo: "github.com/acme/orders-api"}
+exposes:
+  http:   [{ref: "openapi:docs/reference/openapi.json"}]        # or inline op list from facts
+  topics: [{ref: "asyncapi:docs/reference/asyncapi.yaml#/channels/order.created"}]
+consumes:
+  http:   [{base_env: API_BASE_URL, ops: ["GET /orders/{id}"]}] # join key = env var + op
+  topics: [{channel: "order.created"}]
+  db:     [{resource: "declared:acme-main-pg", via_env: DATABASE_URL}]  # identity: open Q3
+  env:    [DATABASE_URL, REDIS_URL]
+```
+
+Every entry is a projection of existing facts; endpoint/topic *descriptions* are OpenAPI/AsyncAPI references, never a parallel schema. The seam is validated — the join keys are exactly what capabilities already extract, and linking at the manifest layer avoids cross-language analysis entirely. But a portfolio map multiplies per-repo error, so single-repo facts must be trusted first; and per the PM, one founder's itch must not shape core schemas (D6). Gates to start: ≥3 distinct real multi-repo users requesting it. v0.1 obligation: versioned fact schemas only. Gaps in Backstage's model (env-var contracts, DB linkage granularity) are covered via `metadata.annotations` (`docsmith.io/consumes-env`, `docsmith.io/db-ref`), never a schema fork. Cross-repo *database identity* — **resolved by owner decision (2026-07-30): user-declared resource IDs.** One committed line per repo (`db.resource: "acme-main-pg"` in `docsmith.toml`) is the join key; deterministic, trivial, and consistent with the journal philosophy — humans declare intent, machines verify. Fingerprint clustering was rejected as the primary mechanism (heuristic joins that go silently wrong are the exact failure class this tool exists to prevent) but may later *suggest* declarations for human confirmation.
+
+**Consequences.** Portfolio mode arrives as a deterministic join over exported files — or literally a Backstage instance — rather than a new registry to operate. The author's use case is served one release later than desired, in exchange for the core schemas being shaped by single-repo correctness.
+
+---
+
+## ADR-012 — v0.1 scope, the wow, and the noise SLO
+
+**Context.** Deliverable 7 carries the full scope table; this ADR records the three product decisions and their reasoning. The brief's stated tension: pure drift detection may be too dry for first-run adoption.
+
+**Options.** Wow: (a) LLM-generated doc suite on init (DeepWiki's lane; nondeterministic, model-hostage); (b) deterministic map artifacts only (accurate but 2026 table stakes); (c) map + doc lie-detector, zero LLM. Retention: (a) daily human command; (b) agent-side ambient loop with earned push. Noise: (a) per-change PRs (Dependabot's death); (b) SLO with batching + self-throttling.
+
+**Decision.**
+1. **The wow is the doc lie-detector plus the deterministic map, in one zero-LLM `init` run** (D5): existing-doc falsehoods with receipts ("README references `scripts/setup.sh` — deleted in `8f21ac9`"), then committed anchored starter artifacts (system-map, ERD, endpoint inventory, config reference) and a prioritized plan. Rationale: rendered diagrams are 2026 table stakes (DeepWiki et al.); *catching your own README lying* is visceral, verifiable in ten seconds, and demonstrates the thesis — verification, not generation — on contact. A wow that opens with generated prose teaches users it's another generator and makes first-run quality hostage to whichever model key is configured.
+2. **Retention is not the wow.** The daily loop is agent-side: docs/facts as ambient grounding (passive value in zero-drift weeks) + the post-edit nudge for self-caused drift patched in the same branch. Human-initiated commands are weekly-or-rarer by design; if the design required a daily human command it would have already lost.
+3. **The noise SLO is a versioned, tested spec** (DX, adopted whole): push is earned, pull is default — the only unsolicited interruption is the nudge about symbols the session itself changed; residual drift batches into one weekly rollup PR, amended never multiplied; proposals auto-expire to `status` debt at 21 days; twice-rejected sections are snoozed via the journal and never re-proposed without human touch; **accept-rate self-throttling** — acceptance <30% over 4 rolling weeks halves all frequencies, announced; CI is report-only by default with one sticky comment; never propose on formatting/comment-only changes or tier-3 "prose could be improved."
+
+**Consequences.** The v0.1 release gate list (Deliverable 7/9) tests all three: time-to-map, lie-detector precision on fixture repos, drift FP rate, week-4 retention. The *primary* command surface is fixed at four (`init`, `check`, `sync`, `new`); `adr` is `new adr`; `ask` is deleted — grounded Q&A is the host agent's native competence once the index is readable; `map`/`verify`/`coverage`/`drift` are internal phases or report sections of `check`. Auxiliary verbs exist but are deliberately outside the daily conceptual surface, and the DX veto (">5 user-facing commands") is scoped to that primary surface: `approve`/`restore` are steps inside the `sync` review flow; `gc`, `provider trust`, `db role`, `export` are rare administrative plumbing; `test-provider` and the fixture harness are contributor-facing only. None appear in the skills' invocation surface. Naming note: the panel split across check/status/drift; `check` won for CI-friendliness, and "drift" remains the report's vocabulary — **confirmed by owner decision, 2026-07-30**.
+
+**Coverage denominator — resolved by owner decision (2026-07-30): concrete surfaces only.** The coverage metric counts entities with natural keys and objective existence — endpoints, tables, env vars, services — documented ∕ total, per capability. Exported-symbol coverage is excluded from the metric (gameable by doc-spam, noisy denominator — the DX warning); module-level coverage may render as informational context but never enters the ratchet.
+
+---
+
+## ADR-013 — Security posture: write barrier, credential rules, sandbox, local-first honesty, injection hardening
+
+**Context.** Three vectors the brief underweights: generated docs as a secret-exfiltration channel (env surfaces, DSN-bearing driver errors, git-history mining resurrecting purged keys); community providers as arbitrary code execution (Shai-Hulud-class npm worms are current reality, with a CISA alert); and docsmith-taught agents reading attacker-influenceable files as trusted metadata (indirect prompt injection).
+
+**Options.** Per vector: (a) post-hoc scanning of committed docs vs (b) a mandatory pre-write barrier (chosen — a leak that reaches a commit has already happened); (a) provider code review culture vs (b) sandbox + trust tiers (chosen — review doesn't scale to a marketplace and failed npm); (a) treating "source never leaves the machine" as marketing vs (b) an honest three-part guarantee (chosen).
+
+**Decision.**
+- **Redaction barrier (one choke point).** Structural denial first: the config-surface fact schema has no value field; the sandbox FS deny-list excludes `.env*` (except `*.example`/`*.schema`), key/cert files, cloud credential dirs, k8s Secret `data:` — *no provider can read `.env` at all*. The single sanctioned exception: an engine-internal, value-blind key-name extractor (not a provider; values never leave the process, never logged), **opt-in** via `config.env_names: true`; v0.1 default config-surface facts come from code reads + `.env.example`/`.env.schema` keys only. Then gitleaks-ruleset pattern scan + context-tuned entropy scan over every rendered artifact pre-write; hits block the write, substitute `[REDACTED:<rule>]`, and raise a finding requiring human acknowledgment; ruleset version recorded for CI re-verification. History/PR excerpts are scanned *before entering context or state*.
+- **DB credentials.** Sourcing precedence: named env var in config (the config names the variable, never contains a value) → OS keychain → session-only prompt. Hard error on any URL-with-userinfo in repo or docsmith-managed files. Least-privilege role generator per dialect (`db role --dialect`); schema-only catalog reads; fact files record a host fingerprint (SHA-256 of host+dbname), role, dialect — never DSNs; all provider stderr passes the barrier (driver exceptions embed DSNs). Row sampling: shape-only, opt-in, OBSERVED-tier (D7); example values are always synthesized from types/enums/constraints.
+- **Supply chain.** npm provenance (Sigstore) attestations; near-zero runtime deps with pinned lockfile; **no install scripts**; version-pinned `npx <name>@X.Y.Z init` recommended; init writes only inside the repo, shows a diff of everything it writes, never touches global agent config or shell profiles.
+- **Local-first, honestly.** The defensible three-part guarantee: (1) the deterministic pipeline is provably offline — zero network syscalls, sandbox-enforced, CI-regression-tested; (2) prose uses only the inference channel the user already trusts (their host agent; BYO/Ollama in standalone mode later); the tool adds **no new egress paths and no telemetry by default**; (3) a tool-enforced `exclude:` config every provider honors, translated into agents' native deny mechanisms where they exist. Stated plainly in the README: the tool cannot stop the host agent from reading excluded paths on its own initiative, and cannot control model-provider retention — that is the user's existing agent trust decision, not ours to launder. `init`'s provenance footer makes auditability a feature: "0 network calls, 0 LLM tokens, 0 secrets in output (scanned)."
+- **Injection hardening.** Anchors and journal entries are schema-strict: fixed keys, ID/enum/hash-shaped values, length caps, unknown keys rejected, no free-text "notes for the agent" fields ever; malformed anchors quarantine as inert data. Agents access facts via the CLI, which validates schemas and wraps output in delimited untrusted-data framing (spotlighting — useful, explicitly insufficient). Mined text is opt-in, quoted, capped, provenance-labeled. `sync`'s human-review gate is retained as a *security* control. Residual risk stated, not hidden: no reliable general defense against prompt injection exists; the bar is that docsmith artifacts are no more privileged an injection channel than the source files the agent already reads, and docsmith never adds auto-acting behavior on top of them.
+
+**Consequences.** Enterprise review has concrete artifacts to audit (sandbox policy, barrier, provenance). Costs accepted: sandbox depth is tiered by OS — Landlock/seccomp on Linux, Seatbelt on macOS, and on Windows a **reduced-trust posture, plainly documented** (owner decision, 2026-07-30): all provider tiers run with best-effort isolation and the weaker guarantee stated in the security docs, with AppContainer/Job Object hardening as a later prototype rather than a launch blocker. Some doc richness (real example values) is permanently sacrificed to the synthetic-examples rule.

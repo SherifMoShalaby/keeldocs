@@ -1,0 +1,9 @@
+checks:
+  - gen_hashes_match
+  - all_fk_targets_exist
+  - diagram_within_limits      # <=25 entities per L1 diagram
+  - anchors_resolve
+  - no_env_state               # row counts / sequence values must not appear
+  - prose_slots_labeled
+  - prose_stability            # prose changed => bound fact-hash changed
+  - redaction_clean

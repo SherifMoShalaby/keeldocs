@@ -1,0 +1,9 @@
+id: compose
+capability: services-topology
+semver: 0.0.1
+tier: declarative
+status: stub          # detect contract defined; extractor lands per docs/design/07-scope-roadmap.md
+detect: { any: [ { file: "docker-compose*.yml" } ] }
+inputs: ["docker-compose*.yml", "compose*.yml"]
+requires: []
+timeout_class: D

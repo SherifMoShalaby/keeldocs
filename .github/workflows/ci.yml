@@ -1,0 +1,21 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install extractor runtime (pinned)
+        run: pip install "tree-sitter==0.26.0" "tree-sitter-typescript==0.23.2" tree-sitter-javascript
+      - name: Fixture matrix + determinism double-run + envelope smoke
+        run: python3 scripts/harness.py
+      # The determinism gate above is ADR-003's tested invariant in embryo:
+      # when the engine lands, this job grows the cross-OS byte-identical matrix
+      # (linux/macos/windows x 2 runs) and the golden resolution tests.

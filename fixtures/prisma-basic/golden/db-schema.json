@@ -1,0 +1,110 @@
+{
+ "models": [
+  {
+   "name": "User",
+   "fields": [
+    {
+     "name": "id",
+     "type": "Int",
+     "list": false,
+     "optional": false,
+     "attrs": "@id @default(autoincrement())",
+     "is_relation_field": false
+    },
+    {
+     "name": "email",
+     "type": "String",
+     "list": false,
+     "optional": false,
+     "attrs": "@unique",
+     "is_relation_field": false
+    },
+    {
+     "name": "role",
+     "type": "Role",
+     "list": false,
+     "optional": false,
+     "attrs": "@default(USER)",
+     "is_relation_field": true
+    },
+    {
+     "name": "avatar",
+     "type": "String",
+     "list": false,
+     "optional": true,
+     "attrs": "@default(\"https://example.com/a.png\")",
+     "is_relation_field": false
+    },
+    {
+     "name": "posts",
+     "type": "Post",
+     "list": true,
+     "optional": false,
+     "attrs": "",
+     "is_relation_field": true
+    }
+   ],
+   "values": null,
+   "block_attrs": []
+  },
+  {
+   "name": "Post",
+   "fields": [
+    {
+     "name": "id",
+     "type": "Int",
+     "list": false,
+     "optional": false,
+     "attrs": "@id @default(autoincrement())",
+     "is_relation_field": false
+    },
+    {
+     "name": "title",
+     "type": "String",
+     "list": false,
+     "optional": false,
+     "attrs": "",
+     "is_relation_field": false
+    },
+    {
+     "name": "author",
+     "type": "User",
+     "list": false,
+     "optional": false,
+     "attrs": "@relation(fields: [authorId], references: [id])",
+     "relation": {
+      "raw": "fields: [authorId], references: [id]",
+      "fields": [
+       "authorId"
+      ],
+      "references": [
+       "id"
+      ]
+     },
+     "is_relation_field": true
+    },
+    {
+     "name": "authorId",
+     "type": "Int",
+     "list": false,
+     "optional": false,
+     "attrs": "",
+     "is_relation_field": false
+    }
+   ],
+   "values": null,
+   "block_attrs": []
+  }
+ ],
+ "enums": [
+  {
+   "name": "Role",
+   "fields": null,
+   "values": [
+    "USER",
+    "ADMIN"
+   ],
+   "block_attrs": []
+  }
+ ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "keeldocs",
+  "version": "0.1.0-dev.0",
+  "private": true,
+  "description": "keeldocs - test coverage for your docs: anchors doc sections to the code they describe, deterministically flags drift with receipts, proposes reviewable patches. Any stack, any agent, no SaaS.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": { "keeldocs": "bin/keeldocs.js" },
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "python3 scripts/harness.py",
+    "smoke": "node bin/keeldocs.js check --json; test $? -eq 2"
+  },
+  "repository": { "type": "git", "url": "https://github.com/keeldocs/keeldocs" }
+}

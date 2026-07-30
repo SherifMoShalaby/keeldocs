@@ -1,0 +1,533 @@
+{
+ "convention": "runtime path incl. resolved mount prefixes; hackathon-starter scoped to app.js lines 252-323 (deterministic subset chosen pre-extraction)",
+ "endpoints": [
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/main.ts",
+   "method": "GET",
+   "path": "/"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/tag/tag.controller.ts",
+   "method": "GET",
+   "path": "/api/tags"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/article/article.controller.ts",
+   "method": "GET",
+   "path": "/api/articles"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/article/article.controller.ts",
+   "method": "GET",
+   "path": "/api/articles/feed"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/article/article.controller.ts",
+   "method": "POST",
+   "path": "/api/articles"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/article/article.controller.ts",
+   "method": "GET",
+   "path": "/api/articles/:slug"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/article/article.controller.ts",
+   "method": "PUT",
+   "path": "/api/articles/:slug"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/article/article.controller.ts",
+   "method": "DELETE",
+   "path": "/api/articles/:slug"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/article/article.controller.ts",
+   "method": "GET",
+   "path": "/api/articles/:slug/comments"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/article/article.controller.ts",
+   "method": "POST",
+   "path": "/api/articles/:slug/comments"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/article/article.controller.ts",
+   "method": "DELETE",
+   "path": "/api/articles/:slug/comments/:id"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/article/article.controller.ts",
+   "method": "POST",
+   "path": "/api/articles/:slug/favorite"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/article/article.controller.ts",
+   "method": "DELETE",
+   "path": "/api/articles/:slug/favorite"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/auth/auth.controller.ts",
+   "method": "POST",
+   "path": "/api/users"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/auth/auth.controller.ts",
+   "method": "POST",
+   "path": "/api/users/login"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/auth/auth.controller.ts",
+   "method": "GET",
+   "path": "/api/user"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/auth/auth.controller.ts",
+   "method": "PUT",
+   "path": "/api/user"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/profile/profile.controller.ts",
+   "method": "GET",
+   "path": "/api/profiles/:username"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/profile/profile.controller.ts",
+   "method": "POST",
+   "path": "/api/profiles/:username/follow"
+  },
+  {
+   "repo": "node-express-realworld-example-app",
+   "file": "src/app/routes/profile/profile.controller.ts",
+   "method": "DELETE",
+   "path": "/api/profiles/:username/follow"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/login"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/login"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/login/verify/:token"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/login/2fa"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/login/2fa"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/login/2fa/resend"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/login/2fa/totp"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/login/2fa/totp"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/login/webauthn-start"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/login/webauthn-start"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/login/webauthn-verify"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/logout"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/forgot"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/forgot"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/reset/:token"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/reset/:token"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/signup"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/signup"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/contact"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/contact"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/account/verify"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/account/verify/:token"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/account"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/account/profile"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/account/password"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/account/2fa/email/enable"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/account/2fa/email/remove"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/account/2fa/totp/setup"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/account/2fa/totp/setup"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/account/2fa/totp/remove"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/account/delete"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/account/logout-everywhere"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/account/unlink/:provider"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/account/webauthn/register"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/account/webauthn/register"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/account/webauthn/verify"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/account/webauthn/remove"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/lastfm"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/nyt"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/steam"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/stripe"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/api/stripe"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/scraping"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/twilio"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/api/twilio"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/foursquare"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/tumblr"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/facebook"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/github"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/twitch"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/paypal"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/paypal/success"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/paypal/cancel"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/lob"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/upload"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "POST",
+   "path": "/api/upload"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/here-maps"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/google-maps"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/google/drive"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/chart"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/google/sheets"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/quickbooks"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/trakt"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/pubchem"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/wikipedia"
+  },
+  {
+   "repo": "hackathon-starter",
+   "file": "app.js",
+   "method": "GET",
+   "path": "/api/giphy"
+  }
+ ]
+}

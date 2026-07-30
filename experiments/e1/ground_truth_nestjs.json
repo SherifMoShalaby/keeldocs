@@ -1,0 +1,275 @@
+{
+ "convention": "composed decorator paths; excludes setGlobalPrefix and version prefix",
+ "endpoints": [
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/tag/tag.controller.ts",
+   "method": "GET",
+   "path": "/tags"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/article/article.controller.ts",
+   "method": "GET",
+   "path": "/articles"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/article/article.controller.ts",
+   "method": "GET",
+   "path": "/articles/feed"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/article/article.controller.ts",
+   "method": "GET",
+   "path": "/articles/:slug"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/article/article.controller.ts",
+   "method": "GET",
+   "path": "/articles/:slug/comments"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/article/article.controller.ts",
+   "method": "POST",
+   "path": "/articles"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/article/article.controller.ts",
+   "method": "PUT",
+   "path": "/articles/:slug"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/article/article.controller.ts",
+   "method": "DELETE",
+   "path": "/articles/:slug"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/article/article.controller.ts",
+   "method": "POST",
+   "path": "/articles/:slug/comments"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/article/article.controller.ts",
+   "method": "DELETE",
+   "path": "/articles/:slug/comments/:id"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/article/article.controller.ts",
+   "method": "POST",
+   "path": "/articles/:slug/favorite"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/article/article.controller.ts",
+   "method": "DELETE",
+   "path": "/articles/:slug/favorite"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/app.controller.ts",
+   "method": "GET",
+   "path": "/"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/profile/profile.controller.ts",
+   "method": "GET",
+   "path": "/profiles/:username"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/profile/profile.controller.ts",
+   "method": "POST",
+   "path": "/profiles/:username/follow"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/profile/profile.controller.ts",
+   "method": "DELETE",
+   "path": "/profiles/:username/follow"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/user/user.controller.ts",
+   "method": "GET",
+   "path": "/user"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/user/user.controller.ts",
+   "method": "PUT",
+   "path": "/user"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/user/user.controller.ts",
+   "method": "POST",
+   "path": "/users"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/user/user.controller.ts",
+   "method": "DELETE",
+   "path": "/users/:slug"
+  },
+  {
+   "repo": "nestjs-realworld-example-app",
+   "file": "src/user/user.controller.ts",
+   "method": "POST",
+   "path": "/users/login"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/users/users.controller.ts",
+   "method": "POST",
+   "path": "/users"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/users/users.controller.ts",
+   "method": "GET",
+   "path": "/users"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/users/users.controller.ts",
+   "method": "GET",
+   "path": "/users/:id"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/users/users.controller.ts",
+   "method": "PATCH",
+   "path": "/users/:id"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/users/users.controller.ts",
+   "method": "DELETE",
+   "path": "/users/:id"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth/auth.controller.ts",
+   "method": "POST",
+   "path": "/auth/email/login"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth/auth.controller.ts",
+   "method": "POST",
+   "path": "/auth/email/register"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth/auth.controller.ts",
+   "method": "POST",
+   "path": "/auth/email/confirm"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth/auth.controller.ts",
+   "method": "POST",
+   "path": "/auth/email/confirm/new"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth/auth.controller.ts",
+   "method": "POST",
+   "path": "/auth/forgot/password"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth/auth.controller.ts",
+   "method": "POST",
+   "path": "/auth/reset/password"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth/auth.controller.ts",
+   "method": "GET",
+   "path": "/auth/me"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth/auth.controller.ts",
+   "method": "POST",
+   "path": "/auth/refresh"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth/auth.controller.ts",
+   "method": "POST",
+   "path": "/auth/logout"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth/auth.controller.ts",
+   "method": "PATCH",
+   "path": "/auth/me"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth/auth.controller.ts",
+   "method": "DELETE",
+   "path": "/auth/me"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth-google/auth-google.controller.ts",
+   "method": "POST",
+   "path": "/auth/google/login"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth-facebook/auth-facebook.controller.ts",
+   "method": "POST",
+   "path": "/auth/facebook/login"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/auth-apple/auth-apple.controller.ts",
+   "method": "POST",
+   "path": "/auth/apple/login"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/files/infrastructure/uploader/s3-presigned/files.controller.ts",
+   "method": "POST",
+   "path": "/files/upload"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/files/infrastructure/uploader/local/files.controller.ts",
+   "method": "POST",
+   "path": "/files/upload"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/files/infrastructure/uploader/local/files.controller.ts",
+   "method": "GET",
+   "path": "/files/:path"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/files/infrastructure/uploader/s3/files.controller.ts",
+   "method": "POST",
+   "path": "/files/upload"
+  },
+  {
+   "repo": "nestjs-boilerplate",
+   "file": "src/home/home.controller.ts",
+   "method": "GET",
+   "path": "/"
+  }
+ ]
+}

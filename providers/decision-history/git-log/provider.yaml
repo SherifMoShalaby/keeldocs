@@ -1,0 +1,9 @@
+id: git-log
+capability: decision-history
+semver: 0.0.1
+tier: code
+status: stub          # detect contract defined; extractor lands per docs/design/07-scope-roadmap.md
+detect: { any: [ { always: true } ] }
+inputs: [".git/"]
+requires: []
+timeout_class: D

@@ -1,0 +1,30 @@
+{
+ "endpoints": [
+  {
+   "file": "src/admin.controller.ts",
+   "method": "GET",
+   "path": "/admin/stats"
+  },
+  {
+   "file": "src/admin.controller.ts",
+   "method": "DELETE",
+   "path": "/admin/cache"
+  },
+  {
+   "file": "src/cats.controller.ts",
+   "method": "GET",
+   "path": "/cats"
+  },
+  {
+   "file": "src/cats.controller.ts",
+   "method": "GET",
+   "path": "/cats/:id"
+  },
+  {
+   "file": "src/cats.controller.ts",
+   "method": "POST",
+   "path": "/cats"
+  }
+ ],
+ "warnings": []
+}

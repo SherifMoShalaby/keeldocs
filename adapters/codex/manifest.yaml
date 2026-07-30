@@ -1,0 +1,6 @@
+agent: codex
+skills_dir: .agents/skills           # discovery: cwd -> repo root -> ~ -> /etc/codex/skills
+agents_md_block: true                # also append AGENTS.md block
+strip_fields: [disable-model-invocation, user-invocable]
+notes: skills listing capped at 8000 chars total - keep descriptions tight
+smoke_test: headless run detects seeded drift in fixtures/express-mounts

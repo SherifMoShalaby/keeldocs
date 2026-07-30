@@ -1,0 +1,125 @@
+{
+ "meta": {
+  "date": "2026-07-30",
+  "window": "2025-08-01..2026-07-30, 13 monthly snapshots",
+  "repos": {
+   "hono": "honojs/hono",
+   "zod": "colinhacks/zod (packages/zod/src)"
+  },
+  "extractor": "tree-sitter (tree_sitter 0.26.0, tree-sitter-typescript 0.23.2); token-normalized sigs: comments dropped, whitespace collapsed, comma/semicolon dropped, param names stripped to types, bodies excluded; hash=sha256(canonical JSON {kind,name,sigs}), path excluded from hash; overloads grouped per (path,name)",
+  "symbol_counts_m0_m12": {
+   "hono": [
+    579,
+    642
+   ],
+   "zod": [
+    1375,
+    1565
+   ]
+  }
+ },
+ "E2": {
+  "hono": {
+   "churn_pct_series": [
+    2.25,
+    0.84,
+    1.35,
+    0.82,
+    1.64,
+    1.3,
+    0.97,
+    0.48,
+    0.79,
+    0.94,
+    0.16,
+    0.47
+   ],
+   "churn_pct_avg": 1.0,
+   "hash_changed_total": 73,
+   "false_drift": {
+    "sampled": 13,
+    "false": 0,
+    "fraction": 0.0
+   },
+   "survival": {
+    "m0": 579,
+    "s0": 576,
+    "s1": 0,
+    "orphans": 3,
+    "raw_pct": 99.48,
+    "orphan_classes": {
+     "in_place_rename_missed": 2,
+     "genuine_deletion": 1,
+     "file_rename_missed": 0
+    },
+    "pct_excluding_genuine_deletions": 99.65
+   },
+   "gate_survival_ge_95": "PASS",
+   "gate_false_drift_lt_10pct": "PASS (0/13, small n)"
+  },
+  "zod": {
+   "churn_pct_series": [
+    1.98,
+    0.55,
+    0.27,
+    0.14,
+    3.2,
+    0.0,
+    0.0,
+    0.0,
+    1.28,
+    0.13,
+    0.0,
+    0.0
+   ],
+   "churn_pct_avg": 0.63,
+   "hash_changed_total": 110,
+   "false_drift": {
+    "sampled": 13,
+    "false": 1,
+    "fraction": 0.077,
+    "false_case": "treeifyError: implementation signature of overloaded fn in hash; public overloads unchanged"
+   },
+   "survival": {
+    "m0": 1375,
+    "s0": 1354,
+    "s1": 0,
+    "orphans": 21,
+    "raw_pct": 98.47,
+    "orphan_classes": {
+     "cross_file_move_or_consolidation": 21,
+     "genuine_deletion": 0,
+     "file_rename_missed": 0
+    },
+    "pct_excluding_genuine_deletions": 98.47,
+    "move_month_reanchor_probe": {
+     "unique_same_name_target": "21/21",
+     "identical_hash_at_move_month": "5/21"
+    }
+   },
+   "gate_survival_ge_95": "PASS",
+   "gate_false_drift_lt_10pct": "PASS (1/13, small n)"
+  },
+  "combined_false_drift": "1/26 = 3.8% (< 10% gate; modest n)"
+ },
+ "E3": {
+  "strict_S2_identical_sig_candidates": 0,
+  "symbol_removals_in_window": {
+   "hono": 4,
+   "zod": 23
+  },
+  "top1_accuracy": "N/A (0 candidates)",
+  "auto_rebinds_two_signal": 0,
+  "wrong_auto_rebinds": "0/0",
+  "gate_false_rebind_lt_0.5pct": "UNDERPOWERED (0 rebind opportunities in 24 repo-month pairs)",
+  "ground_truth_renames_via_body_sim": 2,
+  "strict_S2_recall_on_true_renames": "0/2 (both renames co-occurred with signature change)",
+  "relaxed_probe_one_candidate_plus_body_sim": "2/2 correct rebinds, 0 wrong (n=2, UNDERPOWERED)"
+ },
+ "caveats": [
+  "monthly granularity conflates move/rename commits with same-month signature edits; per-commit granularity would likely raise identical-sig match rates",
+  "false-drift judged on 26 sampled of 183 hash-changed cases; extractor coarsens some kinds (namespace bodies, untyped const initializers) which can only under-count churn, not inflate it",
+  "zod had 3 zero-commit or near-idle monthly intervals (two duplicate snapshot SHAs); churn avg includes them",
+  "two stable, well-maintained libraries; results may not transfer to repos with aggressive refactoring"
+ ]
+}

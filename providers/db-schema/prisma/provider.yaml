@@ -1,0 +1,11 @@
+id: prisma
+capability: db-schema
+semver: 0.1.0
+tier: code            # schema.prisma is declarative but needs a real parser (attributes,
+                      # relations, comments-inside-strings - see E1 finding on // in URLs)
+entry: ./prototype/extract_prisma.py
+detect: { any: [ { dependency: "prisma" }, { file: "**/schema.prisma" } ] }
+inputs: ["**/schema.prisma"]
+requires: []
+timeout_class: D
+emits: [table, column, relation, enum]

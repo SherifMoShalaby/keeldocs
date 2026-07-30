@@ -1,0 +1,5 @@
+{
+  "name": "keeldocs-marketplace",
+  "owner": { "name": "keeldocs" },
+  "plugins": [ { "name": "keeldocs", "source": "./", "description": "Living-documentation drift detection, agent-native." } ]
+}

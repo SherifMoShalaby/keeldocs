@@ -1,0 +1,29 @@
+schema_version: 1
+id: erd
+title: "Data model"
+requires:
+  - capability: db-schema
+    min_confidence: PARSED
+output:
+  path: "docs/architecture/data-model.md"
+  layering: { l0: domain-overview, l1: per-domain-erd, l2: per-table-pages }
+  diagram:
+    syntax: mermaid-erDiagram        # stable syntax; NOT experimental mermaid C4
+    fallback: graphviz-svg
+    emission: canonical              # sorted entities/edges -> semantic diffs
+binding:
+  section_unit: table
+  anchor_symbols: ["fact:db-schema/{schema}.{table}"]
+  max_symbols_per_section: 8
+  hash_kind: fact
+consumes:
+  fields: [columns, types, pk, fk, unique, nullability, enums, comments]
+  not:    [row_counts, sequence_values]
+slots:
+  - {id: "erd.overview",        kind: llm-prose, max_words: 120,
+     charter: "what this data model supports, for a new engineer",
+     facts: ["fact:db-schema/*"], regenerate_on: fact_hash}
+  - {id: "erd.{table}.purpose", kind: llm-prose, max_words: 60,
+     facts: ["fact:db-schema/{schema}.{table}"], regenerate_on: fact_hash}
+  - {id: "erd.{table}.notes",   kind: human}
+interview: []

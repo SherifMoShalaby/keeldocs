@@ -1,0 +1,9 @@
+id: drizzle
+capability: db-schema
+semver: 0.0.1
+tier: code
+status: stub          # detect contract defined; extractor lands per docs/design/07-scope-roadmap.md
+detect: { any: [ { dependency: "drizzle-orm" } ] }
+inputs: ["drizzle/**/*.json", "**/meta/_journal.json"]
+requires: []
+timeout_class: D

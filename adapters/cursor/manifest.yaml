@@ -1,0 +1,5 @@
+agent: cursor
+skills_dir: .cursor/skills
+agents_md_block: true
+strip_fields: [disable-model-invocation, user-invocable]
+smoke_test: headless run detects seeded drift in fixtures/express-mounts

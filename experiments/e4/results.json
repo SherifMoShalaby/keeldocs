@@ -1,0 +1,67 @@
+{
+  "experiment": "E4 - undrift INIT DOC LIE-DETECTOR prototype",
+  "date": "2026-07-30",
+  "design_gate": "finding precision >= 0.95",
+  "gate_result": "PASS (overall precision 1.00, n=2 findings; weakly powered - see caveats)",
+  "method": {
+    "clone": "git clone --depth=400, no npm install, repos deleted after measurement",
+    "docs_scope": "root *.md (excl. CHANGELOG/LICENSE/CODE_OF_CONDUCT) + docs/**/*.md + test/TESTING.md + .env.example (env claims)",
+    "verification": "every emitted finding and every suppressed candidate manually inspected against the worktree and git history"
+  },
+  "repos": {
+    "sahat/hackathon-starter": {
+      "claims_checked": {"A_file": 71, "B_npm_script": 7, "C_env_var": 69, "D_internal_link": 3, "E_route": 4},
+      "findings": {"A_file": 0, "B_npm_script": 0, "C_env_var": 1, "D_internal_link": 0, "E_route": 0},
+      "true_findings": 1,
+      "false_findings": 0,
+      "precision": 1.0,
+      "finding_ids": ["F-HS-1 OPENAI_API_KEY documented in .env.example:75, zero code references; feature removed in 31fea30 2026-05-22"]
+    },
+    "thedevs-network/kutt": {
+      "claims_checked": {"A_file": 5, "B_npm_script": 3, "C_env_var": 47, "D_internal_link": 8, "E_route": 0},
+      "findings": {"A_file": 0, "B_npm_script": 0, "C_env_var": 1, "D_internal_link": 0, "E_route": 0},
+      "true_findings": 1,
+      "false_findings": 0,
+      "precision": 1.0,
+      "finding_ids": ["F-KUTT-1 README.md:140 documents OIDC_POMPT (typo); code reads OIDC_PROMPT (server/env.js:67)"]
+    },
+    "gothinkster/node-express-realworld-example-app": {
+      "claims_checked": {"A_file": 1, "B_npm_script": 0, "C_env_var": 2, "D_internal_link": 1, "E_route": 0},
+      "findings": {"A_file": 0, "B_npm_script": 0, "C_env_var": 0, "D_internal_link": 0, "E_route": 0},
+      "true_findings": 0,
+      "false_findings": 0,
+      "precision": null,
+      "note": "zero findings is correct output; README verified accurate by hand"
+    }
+  },
+  "overall": {
+    "claims_checked_total": 221,
+    "findings_total": 2,
+    "true_findings": 2,
+    "false_findings": 0,
+    "precision": 1.0,
+    "zero_finding_classes": ["A_file", "B_npm_script", "D_internal_link", "E_route"],
+    "raw_precision_before_suppression_tuning": "2/32 = 0.06 (30 false-positive candidates observed across tuning iterations, all manually confirmed FP, none a suppressed true lie)"
+  },
+  "suppression_rules_added_during_tuning": [
+    "gitignored paths (.env, dist/) - runtime artifacts, 'create a .env' instructions",
+    "instructional/tutorial context (create/add/move/step N/you can + 6-line lookback window)",
+    "ASCII tree diagrams (illustrative structure)",
+    "dynamic env-name construction (key + \"_FILE\" docker-secrets convention)",
+    "npm dependency names that look like filenames (chart.js)",
+    "code-corroborated strings (doc path exists verbatim in code, e.g. runtime URL /js/lib/chart.umd.min.js in app.js libFiles)",
+    "placeholders: my-*, path/to, ..., <angle>, {curly}, your-*, user/repo slugs",
+    "model IDs with version-dot pseudo-extensions (qwen/qwen3.6-27b)",
+    "code idioms matching file patterns (process.env ~ *.env)",
+    "malformed markdown link wrapping <(url)> around external URLs",
+    "implicitly-read env vars stoplist (NODE_ENV, DEBUG, CI...) and yarn builtin subcommands"
+  ],
+  "caveats": [
+    "n=2 true findings: precision gate passes but is weakly powered; needs ~20+ findings across more repos for a confident >=95% claim",
+    "recall deliberately sacrificed for precision: instructional-context rule skipped 733/1610 README lines in hackathon-starter; unknown lies there would be missed",
+    "well-maintained repos yield few lies; the wow-test must run on users' own brownfield repos where drift accumulates",
+    "route-claim class (E) untested by any positive: 4 claims checked, all matched; detector logic exercised but never produced a finding on these repos",
+    "deletion-receipt path (git log --diff-filter=D) never fired for an emitted finding on these repos (both lies were env-var class); it fired only for suppressed candidates during tuning"
+  ],
+  "disk": "repos/ deleted after measurement"
+}

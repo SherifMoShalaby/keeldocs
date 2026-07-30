@@ -1,0 +1,70 @@
+{
+ "experiment": "E1 extraction recall/precision (directional, mini)",
+ "date": "2026-07-30",
+ "repos": {
+  "nestjs": [
+   "brocoders/nestjs-boilerplate@HEAD (24 endpoints)",
+   "lujakob/nestjs-realworld-example-app@HEAD (21 endpoints)"
+  ],
+  "express": [
+   "gothinkster/node-express-realworld-example-app@HEAD (20 endpoints)",
+   "sahat/hackathon-starter@HEAD (68 endpoints, app.js lines 252-323 deterministic subset)"
+  ],
+  "prisma": [
+   "node-express-realworld-example-app src/prisma/schema.prisma (4 models, 35 fields, 8 explicit @relation)"
+  ]
+ },
+ "match_key": "(repo, file, method, param-normalized path); ':x' == '{x}' == '{p}'",
+ "nestjs_declarative": {
+  "gate": {
+   "recall": 0.9,
+   "precision": 0.98
+  },
+  "truth": 45,
+  "extracted": 45,
+  "tp": 45,
+  "recall": 1.0,
+  "precision": 1.0,
+  "recall_ci95_low_rule_of_3": 0.933,
+  "precision_ci95_low_rule_of_3": 0.933,
+  "verdict": "PASS (recall passes gate even at CI lower bound; precision passes on point estimate, n=45 too small to certify >=0.98 statistically)"
+ },
+ "express_code_tier": {
+  "gate": {
+   "recall": 0.95,
+   "precision": 0.98
+  },
+  "truth": 88,
+  "extracted": 88,
+  "tp": 88,
+  "recall": 1.0,
+  "precision": 1.0,
+  "recall_ci95_low_rule_of_3": 0.966,
+  "precision_ci95_low_rule_of_3": 0.966,
+  "verdict": "PASS (recall passes gate even at CI lower bound; precision passes on point estimate, n=88 too small to certify >=0.98 statistically)",
+  "warnings_emitted": 1,
+  "warning_detail": "hackathon-starter app.js:234 app.get(fileUrl,...) dynamic loop registration correctly flagged as non-literal (outside labeled scope)"
+ },
+ "express_naive_declarative_baseline": {
+  "design_prediction": "~0.70 recall",
+  "truth": 88,
+  "extracted": 88,
+  "tp": 69,
+  "recall": 0.784,
+  "precision": 0.784,
+  "per_repo_recall": {
+   "node-express-realworld-example-app": 0.05,
+   "hackathon-starter": 1.0
+  },
+  "note": "all 19 misses = cross-file-mount-unresolved (missing /api prefix); blended number is corpus-mix dependent: 5% on router-structured app, 100% on flat single-file app"
+ },
+ "prisma": {
+  "expected": "~1.0 correctness",
+  "models_extracted": "4/4",
+  "fields_verified": "35/35 (all fields verified, not sampled)",
+  "field_name_type_arity_optionality_errors": 0,
+  "explicit_relations_verified": "8/8 correct (names, fields:[], references:[], incl. self-relation UserFollows both sides)",
+  "attr_text_fidelity_errors": 1,
+  "error_detail": "User.image attrs text truncated at '@default(\"https:' -- naive line.split('//') comment stripping breaks on '//' inside string literal; field structure still correct"
+ }
+}

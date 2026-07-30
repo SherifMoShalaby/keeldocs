@@ -1,0 +1,11 @@
+id: nestjs
+capability: http-endpoints
+semver: 0.1.0
+tier: declarative
+detect:
+  any:
+    - dependency: "@nestjs/core"
+inputs: ["src/**/*.ts", "libs/**/*.ts", "apps/**/*.ts"]
+requires: []
+timeout_class: D
+emits: [endpoint]

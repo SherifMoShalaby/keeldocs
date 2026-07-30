@@ -1,0 +1,9 @@
+id: env-readers
+capability: config-surface
+semver: 0.0.1
+tier: code
+status: stub          # detect contract defined; extractor lands per docs/design/07-scope-roadmap.md
+detect: { any: [ { always: true } ] }
+inputs: ["src/**/*.{ts,js}", ".env.example", ".env.schema"]
+requires: []
+timeout_class: D

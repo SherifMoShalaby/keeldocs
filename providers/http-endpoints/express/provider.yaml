@@ -1,0 +1,12 @@
+id: express
+capability: http-endpoints
+semver: 0.1.0
+tier: code            # dynamic registration (app.use mount chains) is invisible to
+                      # single-tree queries: E1 measured naive declarative at 5% recall
+                      # on a router-structured app vs 100% for this mount-graph resolver.
+entry: ./prototype/extract_express.py   # working prototype; engine port pending
+detect: { any: [ { dependency: "express" } ] }
+inputs: ["src/**/*.{ts,js,mjs}", "routes/**/*.{ts,js}", "*.js", "app/**/*.js"]
+requires: []
+timeout_class: C
+emits: [endpoint, extraction-gap]
