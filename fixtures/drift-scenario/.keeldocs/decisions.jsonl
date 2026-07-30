@@ -1,0 +1,1 @@
+{"at":"2026-07-30T09:00:00Z","actor":"sherif","type":"tombstone","target":"fact:http-endpoints/DELETE /orders","evidence":"endpoint removed deliberately in v2 API cleanup"}

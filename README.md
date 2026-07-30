@@ -2,7 +2,7 @@
 
 **Test coverage for your docs.** keeldocs anchors every doc section to the code it describes, deterministically flags drift with receipts — *"README references `scripts/setup.sh` — deleted in `8f21ac9`, 4 months ago"* — and proposes reviewable, section-level patches. Any stack, any agent, no SaaS.
 
-> Status: **pre-0.1 scaffold.** The design is complete (nine-expert panel, 13 ADRs) and the core assumptions passed their validation experiments on real repos. The deterministic engine is the next thing built. The CLI stub, envelope contract, fixture harness, and CI determinism gates in this repo are real and running today.
+> Status: **pre-0.1 scaffold.** The design is complete (nine-expert panel, 13 ADRs), the core assumptions passed their validation experiments on real repos, and the anchor engine and `keeldocs check` are real and running today - drift (stale/dead/tampered/intentionally-removed/unresolvable), tamper detection, journal semantics, coverage, envelope + exit codes, all under CI determinism gates. `init`/`sync`/`new` land next.
 
 ## Why
 
@@ -20,7 +20,7 @@ AI agents optimize the forward direction: spec → plan → code. Nothing mainta
 | Command | Does |
 |---|---|
 | `keeldocs init` | Detect stack → deterministic repo map (system map, ERD, endpoint inventory, config reference) → **doc lie-detector with receipts** → anchored starter docs + plan. Zero LLM, <5 min. |
-| `keeldocs check` | Drift + verify + coverage. Deterministic, CI-ready: exit 0/1/2/3, `--json` envelope, sticky PR comment. |
+| `keeldocs check` | **LIVE.** Drift + verify + coverage. Deterministic, CI-ready: exit 0/1/2/3, `--json` envelope. |
 | `keeldocs sync` | Section-level reviewable patches (`y/n/e/s/w`); human edits never overwritten. |
 | `keeldocs new <type>` | erd · system-map · endpoint-inventory · config-reference · adr |
 

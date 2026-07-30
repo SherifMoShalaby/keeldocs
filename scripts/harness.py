@@ -62,14 +62,47 @@ def main():
         except Exception as e:  # noqa: BLE001 - harness reports, never hides
             failures.append(f"{case['name']}: {e}")
 
-    # CLI envelope smoke: unknown state must be exit 2 with a parseable envelope
-    r = subprocess.run(["node", "bin/keeldocs.js", "check", "--json"],
+    # ---- check integration: drift-scenario must reproduce the golden report ----
+    def run_check(fixture, extra=()):
+        return subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js"), "check", "--json", *extra],
+                              cwd=os.path.join(ROOT, "fixtures", fixture),
+                              capture_output=True, text=True, timeout=180)
+
+    try:
+        r1, r2 = run_check("drift-scenario"), run_check("drift-scenario")
+        env = json.loads(r1.stdout)
+        assert r1.returncode == 1, f"expected exit 1, got {r1.returncode}"
+        assert env["code"] == "DRIFT_FOUND" and len(env["summary"]) <= 300
+        assert len(r1.stdout) <= 8192, "envelope exceeds 8KB cap"
+        if r1.stdout != r2.stdout:
+            raise AssertionError("NONDETERMINISTIC envelope (two runs differ)")
+        out_dir = os.path.join(ROOT, "fixtures", "drift-scenario", ".keeldocs", "out")
+        report_file = [f for f in os.listdir(out_dir) if f.startswith("check-")][0]
+        report = json.load(open(os.path.join(out_dir, report_file)))
+        report["meta"]["head"] = None  # volatile across commits
+        golden = json.load(open(os.path.join(ROOT, "fixtures", "drift-scenario", "golden", "check-report.json")))
+        if canonical(json.dumps(report)) != canonical(json.dumps(golden)):
+            raise AssertionError("full report != golden/check-report.json (regenerate deliberately if behavior changed)")
+        print("  PASS  check integration: drift-scenario (exit 1, all 6 states, matches golden)")
+    except Exception as e:
+        failures.append(f"check integration drift-scenario: {e}")
+
+    try:
+        r = run_check("express-mounts")
+        env = json.loads(r.stdout)
+        assert r.returncode == 0 and env["code"] == "CLEAN", f"rc={r.returncode} code={env.get('code')}"
+        print("  PASS  check integration: express-mounts (clean repo, exit 0)")
+    except Exception as e:
+        failures.append(f"check integration express-mounts: {e}")
+
+    # CLI envelope smoke: a stubbed command must be exit 2 with a parseable envelope
+    r = subprocess.run(["node", "bin/keeldocs.js", "sync", "--json"],
                        cwd=ROOT, capture_output=True, text=True)
     try:
         env = json.loads(r.stdout)
         assert r.returncode == 2 and env["v"] == 1 and env["code"] == "NOT_IMPLEMENTED"
         assert len(env["summary"]) <= 300
-        print("  PASS  CLI envelope smoke (exit 2, valid envelope)")
+        print("  PASS  CLI envelope smoke (stub exit 2, valid envelope)")
     except Exception:
         failures.append(f"CLI envelope smoke: rc={r.returncode} stdout={r.stdout[:200]!r}")
 
@@ -78,7 +111,7 @@ def main():
         for f in failures:
             print(f"  FAIL  {f}")
         sys.exit(1)
-    print(f"\nAll green: {len(MATRIX)} fixture cases + envelope smoke.")
+    print(f"\nAll green: {len(MATRIX)} extractor cases + 2 check integrations + envelope smoke.")
 
 
 if __name__ == "__main__":

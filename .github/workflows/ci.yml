@@ -14,7 +14,9 @@ jobs:
         with: { python-version: "3.12" }
       - name: Install extractor runtime (pinned)
         run: pip install "tree-sitter==0.26.0" "tree-sitter-typescript==0.23.2" tree-sitter-javascript
-      - name: Fixture matrix + determinism double-run + envelope smoke
+      - name: Engine unit tests
+        run: node --test tests/*.test.js
+      - name: Fixture matrix + check integration + determinism double-runs
         run: python3 scripts/harness.py
       # The determinism gate above is ADR-003's tested invariant in embryo:
       # when the engine lands, this job grows the cross-OS byte-identical matrix

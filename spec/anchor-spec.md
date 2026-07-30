@@ -99,3 +99,13 @@ Anchors: compact, one per section, deterministically ordered keys, sorted arrays
 ## 8. Versioning of this spec
 
 The anchor grammar carries an implicit major version via the `keeldocs:` prefix (`keeldocs2:` if ever needed); the spec is published as a versioned document in a separate repo (PM) so third parties can implement it without depending on the tool; frozen at 1.0 with a written migration policy as a v1.0 release gate.
+
+## 9. Engine implementation addenda (v0.1, 2026-07-30)
+
+Three clarifications the first engine implementation forced, now normative:
+
+1. **Tag grammar.** `keeldocs:` (bare colon) opens a section anchor; `keeldocs:gen` / `keeldocs:slot` open regions; `/keeldocs:gen` / `/keeldocs:slot` close them. Unbalanced or unclosed markers quarantine.
+2. **Gen-region fields.** `gen` markers carry `id`, optional `binds` (defaults to the longest-dot-prefix anchor's binds), `hash` (the fact-hash the content was rendered from - the committed drift baseline), and optional `content` (hash of the normalized body - CRLF folded, trailing whitespace stripped, outer blank lines dropped). `content` mismatch = **tampered** (hand-edited generated content, ADR-009); `hash` mismatch = **stale**; tamper is checked first. Multi-bind and wildcard sets hash as the aggregate: JCS of sorted `[id, fullHash]` pairs.
+3. **Value parsing.** Endpoint natural keys contain spaces ("GET /orders"), so marker values run from `<key>=` until the next token from that marker's fixed key set or end of marker; multiple binds separate with `,`. An attempted unknown `key=` inside a marker quarantines the whole marker (schema-strictness is the injection defense).
+
+Policy clock rule restated for implementers: fact extraction and drift comparison never read the clock; snooze expiry evaluates against wall clock locally and the HEAD commit timestamp under `--ci`, and reports carry no timestamps - CI output is a pure function of (SHA, committed journal).

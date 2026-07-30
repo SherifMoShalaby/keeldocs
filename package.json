@@ -8,8 +8,8 @@
   "bin": { "keeldocs": "bin/keeldocs.js" },
   "engines": { "node": ">=18" },
   "scripts": {
-    "test": "python3 scripts/harness.py",
-    "smoke": "node bin/keeldocs.js check --json; test $? -eq 2"
+    "test": "node --test tests/*.test.js && python3 scripts/harness.py",
+    "smoke": "node bin/keeldocs.js sync --json; test $? -eq 2"
   },
   "repository": { "type": "git", "url": "https://github.com/keeldocs/keeldocs" }
 }

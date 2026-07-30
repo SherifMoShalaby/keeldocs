@@ -1,0 +1,112 @@
+{
+ "v": 1,
+ "meta": {
+  "engine": "keeldocs@0.1.0-dev.0",
+  "head": null,
+  "providerSetHash": "90003edc9cac32a0",
+  "docsScanned": 2,
+  "mode": "local"
+ },
+ "capabilities": {
+  "http-endpoints": {
+   "status": "ok",
+   "providers": [
+    "express@0.1.0"
+   ]
+  },
+  "db-schema": {
+   "status": "ok",
+   "providers": [
+    "prisma@0.1.0"
+   ]
+  }
+ },
+ "counts": {
+  "clean": 3,
+  "stale": 1,
+  "dead": 1,
+  "intentionally_removed": 1,
+  "tampered": 1,
+  "driftTotal": 3
+ },
+ "findings": [
+  {
+   "id": "api.orders",
+   "doc": "docs/api.md",
+   "line": 4,
+   "kind": "anchor",
+   "state": "clean"
+  },
+  {
+   "id": "api.orders.table",
+   "doc": "docs/api.md",
+   "line": 6,
+   "kind": "gen",
+   "state": "clean"
+  },
+  {
+   "id": "api.health",
+   "doc": "docs/api.md",
+   "line": 14,
+   "kind": "gen",
+   "state": "stale",
+   "currentHash": "h1:a2fce12ef199a94c",
+   "recorded": "h1:0000000000000000"
+  },
+  {
+   "id": "api.create-item",
+   "doc": "docs/api.md",
+   "line": 21,
+   "kind": "anchor",
+   "state": "dead",
+   "missing": [
+    "fact:http-endpoints/POST /orders/{id}"
+   ],
+   "candidates": [
+    "fact:http-endpoints/POST /orders"
+   ]
+  },
+  {
+   "id": "api.legacy",
+   "doc": "docs/api.md",
+   "line": 24,
+   "kind": "anchor",
+   "state": "intentionally_removed",
+   "missing": [
+    "fact:http-endpoints/DELETE /orders"
+   ]
+  },
+  {
+   "id": "db.user",
+   "doc": "docs/data-model.md",
+   "line": 4,
+   "kind": "anchor",
+   "state": "clean"
+  },
+  {
+   "id": "db.user.columns",
+   "doc": "docs/data-model.md",
+   "line": 6,
+   "kind": "gen",
+   "state": "tampered",
+   "detail": "gen region content edited by hand"
+  }
+ ],
+ "coverage": {
+  "perCapability": {
+   "http-endpoints": {
+    "total": 4,
+    "documented": 3
+   },
+   "db-schema": {
+    "total": 3,
+    "documented": 1
+   }
+  },
+  "total": 7,
+  "documented": 4,
+  "pct": 57
+ },
+ "quarantined": [],
+ "extractionGaps": []
+}
