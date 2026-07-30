@@ -95,6 +95,53 @@ def main():
     except Exception as e:
         failures.append(f"check integration express-mounts: {e}")
 
+    # ---- init integration: wow loop end-to-end, born-clean, deterministic ----
+    import shutil, tempfile
+    def run_init_copy():
+        tmp = tempfile.mkdtemp(prefix="keeldocs-init-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        r = subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js"), "init", "--yes", "--json"],
+                           cwd=dst, capture_output=True, text=True, timeout=180)
+        return tmp, dst, r
+
+    try:
+        tmp1, dst1, r1 = run_init_copy()
+        env = json.loads(r1.stdout)
+        assert r1.returncode == 0 and env["code"] == "INITIALIZED", f"rc={r1.returncode} code={env.get('code')}"
+        # generated docs match goldens byte-for-byte
+        for rel, golden in [("docs/reference/endpoints.md", "golden/docs/endpoints.md"),
+                            ("docs/architecture/data-model.md", "golden/docs/data-model.md")]:
+            got = open(os.path.join(dst1, rel)).read()
+            want = open(os.path.join(ROOT, "fixtures", "init-scenario", golden)).read()
+            assert got == want, f"{rel} differs from {golden}"
+        # init report matches golden (volatile head stripped)
+        rep = json.load(open(os.path.join(dst1, ".keeldocs", "out", "init-nogit.json")))
+        rep["meta"]["head"] = None
+        gold = json.load(open(os.path.join(ROOT, "fixtures", "init-scenario", "golden", "init-report.json")))
+        assert canonical(json.dumps(rep)) == canonical(json.dumps(gold)), "init report != golden"
+        assert len(rep["lies"]["findings"]) == 4 and rep["coverage"]["after"]["pct"] == 100
+        # born-clean invariant: check immediately after init is CLEAN, exit 0
+        rc = subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js"), "check", "--json"],
+                            cwd=dst1, capture_output=True, text=True, timeout=180)
+        cenv = json.loads(rc.stdout)
+        assert rc.returncode == 0 and cenv["code"] == "CLEAN", "born-clean invariant violated"
+        # idempotence: second init in same tree writes nothing, skips both docs
+        r1b = subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js"), "init", "--yes", "--json"],
+                             cwd=dst1, capture_output=True, text=True, timeout=180)
+        env1b = json.loads(r1b.stdout)
+        assert env1b["data"]["docs"]["written"] == [] and len(env1b["data"]["docs"]["skipped"]) == 2
+        # determinism: a second fresh copy produces byte-identical docs
+        tmp2, dst2, _ = run_init_copy()
+        for rel in ["docs/reference/endpoints.md", "docs/architecture/data-model.md"]:
+            assert open(os.path.join(dst1, rel)).read() == open(os.path.join(dst2, rel)).read(), \
+                f"NONDETERMINISTIC init output: {rel}"
+        shutil.rmtree(tmp1); shutil.rmtree(tmp2)
+        print("  PASS  init integration: init-scenario (4 lies w/ receipts, born-clean, idempotent, deterministic)")
+    except Exception as e:
+        failures.append(f"init integration: {e}")
+
     # CLI envelope smoke: a stubbed command must be exit 2 with a parseable envelope
     r = subprocess.run(["node", "bin/keeldocs.js", "sync", "--json"],
                        cwd=ROOT, capture_output=True, text=True)
@@ -111,7 +158,7 @@ def main():
         for f in failures:
             print(f"  FAIL  {f}")
         sys.exit(1)
-    print(f"\nAll green: {len(MATRIX)} extractor cases + 2 check integrations + envelope smoke.")
+    print(f"\nAll green: {len(MATRIX)} extractor cases + 2 check + 1 init integrations + envelope smoke.")
 
 
 if __name__ == "__main__":

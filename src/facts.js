@@ -81,8 +81,12 @@ function endpointFacts(raw, provenanceBase, repoRoot) {
 function schemaFacts(raw, provenanceBase, schemaFile) {
   const facts = [];
   const src = [{ file: schemaFile }];
+  // Enum-typed fields are COLUMNS, not relations - the extractor's uppercase
+  // heuristic can't tell enums from model refs without this cross-check
+  // (found by init-scenario: `status Status` was silently dropped).
+  const enumNames = new Set((raw.enums ?? []).map((e) => e.name));
   for (const m of raw.models ?? []) {
-    const columns = (m.fields ?? []).filter((f) => !f.is_relation_field || f.relation).map((f) => ({
+    const columns = (m.fields ?? []).filter((f) => !f.is_relation_field || f.relation || enumNames.has(f.type)).map((f) => ({
       name: f.name, type: f.type, optional: !!f.optional, list: !!f.list, attrs: f.attrs ?? "",
     })); // ordered field - source order is semantic (ADR-008)
     const relations = (m.fields ?? []).filter((f) => f.relation).map((f) => ({

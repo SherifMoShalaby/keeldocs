@@ -32,6 +32,12 @@ if (cmd === "check") {
   process.exit(exit);
 }
 
+if (cmd === "init") {
+  const { runInit } = await import("../src/init.js");
+  const exit = runInit({ root: process.cwd(), json, yes: args.includes("--yes") });
+  process.exit(exit);
+}
+
 const msg = `keeldocs ${cmd}: not implemented yet - engine lands per docs/design/07-scope-roadmap.md`;
 if (json) console.log(envelope(false, "NOT_IMPLEMENTED", msg, ["see docs/design/02-architecture.md"]));
 else console.error(msg);

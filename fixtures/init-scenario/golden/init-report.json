@@ -1,0 +1,110 @@
+{
+ "v": 1,
+ "meta": {
+  "engine": "keeldocs@0.1.0-dev.0",
+  "head": null,
+  "providerSetHash": "90003edc9cac32a0",
+  "mode": "apply"
+ },
+ "card": {
+  "package": "init-scenario-fixture",
+  "capabilities": {
+   "http-endpoints": {
+    "status": "ok",
+    "providers": [
+     "express@0.1.0"
+    ]
+   },
+   "db-schema": {
+    "status": "ok",
+    "providers": [
+     "prisma@0.1.0"
+    ]
+   }
+  },
+  "facts": 5
+ },
+ "lies": {
+  "findings": [
+   {
+    "class": "file-claim",
+    "claim": "scripts/seed.js",
+    "doc": "README.md",
+    "line": 8,
+    "receipt": "not found in the repo; no deletion record in reachable history"
+   },
+   {
+    "class": "env-claim",
+    "claim": "ITEMS_CACHE_URL",
+    "doc": "README.md",
+    "line": 9,
+    "receipt": "read nowhere in code (scanned 3 files for process.env.ITEMS_CACHE_URL / env(\"ITEMS_CACHE_URL\"))"
+   },
+   {
+    "class": "script-claim",
+    "claim": "npm run deploy",
+    "doc": "README.md",
+    "line": 16,
+    "receipt": "no \"deploy\" in package.json scripts (lint, start)"
+   },
+   {
+    "class": "route-claim",
+    "claim": "GET /api/items",
+    "doc": "README.md",
+    "line": 20,
+    "receipt": "no matching route registration in extracted endpoints",
+    "candidates": [
+     "fact:http-endpoints/GET /items"
+    ]
+   }
+  ],
+  "suppressed": 2,
+  "scannedCodeFiles": 3,
+  "notes": []
+ },
+ "toolError": null,
+ "docs": {
+  "written": [
+   "docs/reference/endpoints.md",
+   "docs/architecture/data-model.md"
+  ],
+  "skipped": [],
+  "planned": [
+   "docs/reference/endpoints.md",
+   "docs/architecture/data-model.md"
+  ]
+ },
+ "coverage": {
+  "before": {
+   "perCapability": {
+    "http-endpoints": {
+     "total": 3,
+     "documented": 0
+    },
+    "db-schema": {
+     "total": 2,
+     "documented": 0
+    }
+   },
+   "total": 5,
+   "documented": 0,
+   "pct": 0
+  },
+  "after": {
+   "perCapability": {
+    "http-endpoints": {
+     "total": 3,
+     "documented": 3
+    },
+    "db-schema": {
+     "total": 2,
+     "documented": 2
+    }
+   },
+   "total": 5,
+   "documented": 5,
+   "pct": 100
+  }
+ },
+ "plan": []
+}
