@@ -13,6 +13,7 @@ import { extractAll } from "./facts.js";
 import { resolveBindIds, aggregateHash } from "./drift.js";
 import { display, hashesMatch } from "./hash.js";
 import { patchSlot } from "./patch.js";
+import { redact } from "./redact.js";
 
 export const DRAFT_LABEL = "> ⚠ Inferred draft - not human-reviewed.";
 
@@ -107,13 +108,14 @@ export function runSlotWrite({ root, json, args }) {
       return 1;
     }
 
-    // The TOOL labels and records - never the model.
-    const body = `${DRAFT_LABEL}\n\n${prose.trim()}`;
+    // The TOOL labels, redacts, and records - never the model (ADR-013).
+    const rp = redact(prose.trim());
+    const body = `${DRAFT_LABEL}\n\n${rp.clean}`;
     const patched = patchSlot(text, slotId, body, curHash ? display(curHash) : "h1:0000000000000000");
     writeFileSync(docPath, patched);
     const env = { v: 1, ok: true, code: "SLOT_WRITTEN",
-      summary: `draft written to ${docRel}#${slotId} (labeled, fact-state recorded); a human can attest it with: keeldocs approve ${docRel} ${slotId}`,
-      data: { doc: docRel, slot: slotId, words: prose.trim().split(/\s+/).length }, next: [`keeldocs approve ${docRel} ${slotId}`] };
+      summary: `${rp.redactions.length ? `SECURITY: ${rp.redactions.length} secret(s) redacted; ` : ""}draft written to ${docRel}#${slotId} (labeled, fact-state recorded); a human can attest it with: keeldocs approve ${docRel} ${slotId}`,
+      data: { doc: docRel, slot: slotId, words: prose.trim().split(/\s+/).length, ...(rp.redactions.length ? { redactions: rp.redactions } : {}) }, next: [`keeldocs approve ${docRel} ${slotId}`] };
     process.stdout.write(json ? JSON.stringify(env) + "\n" : env.summary + "\n");
     return 0;
   } catch (err) {

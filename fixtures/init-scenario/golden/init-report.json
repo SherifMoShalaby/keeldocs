@@ -63,6 +63,7 @@
   "notes": []
  },
  "toolError": null,
+ "redactions": [],
  "docs": {
   "written": [
    "docs/reference/endpoints.md",

@@ -5,8 +5,14 @@
 
 import { aggregateHash } from "./drift.js";
 import { contentHash, display } from "./hash.js";
+import { redact } from "./redact.js";
 
-function genBlock(id, binds, ids, factsById, body) {
+// Redaction happens BEFORE content-hashing (ADR-013): the recorded content=
+// hash must match the bytes actually written, so redacted docs stay born clean.
+function genBlock(id, binds, ids, factsById, rawBody, sink) {
+  const r = redact(rawBody);
+  if (sink && r.redactions.length) sink.push(...r.redactions.map((x) => ({ ...x, region: id })));
+  const body = r.clean;
   const hash = display(aggregateHash(ids, factsById));
   const content = display(contentHash(body));
   const bindsAttr = binds ? ` binds=${binds}` : "";
@@ -89,7 +95,7 @@ export function renderRegionBody(regionId, boundIds, factsById) {
 
 // ---------- whole-document renderers (init) ----------
 
-export function renderEndpointsDoc(factsById) {
+export function renderEndpointsDoc(factsById, sink) {
   const eps = endpointFacts(factsById);
   if (eps.length === 0) return null;
   const body = endpointsTableBody(factsById);
@@ -100,7 +106,7 @@ export function renderEndpointsDoc(factsById) {
     "<!-- keeldocs:slot id=api.inventory.overview binds=fact:http-endpoints/* max-words=120 -->",
     "<!-- /keeldocs:slot -->",
     "",
-    genBlock("api.inventory.table", null, eps.map((f) => f.id), factsById, body),
+    genBlock("api.inventory.table", null, eps.map((f) => f.id), factsById, body, sink),
     "",
     "<!-- Human notes below this line are never touched by keeldocs. -->",
     "",
@@ -108,7 +114,7 @@ export function renderEndpointsDoc(factsById) {
   return { path: "docs/reference/endpoints.md", content };
 }
 
-export function renderDataModelDoc(factsById) {
+export function renderDataModelDoc(factsById, sink) {
   const tables = tableFacts(factsById);
   const enums = enumFacts(factsById);
   if (tables.length === 0) return null;
@@ -122,7 +128,7 @@ export function renderDataModelDoc(factsById) {
     "<!-- /keeldocs:slot -->",
     "",
     "## Diagram",
-    genBlock("db.root.diagram", null, allDbIds, factsById, diagramBody(factsById)),
+    genBlock("db.root.diagram", null, allDbIds, factsById, diagramBody(factsById), sink),
     "",
   ];
   for (const t of tables) {
@@ -132,14 +138,14 @@ export function renderDataModelDoc(factsById) {
       `## ${name}`,
       `<!-- keeldocs: id=${idSlug} recipe=erd@1 binds=${t.id} hash-kind=fact -->`,
       "",
-      genBlock(`${idSlug}.columns`, null, [t.id], factsById, tableColumnsBody(t)),
+      genBlock(`${idSlug}.columns`, null, [t.id], factsById, tableColumnsBody(t), sink),
       "",
     );
   }
   if (enums.length) {
     parts.push(
       "## Enums",
-      genBlock("db.enums", enums.map((e) => e.id).sort().join(","), enums.map((e) => e.id), factsById, enumsBody(factsById)),
+      genBlock("db.enums", enums.map((e) => e.id).sort().join(","), enums.map((e) => e.id), factsById, enumsBody(factsById), sink),
       "",
     );
   }
@@ -147,6 +153,6 @@ export function renderDataModelDoc(factsById) {
   return { path: "docs/architecture/data-model.md", content: parts.join("\n") };
 }
 
-export function renderAll(factsById) {
-  return [renderEndpointsDoc(factsById), renderDataModelDoc(factsById)].filter(Boolean);
+export function renderAll(factsById, sink) {
+  return [renderEndpointsDoc(factsById, sink), renderDataModelDoc(factsById, sink)].filter(Boolean);
 }

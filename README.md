@@ -10,6 +10,7 @@ AI agents optimize the forward direction: spec → plan → code. Nothing mainta
 
 ## How it works (the short version)
 
+- **Write barrier.** Every machine-generated body passes the redaction barrier before hashing: secret patterns + entropy scan, `[REDACTED:rule]` substitution, loud envelope reporting - a matched secret never lands in a committed doc.
 - **Deterministic spine.** Providers extract typed facts (endpoints, schema, env vars, services) from your repo — sandboxed, cache-keyed, byte-identical across runs. Facts, not prose, define truth.
 - **Anchors.** Doc sections carry tiny identity-only HTML comments binding them to symbols/facts. Drift = the bound fact-hash changed. Formatting churn never pages anyone.
 - **Draft-only LLM.** The engine contains zero model-calling code. Your agent writes prose only through a validating gate (`slot-write`); the tool applies the `⚠ inferred` label; verified facts render unbadged.

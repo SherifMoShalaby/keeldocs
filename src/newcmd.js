@@ -9,6 +9,7 @@ import { mkdirSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { extractAll } from "./facts.js";
 import { renderEndpointsDoc, renderDataModelDoc } from "./render.js";
+import { redact } from "./redact.js";
 
 const TYPES = ["erd", "endpoint-inventory", "adr", "system-map", "config-reference"];
 
@@ -66,7 +67,8 @@ export function runNew({ root, json, args }) {
         "(What becomes easier, what becomes harder, what is now owed.)",
         "",
       ].join("\n");
-      writeFileSync(join(root, rel), body);
+      const adrRed = redact(body);
+      writeFileSync(join(root, rel), adrRed.clean);
       return emit(json, 0, { v: 1, ok: true, code: "CREATED",
         summary: `${rel} created - fill Context/Decision/Consequences in your own words, then commit`,
         data: { path: rel, number: next }, next: [] });
@@ -77,7 +79,8 @@ export function runNew({ root, json, args }) {
     if (toolError) {
       return emit(json, 2, { v: 1, ok: false, code: "TOOL_ERROR", summary: `tooling error: ${toolError}`, data: {}, next: [] });
     }
-    const rendered = type === "erd" ? renderDataModelDoc(factsById) : renderEndpointsDoc(factsById);
+    const sink = [];
+    const rendered = type === "erd" ? renderDataModelDoc(factsById, sink) : renderEndpointsDoc(factsById, sink);
     if (!rendered) {
       return emit(json, 2, { v: 1, ok: false, code: "NOT_AVAILABLE",
         summary: `no ${type === "erd" ? "db-schema" : "http-endpoints"} facts extracted from this repo - nothing true to render`,
@@ -90,9 +93,10 @@ export function runNew({ root, json, args }) {
     }
     mkdirSync(dirname(join(root, rendered.path)), { recursive: true });
     writeFileSync(join(root, rendered.path), rendered.content);
+    const redNote = sink.length ? ` - SECURITY: ${sink.length} secret(s) redacted, review before commit` : "";
     return emit(json, 0, { v: 1, ok: true, code: "CREATED",
-      summary: `${rendered.path} created (born clean - anchored, hashed, drift-armed)`,
-      data: { path: rendered.path }, next: ["keeldocs check"] });
+      summary: `${rendered.path} created (born clean - anchored, hashed, drift-armed)${redNote}`,
+      data: { path: rendered.path, ...(sink.length ? { redactions: sink } : {}) }, next: ["keeldocs check"] });
   } catch (err) {
     return emit(json, 2, { v: 1, ok: false, code: "TOOL_ERROR", summary: String(err.message).slice(0, 300), data: {}, next: [] });
   }

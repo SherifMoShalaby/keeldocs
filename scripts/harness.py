@@ -276,6 +276,32 @@ def main():
     except Exception as e:
         failures.append(f"new/slot-write integration: {e}")
 
+    # ---- redaction barrier: secret in facts -> [REDACTED] in docs, still born clean ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-redact-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        sch = os.path.join(dst, "prisma", "schema.prisma")
+        sch_src = open(sch).read().replace("  status Status @default(ACTIVE)",
+            '  status Status @default(ACTIVE)\n  api_key String @default("AKIAABCDEFGHIJKLMNOP")')
+        open(sch, "w").write(sch_src)
+        r = subprocess.run(["node", KD, "init", "--yes", "--json"], cwd=dst,
+                           capture_output=True, text=True, timeout=180)
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and "SECURITY:" in env_["summary"], "redaction must be loud in the envelope"
+        assert any(x["rule"] == "aws-access-key" for x in env_["data"]["redactions"])
+        dm = open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
+        assert "[REDACTED:aws-access-key]" in dm and "AKIAABCDEFGHIJKLMNOP" not in dm
+        rc = subprocess.run(["node", KD, "check", "--json"], cwd=dst, capture_output=True, text=True, timeout=180)
+        assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", \
+            "redacted docs must be born clean (hashes computed post-redaction)"
+        shutil.rmtree(tmp)
+        print("  PASS  redaction barrier: secret neutralized, envelope loud, born-clean preserved")
+    except Exception as e:
+        failures.append(f"redaction barrier: {e}")
+
     # CLI envelope smoke: usage error must be exit 2 with a parseable envelope
     r = subprocess.run(["node", "bin/keeldocs.js", "bogus-command", "--json"],
                        cwd=ROOT, capture_output=True, text=True)

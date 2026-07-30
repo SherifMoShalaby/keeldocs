@@ -61,7 +61,8 @@ export function runInit({ root, json, yes }) {
   writeFileSync(outPath, JSON.stringify(report, null, 1) + "\n");
 
   const l = report.lies;
-  const summary = (`${l.findings.length} doc lie(s) found with receipts; ` +
+  const redNote = report.redactions?.length ? `SECURITY: ${report.redactions.length} secret(s) redacted from generated docs - review before commit; ` : "";
+  const summary = (redNote + `${l.findings.length} doc lie(s) found with receipts; ` +
     (applied
       ? `${report.docs.written.length} starter doc(s) written`
       : `${report.docs.planned.length} starter doc(s) ready (dry-run - rerun with --yes)`) +
@@ -78,6 +79,7 @@ export function runInit({ root, json, yes }) {
         ...(f.candidates?.length ? { candidates: f.candidates } : {}),
       })),
       liesSuppressed: l.suppressed,
+      ...(report.redactions?.length ? { redactions: report.redactions } : {}),
       docs: report.docs,
       coverage: report.coverage,
       plan: report.plan.slice(0, 10),
@@ -120,7 +122,8 @@ function doInit(root, yes) {
   const lies = detectLies({ root, docPaths: preDocs, factsById, pkg });
 
   // Starter docs - never overwrite; an existing file is human-owned, full stop.
-  const rendered = renderAll(factsById);
+  const redactions = [];
+  const rendered = renderAll(factsById, redactions);
   const written = [], skipped = [], planned = [];
   for (const r of rendered) {
     const abs = join(root, r.path);
@@ -157,7 +160,7 @@ function doInit(root, yes) {
       v: 1,
       meta: { engine: `keeldocs@${ENGINE_VERSION}`, head: gitHead(root), providerSetHash,
               mode: yes ? "apply" : "dry-run" },
-      card, lies, toolError,
+      card, lies, toolError, redactions,
       docs: { written, skipped, planned },
       coverage: { before: before.cov, after: after.cov },
       plan,

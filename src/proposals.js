@@ -10,6 +10,7 @@
 // Every proposal carries evidence ("w" in the y/n/e/s/w grammar).
 
 import { renderRegionBody } from "./render.js";
+import { redact } from "./redact.js";
 import { resolveBindIds, aggregateHash } from "./drift.js";
 import { contentHash, display } from "./hash.js";
 import { inheritBinds } from "./anchors.js";
@@ -32,13 +33,16 @@ export function buildProposals({ findings, regions, anchors, factsById }) {
       if (region.kind !== "gen") continue;
       const binds = region.binds?.length ? region.binds : inheritBinds(region, anchors);
       const ids = resolveBindIds(binds, factsById);
-      const newBody = renderRegionBody(f.id, ids, factsById);
+      const rawBody = renderRegionBody(f.id, ids, factsById);
+      const red = rawBody === null ? null : redact(rawBody);
+      const newBody = red ? red.clean : null;
       if (newBody === null) {
         proposals.push({ id: f.id, kind: "unrenderable", doc: f.doc, line: f.line,
           evidence: `${f.state} but no registered renderer for this region id - edit by hand, then re-run init-style generation or update the recorded hashes deliberately` });
         continue;
       }
       proposals.push({
+        ...(red.redactions.length ? { redactions: red.redactions } : {}),
         id: f.id, kind: f.state === "tampered" ? "restore" : "regenerate",
         doc: f.doc, line: f.line,
         newBody,
