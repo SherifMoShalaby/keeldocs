@@ -1,0 +1,18 @@
+id: sql-replay
+capability: db-schema
+semver: 0.3.0
+tier: code            # the v0.2-promised replay engine (design doc 11 R1): SQL
+                      # migration chains executed in-order against an ephemeral
+                      # in-process Postgres (pglite, WASM - E13: 10/10 chains
+                      # byte-identical to real PostgreSQL 16), then the CATALOG
+                      # is introspected. Repo-derived instance => INTROSPECTED
+                      # is legitimate under ADR-003's tier reservation.
+confidence: INTROSPECTED
+exec: node            # first node-exec provider; runtime dep is the pglite
+                      # optionalDependency, imported ONLY when a chain exists
+entry: ./replay.mjs
+detect: { dirs: ["supabase/migrations", "migrations", "db/migrations", "db/migration", "sql/migrations", "prisma/migrations"] }
+inputs: ["supabase/migrations/*.sql", "migrations/*.sql", "db/migrations/*.sql", "db/migration/*.sql", "sql/migrations/*.sql", "prisma/migrations/*/migration.sql"]
+requires: ["@electric-sql/pglite"]
+timeout_class: C
+emits: [table, enum, extraction-gap]

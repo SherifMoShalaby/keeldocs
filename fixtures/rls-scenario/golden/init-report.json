@@ -3,7 +3,7 @@
  "meta": {
   "engine": "keeldocs@0.2.0-dev.0",
   "head": null,
-  "providerSetHash": "8fd95133784dcabd",
+  "providerSetHash": "c6c00942468e5ec4",
   "mode": "apply"
  },
  "card": {
@@ -24,7 +24,7 @@
    "db-schema": {
     "status": "ok",
     "providers": [
-     "prisma@0.1.0"
+     "sql-replay@0.3.0"
     ]
    },
    "decision-history": {
@@ -57,34 +57,28 @@
     ]
    }
   },
-  "facts": 9
+  "facts": 8
  },
  "lies": {
   "findings": [],
   "suppressed": 0,
-  "scannedCodeFiles": 2,
+  "scannedCodeFiles": 1,
   "notes": []
  },
  "toolError": null,
  "redactions": [],
  "docs": {
   "written": [
-   "docs/architecture/data-model.md",
-   "docs/reference/configuration.md"
+   "docs/architecture/data-model.md"
   ],
   "skipped": [],
   "planned": [
-   "docs/architecture/data-model.md",
-   "docs/reference/configuration.md"
+   "docs/architecture/data-model.md"
   ]
  },
  "coverage": {
   "before": {
    "perCapability": {
-    "config-surface": {
-     "total": 1,
-     "documented": 0
-    },
     "db-policies": {
      "total": 3,
      "documented": 0
@@ -94,16 +88,12 @@
      "documented": 0
     }
    },
-   "total": 6,
+   "total": 5,
    "documented": 0,
    "pct": 0
   },
   "after": {
    "perCapability": {
-    "config-surface": {
-     "total": 1,
-     "documented": 1
-    },
     "db-policies": {
      "total": 3,
      "documented": 3
@@ -113,8 +103,8 @@
      "documented": 2
     }
    },
-   "total": 6,
-   "documented": 6,
+   "total": 5,
+   "documented": 5,
    "pct": 100
   }
  },

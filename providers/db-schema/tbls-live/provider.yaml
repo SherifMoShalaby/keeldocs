@@ -1,8 +1,13 @@
 id: tbls-live
 capability: db-schema
-semver: 0.2.0
+semver: 0.2.1
 tier: code            # wraps tbls (wrap-don't-rebuild); catalog-only introspection
-confidence: INTROSPECTED   # top of the ADR-003 lattice - it IS the database
+confidence: OBSERVED  # ADR-003 as decided: INTROSPECTED is reserved for
+                      # REPO-DERIVED instances (sql-replay); an ad-hoc live
+                      # environment read is an OBSERVATION. Reclassified when
+                      # the replay engine landed (doc 11 R1), resolving the
+                      # deviation flagged in the ADR-003 amendment. Identity
+                      # handling (declared-beats-live skip) is unchanged.
 live: true            # OPT-IN: runs only under --live, never in default or CI checks
 entry: ./extract_tbls.py
 detect: { always: true }   # gating is the live flag, not detection

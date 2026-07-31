@@ -62,6 +62,14 @@ MATRIX = [
         "golden": "fixtures/prisma-basic/golden/db-schema.json",
     },
     {
+        # R1 replay engine: chain -> ephemeral pglite -> catalog introspection
+        # (node-exec provider; E13: 10/10 chains byte-identical to real PG 16)
+        "name": "replay-scenario / db-schema (sql-replay via pglite)",
+        "cmd": ["node", "providers/db-schema/sql-replay/replay.mjs",
+                "fixtures/replay-scenario"],
+        "golden": "fixtures/replay-scenario/golden/db-schema-replay.json",
+    },
+    {
         "name": "compose-scenario / workspace-layout",
         "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
                 "fixtures/compose-scenario"],
@@ -493,7 +501,10 @@ def main():
         r = kd(dst, "init", "--json")
         env_ = json.loads(r.stdout)
         caps = env_["data"]["card"]["capabilities"]
-        assert "db-schema" not in caps, "disabled provider must not even detect"
+        # since R1 the registry always carries sql-replay; with prisma disabled
+        # and no migration dirs here, db-schema must be HONESTLY ABSENT (empty
+        # card entry), never extracted-by-someone-else
+        assert caps["db-schema"] == {"status": "absent", "providers": []}, caps["db-schema"]
         assert "docs/architecture/data-model.md" not in env_["data"]["docs"]["planned"]
         # schema-strict config: a typo'd key is a CONFIG error, never a silent no-op
         W(os.path.join(dst, "keeldocs.toml"), '[providers]\ndisabel = ["prisma"]\n')
@@ -556,11 +567,13 @@ def main():
         assert r.returncode == 0 and env_["code"] == "INITIALIZED", r.stdout[:200]
         # coverage counts policies as concrete surfaces (rls flags excluded)
         assert env_["data"]["coverage"]["after"]["pct"] == 100, env_["data"]["coverage"]
-        for rel, gold in [("docs/architecture/data-model.md", "data-model.md"),
-                          ("docs/reference/configuration.md", "configuration.md")]:
-            got = open(os.path.join(dst, rel)).read()
-            want = open(os.path.join(ROOT, "fixtures", "rls-scenario", "golden", "docs", gold)).read()
-            assert got == want, f"{rel} differs from golden"
+        # pure-SQL supabase repo since R1: tables come from sql-replay, so the
+        # ERD golden carries real catalog types; no prisma -> no config doc
+        got = open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
+        want = open(os.path.join(ROOT, "fixtures", "rls-scenario", "golden", "docs", "data-model.md")).read()
+        assert got == want, "data-model.md differs from golden"
+        caps = env_["data"]["card"]["capabilities"]
+        assert caps["db-schema"]["providers"] == ["sql-replay@0.3.0"], caps["db-schema"]
         dm = open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
         assert "notes_all" not in dm, "dropped policy must not survive the replay"
         assert "notes_owner_rw" in dm and "RLS enabled on `public.orders`" in dm
@@ -568,8 +581,10 @@ def main():
         assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", "born-clean invariant violated"
         # a new tightening migration must stale ONLY db.policies
         W(os.path.join(dst, "supabase", "migrations", "0003_restrict.sql"),
+          # must be REPLAYABLE sql since R1: the engine executes migrations now,
+          # and a policy naming a nonexistent column fails the whole chain
           "drop policy notes_admin_read on notes;\n"
-          "create policy notes_admin_read on notes for select to admin using (org_id = 'x');\n")
+          "create policy notes_admin_read on notes for select to admin using (body is not null);\n")
         r = kd(dst, "check", "--json")
         top = {t["id"]: t["state"] for t in json.loads(r.stdout)["data"]["top"]}
         assert r.returncode == 1 and top == {"db.policies": "stale"}, top
@@ -770,7 +785,7 @@ def main():
         env_ = json.loads(r.stdout)
         assert r.returncode == 0, r.stdout[:300]
         assert sorted(env_["data"]["card"]["capabilities"]["db-schema"]["providers"]) == \
-            ["prisma@0.1.0", "tbls-live@0.2.0"]
+            ["prisma@0.1.0", "tbls-live@0.2.1"]
         dm = open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
         assert "public.orders" in dm and "public.users" in dm and "Item" in dm
         assert "public.item" not in dm, "declared-beats-live must skip the shadowed table"
@@ -790,6 +805,35 @@ def main():
         print("  PASS  live-Postgres (tbls): opt-in only, declared-beats-live, CI guard, env-named DSN")
     except Exception as e:
         failures.append(f"live integration: {e}")
+
+    # ---- replay engine end-to-end: pure-SQL repo -> ERD -> drift loop ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-replay-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "replay-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        r = kd(dst, "init", "--yes", "--json")
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and env_["code"] == "INITIALIZED", r.stdout[:200]
+        assert env_["data"]["card"]["capabilities"]["db-schema"]["providers"] == ["sql-replay@0.3.0"]
+        dm = open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
+        assert "public.users" in dm and "public.posts" in dm and "public.orders" in dm, "replayed tables must render"
+        assert "order_status" in dm, "replayed enum must render"
+        rc = kd(dst, "check", "--json")
+        assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", "born-clean invariant violated"
+        # drift loop: a NEW migration changes the catalog -> db docs stale -> sync -> clean
+        W(os.path.join(dst, "supabase", "migrations", "0004_archive.sql"),
+          "create table archives (id serial primary key, order_id integer references orders(id));\n")
+        r = kd(dst, "check", "--json")
+        assert r.returncode == 1, "new migration must drift the ERD"
+        assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
+        assert "public.archives" in open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
+        rmtree(tmp)
+        print("  PASS  replay engine: chain -> catalog ERD, born-clean, migration drift loop closes")
+    except Exception as e:
+        failures.append(f"replay integration: {e}")
 
     # ---- interview: cap-5 cards from engine state, resumable, journal-verified ----
     try:

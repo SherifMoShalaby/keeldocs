@@ -5,42 +5,42 @@
 <!-- /keeldocs:slot -->
 
 ## Diagram
-<!-- keeldocs:gen id=db.root.diagram hash=h1:019c5f68c19f467f content=h1:e3c12c8857432a70 -->
+<!-- keeldocs:gen id=db.root.diagram hash=h1:a12783d370bf5520 content=h1:01230ee4e87e64d0 -->
 ```mermaid
 erDiagram
-  Note {
-    Int id
-    String body
-    String owner
+  public.notes {
+    int4 id
+    text body "nullable"
+    uuid owner "nullable"
   }
-  Order {
-    Int id
-    String userId
-    Int total
+  public.orders {
+    int4 id
+    uuid user_id "nullable"
+    int4 total "nullable"
   }
 ```
 <!-- /keeldocs:gen -->
 
-## Note
-<!-- keeldocs: id=db.note recipe=erd@1 binds=fact:db-schema/Note hash-kind=fact -->
+## public.notes
+<!-- keeldocs: id=db.public.notes recipe=erd@1 binds=fact:db-schema/public.notes hash-kind=fact -->
 
-<!-- keeldocs:gen id=db.note.columns hash=h1:25183e65302c6ebe content=h1:01a36808d9a13d7f -->
+<!-- keeldocs:gen id=db.public.notes.columns hash=h1:e1b235a6b4ef0973 content=h1:6717085eb2a697d3 -->
 | column | type | attributes |
 |---|---|---|
-| id | Int | @id @default(autoincrement()) |
-| body | String |  |
-| owner | String |  |
+| id | int4 | default nextval('notes_id_seq'::regclass) |
+| body | text? |  |
+| owner | uuid? |  |
 <!-- /keeldocs:gen -->
 
-## Order
-<!-- keeldocs: id=db.order recipe=erd@1 binds=fact:db-schema/Order hash-kind=fact -->
+## public.orders
+<!-- keeldocs: id=db.public.orders recipe=erd@1 binds=fact:db-schema/public.orders hash-kind=fact -->
 
-<!-- keeldocs:gen id=db.order.columns hash=h1:a6b0468a35368064 content=h1:a98c845cd6f4b088 -->
+<!-- keeldocs:gen id=db.public.orders.columns hash=h1:eeba8aa281ab263e content=h1:74a9bb217cf2d91d -->
 | column | type | attributes |
 |---|---|---|
-| id | Int | @id @default(autoincrement()) |
-| userId | String |  |
-| total | Int |  |
+| id | int4 | default nextval('orders_id_seq'::regclass) |
+| user_id | uuid? |  |
+| total | int4? |  |
 <!-- /keeldocs:gen -->
 
 ## Access control (RLS)

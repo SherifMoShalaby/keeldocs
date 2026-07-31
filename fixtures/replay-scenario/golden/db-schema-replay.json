@@ -1,0 +1,115 @@
+{
+ "tables": [
+  {
+   "schema": "public",
+   "table": "orders",
+   "name": "public.orders",
+   "columns": [
+    {
+     "name": "id",
+     "type": "int8",
+     "nullable": false,
+     "default": "nextval('orders_id_seq'::regclass)"
+    },
+    {
+     "name": "status",
+     "type": "order_status",
+     "nullable": false,
+     "default": "'pending'::order_status"
+    },
+    {
+     "name": "total",
+     "type": "numeric",
+     "nullable": false,
+     "default": null
+    },
+    {
+     "name": "user_id",
+     "type": "int4",
+     "nullable": true,
+     "default": null
+    }
+   ],
+   "relations": [
+    {
+     "field": "user_id",
+     "target": "public.users"
+    }
+   ]
+  },
+  {
+   "schema": "public",
+   "table": "posts",
+   "name": "public.posts",
+   "columns": [
+    {
+     "name": "id",
+     "type": "int4",
+     "nullable": false,
+     "default": "nextval('posts_id_seq'::regclass)"
+    },
+    {
+     "name": "author_id",
+     "type": "int4",
+     "nullable": false,
+     "default": null
+    },
+    {
+     "name": "title",
+     "type": "varchar",
+     "nullable": false,
+     "default": null
+    },
+    {
+     "name": "body",
+     "type": "text",
+     "nullable": true,
+     "default": null
+    }
+   ],
+   "relations": [
+    {
+     "field": "author_id",
+     "target": "public.users"
+    }
+   ]
+  },
+  {
+   "schema": "public",
+   "table": "users",
+   "name": "public.users",
+   "columns": [
+    {
+     "name": "id",
+     "type": "int4",
+     "nullable": false,
+     "default": "nextval('users_id_seq'::regclass)"
+    },
+    {
+     "name": "email",
+     "type": "text",
+     "nullable": false,
+     "default": null
+    },
+    {
+     "name": "created_at",
+     "type": "timestamptz",
+     "nullable": false,
+     "default": "now()"
+    }
+   ],
+   "relations": []
+  }
+ ],
+ "enums": [
+  {
+   "name": "public.order_status",
+   "values": [
+    "pending",
+    "paid",
+    "shipped"
+   ]
+  }
+ ],
+ "warnings": []
+}

@@ -24,8 +24,9 @@ const KNOWN_KEYS = new Set([
   "id", "capability", "semver", "tier", "confidence", "entry", "runtime",
   "query", "language", "detect", "argMode", "needs", "inputs", "requires",
   "timeout_class", "emits", "status", "verbs", "files", "skip-files", "live",
+  "exec",
 ]);
-const DETECT_KEYS = new Set(["always", "deps", "files"]);
+const DETECT_KEYS = new Set(["always", "deps", "files", "dirs"]);
 
 // ---------- strict YAML-subset parser ----------
 
@@ -133,6 +134,9 @@ function validate(y, dir, file) {
     if (!DETECT_KEYS.has(k)) throw new Error(`${file}: detect.\`${k}\` unknown (known: ${[...DETECT_KEYS].join(", ")})`);
   }
   if (y.runtime !== undefined && y.runtime !== "query") throw new Error(`${file}: runtime must be \`query\` when present`);
+  if (y.exec !== undefined && y.exec !== "python" && y.exec !== "node") {
+    throw new Error(`${file}: exec must be \`python\` (default) or \`node\``);
+  }
   if (y.runtime === "query") {
     need("query", "string"); need("language", "string");
     if (!existsSync(join(dir, y.query))) throw new Error(`${file}: query file \`${y.query}\` not found`);
@@ -178,6 +182,7 @@ export function loadProviders(root = ENGINE_ROOT) {
           : { entry: `providers/${cap}/${id}/${y.entry.replace(/^\.\//, "")}`, dir: toPosix(dir) }),
         factInputs,
         ...(y.live === true ? { live: true } : {}),
+        ...(y.exec === "node" ? { exec: "node" } : {}), // default python stays implicit
         timeoutClass: y.timeout_class ?? "D",
         needs: [...new Set([...(y.needs ?? []), ...factInputs])],
       });

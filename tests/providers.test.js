@@ -107,10 +107,27 @@ test("loader: ${facts:cap} inputs become factInputs and imply needs edges", (t) 
   assert.deepEqual(r.map((e) => e.id), ["a1", "b1"], "topo respects the implied edge");
 });
 
+test("loader: exec key - node accepted onto the entry, anything else rejected", (t) => {
+  const root = tree({
+    "providers/cap/n1/provider.yaml": OK("cap", "n1", "exec: node\n"),
+    "providers/cap/n1/x.py": "",
+  });
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const [e] = loadProviders(root);
+  assert.equal(e.exec, "node");
+  writeFileSync(join(root, "providers/cap/n1/provider.yaml"), OK("cap", "n1", "exec: ruby\n"));
+  assert.throws(() => loadProviders(root), /exec must be/);
+});
+
 test("the real registry loads: nestjs is a query provider, workspace precedes module-graph", () => {
   const r = loadProviders();
   const nest = r.find((e) => e.id === "nestjs");
   assert.equal(nest.runtime, "query");
+  // R1: the replay engine is node-exec and sorts AFTER every declared
+  // db-schema provider (declared-beats-replayed identity rule needs it)
+  assert.equal(r.find((e) => e.id === "sql-replay").exec, "node");
+  assert.deepEqual(r.filter((e) => e.capability === "db-schema").map((e) => e.id),
+    ["prisma", "sql-replay", "tbls-live"]);
   const tsi = r.find((e) => e.id === "ts-imports");
   assert.deepEqual(tsi.factInputs, ["workspace-layout"], "the shipped declared read");
   assert.equal(nest.entry, "providers/_runtime/tsq.py");

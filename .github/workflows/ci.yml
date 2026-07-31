@@ -27,6 +27,8 @@ jobs:
         with: { python-version: "3.12" }
       - name: Install extractor runtime (pinned)
         run: pip install -r providers/requirements.txt
+      - name: Install engine runtime (pglite for sql-replay, lockfile-pinned)
+        run: npm ci --no-fund --no-audit
       - name: Engine unit tests + fixture matrix (captured)
         run: |
           set +e

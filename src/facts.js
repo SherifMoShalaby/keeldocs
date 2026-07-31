@@ -46,6 +46,11 @@ function detect(reg, repoRoot) {
     const found = walk(repoRoot, (n) => reg.detect.files.includes(n));
     if (found.length) return { applicable: true, via: "file", file: found[0] };
   }
+  if (reg.detect.dirs) { // fixed repo-relative dirs (e.g. migration chains)
+    for (const d of reg.detect.dirs) {
+      if (existsSync(join(repoRoot, d))) return { applicable: true, via: "dir" };
+    }
+  }
   return { applicable: false };
 }
 
@@ -61,13 +66,18 @@ function runProvider(reg, repoRoot, detectInfo, factEnv = {}) {
   } else if (reg.argMode === "providerDir") {
     args = [reg.dir, repoRoot]; // generic .scm runtime: which provider + which repo
   }
-  const spawnPy = (bin) => spawnSync(bin, [join(ENGINE_ROOT, reg.entry), ...args], {
+  const spawnWith = (bin) => spawnSync(bin, [join(ENGINE_ROOT, reg.entry), ...args], {
     cwd: repoRoot, timeout: TIMEOUTS[reg.timeoutClass] ?? TIMEOUTS.D,
     maxBuffer: 16 * 1024 * 1024, encoding: "utf8",
     env: { ...process.env, ...factEnv },
   });
-  let r = spawnPy("python3");
-  if (r.error?.code === "ENOENT") r = spawnPy("python"); // Windows installs often lack a python3 shim
+  let r;
+  if (reg.exec === "node") {
+    r = spawnWith(process.execPath); // the running node - no PATH guessing
+  } else {
+    r = spawnWith("python3");
+    if (r.error?.code === "ENOENT") r = spawnWith("python"); // Windows installs often lack a python3 shim
+  }
   if (r.status !== 0 || r.error) {
     return { status: "failed", reason: r.error ? String(r.error.message) : `rc=${r.status}`,
              stderr: (r.stderr || "").slice(-400) };
@@ -163,6 +173,44 @@ function liveTableFacts(raw, provenanceBase, declaredTables) {
     });
   }
   return { facts, gaps: [] };
+}
+
+function replayFacts(raw, provenanceBase, declaredTables, declaredEnums) {
+  // The replay engine's catalog facts (doc 11 R1). Identity space is
+  // schema-qualified SQL names (public.orders) like tbls-live; a DECLARED
+  // provider's table/enum (prisma model space) covering the same lowercase
+  // name wins and the replayed twin is SKIPPED - the same identity rule as
+  // declared-beats-live, because the two id spellings can never meet inside
+  // the resolver. Unifying the db identity space (@@map-aware) is named
+  // follow-up work in doc 11 before replay may OVERRIDE declared facts.
+  const declaredT = new Set(declaredTables.map((n) => n.toLowerCase()));
+  const declaredE = new Set(declaredEnums.map((n) => n.toLowerCase()));
+  const facts = [];
+  for (const t of raw.tables ?? []) {
+    if (t.schema === "public" && declaredT.has(t.table.toLowerCase())) continue;
+    facts.push({
+      id: `fact:db-schema/${t.name}`,
+      payload: { schema_version: 1, type: "table",
+        attrs: { name: t.name,
+          columns: (t.columns ?? []).map((c) => ({
+            name: c.name, type: c.type, optional: !!c.nullable, list: false,
+            attrs: c.default != null ? `default ${c.default}` : "",
+          })),
+          relations: (t.relations ?? []).map((r) => ({ field: r.field, target: r.target })) } },
+      provenance: { ...provenanceBase, source: [{ kind: "migration-replay" }] },
+    });
+  }
+  for (const e of raw.enums ?? []) {
+    const short = e.name.slice(e.name.indexOf(".") + 1);
+    if (e.name.startsWith("public.") && declaredE.has(short.toLowerCase())) continue;
+    facts.push({
+      id: `fact:db-schema/enum.${e.name}`,
+      payload: { schema_version: 1, type: "enum", attrs: { name: e.name, values: e.values ?? [] } },
+      provenance: { ...provenanceBase, source: [{ kind: "migration-replay" }] },
+    });
+  }
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? "unknown", file: w.file ?? null }));
+  return { facts, gaps };
 }
 
 function policyFacts(raw, provenanceBase) {
@@ -381,6 +429,10 @@ export function extractAll(repoRootIn, { disable = [], live = null } = {}) {
       ? churnFacts(run.raw, provenanceBase)
       : reg.capability === "db-policies"
       ? policyFacts(run.raw, provenanceBase)
+      : reg.id === "sql-replay"
+      ? replayFacts(run.raw, provenanceBase,
+          [...factsById.values()].filter((f) => f.payload.type === "table").map((f) => f.payload.attrs.name),
+          [...factsById.values()].filter((f) => f.payload.type === "enum").map((f) => f.payload.attrs.name))
       : reg.id === "tbls-live"
       ? liveTableFacts(run.raw, provenanceBase,
           [...factsById.values()].filter((f) => f.payload.type === "table").map((f) => f.payload.attrs.name))
