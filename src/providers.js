@@ -19,7 +19,7 @@ const QUERY_RUNTIME = "providers/_runtime/tsq.py";
 const KNOWN_KEYS = new Set([
   "id", "capability", "semver", "tier", "confidence", "entry", "runtime",
   "query", "language", "detect", "argMode", "needs", "inputs", "requires",
-  "timeout_class", "emits", "status", "verbs", "files", "skip-files",
+  "timeout_class", "emits", "status", "verbs", "files", "skip-files", "live",
 ]);
 const DETECT_KEYS = new Set(["always", "deps", "files"]);
 
@@ -171,6 +171,7 @@ export function loadProviders(root = ENGINE_ROOT) {
           ? { runtime: "query", entry: QUERY_RUNTIME, dir }
           : { entry: `providers/${cap}/${id}/${y.entry.replace(/^\.\//, "")}`, dir }),
         factInputs,
+        ...(y.live === true ? { live: true } : {}),
         timeoutClass: y.timeout_class ?? "D",
         needs: [...new Set([...(y.needs ?? []), ...factInputs])],
       });

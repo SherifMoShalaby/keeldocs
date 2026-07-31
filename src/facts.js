@@ -136,6 +136,31 @@ function moduleGraphFacts(raw, provenanceBase, packages) {
   return { facts, gaps };
 }
 
+function liveTableFacts(raw, provenanceBase, declaredTables) {
+  // Declared-beats-live (ADR-005): a live table already covered by a declared
+  // provider is SKIPPED - exact lowercase match on the public schema only, no
+  // pluralization guessing. Everything else lands with schema-qualified natural
+  // keys (fact:db-schema/public.orders), the same payload shape as declared
+  // tables, and INTROSPECTED confidence - so the ERD renders them unchanged.
+  const declaredLower = new Set(declaredTables.map((n) => n.toLowerCase()));
+  const facts = [];
+  for (const t of raw.tables ?? []) {
+    if (t.schema === "public" && declaredLower.has(t.table.toLowerCase())) continue;
+    facts.push({
+      id: `fact:db-schema/${t.name}`,
+      payload: { schema_version: 1, type: "table",
+        attrs: { name: t.name,
+          columns: (t.columns ?? []).map((c) => ({
+            name: c.name, type: c.type, optional: !!c.nullable, list: false,
+            attrs: c.default != null ? `default ${c.default}` : "",
+          })),
+          relations: (t.relations ?? []).map((r) => ({ field: r.field, target: r.target })) } },
+      provenance: { ...provenanceBase, source: [{ kind: "live-catalog" }] },
+    });
+  }
+  return { facts, gaps: [] };
+}
+
 function policyFacts(raw, provenanceBase) {
   // Own capability so db-schema/* stays pure tables+enums (diagram noise
   // isolation + born-clean); db keys schema-qualified per ADR-007.
@@ -255,7 +280,7 @@ function schemaFacts(raw, provenanceBase, schemaFile) {
 
 const capOf = (id) => id.startsWith("ds ") ? "module-graph" : id.slice(5, id.indexOf("/"));
 
-export function extractAll(repoRootIn, { disable = [] } = {}) {
+export function extractAll(repoRootIn, { disable = [], live = null } = {}) {
   const repoRoot = resolve(repoRootIn); // subprocess cwd = repoRoot; args must be absolute
   if (REGISTRY_ERROR) {
     // fail closed and loudly - a half-loaded registry would masquerade as "no drift"
@@ -263,7 +288,8 @@ export function extractAll(repoRootIn, { disable = [] } = {}) {
              toolError: `provider registry: ${REGISTRY_ERROR}` };
   }
   const disabled = new Set(disable);
-  const active = REGISTRY.filter((r) => !disabled.has(r.id));
+  // live providers run ONLY under --live (network never enters the default path)
+  const active = REGISTRY.filter((r) => !disabled.has(r.id) && (!r.live || live));
   const capabilities = {};
   const factsById = new Map();
   const gaps = [];
@@ -306,6 +332,22 @@ export function extractAll(repoRootIn, { disable = [] } = {}) {
         factEnv[`KEELDOCS_FACTS_${cap.toUpperCase().replace(/-/g, "_")}`] = capFile(cap);
       }
     }
+    if (reg.live) {
+      // env-NAMED DSN (ADR-013): resolve the var here; the VALUE goes only into
+      // the child env, never argv, never any report. Absence names the VAR only.
+      const dsn = process.env[live.dsnEnv];
+      const canned = process.env.KEELDOCS_TBLS_JSON; // deterministic test seam
+      if (!dsn && !canned) {
+        const cap = (capabilities[reg.capability] ??= { status: "absent", providers: [] });
+        cap.providers.push(`${reg.id}@${reg.semver}`);
+        cap.status = "failed";
+        cap.reason = `live: env ${live.dsnEnv} is not set`;
+        toolError = `${reg.id}: env ${live.dsnEnv} is not set ([live] dsn-env in keeldocs.toml names it)`;
+        flushGroup();
+        continue;
+      }
+      if (dsn) factEnv.KEELDOCS_DSN = dsn;
+    }
     const run = runProvider(reg, repoRoot, d, factEnv);
     const cap = (capabilities[reg.capability] ??= { status: "absent", providers: [] });
     cap.providers.push(`${reg.id}@${reg.semver}`);
@@ -334,6 +376,9 @@ export function extractAll(repoRootIn, { disable = [] } = {}) {
       ? churnFacts(run.raw, provenanceBase)
       : reg.capability === "db-policies"
       ? policyFacts(run.raw, provenanceBase)
+      : reg.id === "tbls-live"
+      ? liveTableFacts(run.raw, provenanceBase,
+          [...factsById.values()].filter((f) => f.payload.type === "table").map((f) => f.payload.attrs.name))
       : schemaFacts(run.raw, provenanceBase, relative(repoRoot, d.file ?? ""));
     for (const f of norm.facts) {
       f.hash = factHash(f.payload);

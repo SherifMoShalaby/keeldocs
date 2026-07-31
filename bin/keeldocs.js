@@ -30,13 +30,14 @@ if (cmd === "check") {
   const { runCheck } = await import("../src/check.js");
   const sIdx = args.indexOf("--since");
   const exit = runCheck({ root: process.cwd(), json, ci: args.includes("--ci"),
+    live: args.includes("--live"),
     since: sIdx !== -1 ? args[sIdx + 1] ?? null : null });
   process.exit(exit);
 }
 
 if (cmd === "init") {
   const { runInit } = await import("../src/init.js");
-  const exit = runInit({ root: process.cwd(), json, yes: args.includes("--yes") });
+  const exit = runInit({ root: process.cwd(), json, yes: args.includes("--yes"), live: args.includes("--live") });
   process.exit(exit);
 }
 

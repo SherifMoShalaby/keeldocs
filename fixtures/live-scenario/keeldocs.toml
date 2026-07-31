@@ -1,0 +1,2 @@
+[live]
+dsn-env = "LIVE_DB_URL"   # the NAME of the env var holding the DSN - never the DSN itself

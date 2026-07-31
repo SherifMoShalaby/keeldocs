@@ -22,16 +22,23 @@ function gitHead(root) {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
-export function runInit({ root, json, yes }) {
+export function runInit({ root, json, yes, live = false }) {
   const cfg = loadConfig(root);
   if (!cfg.ok) {
     const env = { v: 1, ok: false, code: "CONFIG", summary: cfg.error.slice(0, 300), data: {}, next: [] };
     process.stdout.write(json ? JSON.stringify(env) + "\n" : env.summary + "\n");
     return 2;
   }
+  if (live && (process.env.CI === "true" || process.env.CI === "1")) {
+    const env = { v: 1, ok: false, code: "CONFIG",
+      summary: "--live is disabled in CI: network must never enter the pure-function path (run it locally)",
+      data: {}, next: [] };
+    process.stdout.write(json ? JSON.stringify(env) + "\n" : env.summary + "\n");
+    return 2;
+  }
   let result;
   try {
-    result = doInit(root, yes, cfg.config);
+    result = doInit(root, yes, cfg.config, live);
   } catch (err) {
     const env = { v: 1, ok: false, code: "TOOL_ERROR",
       summary: `init failed: ${String(err.message).slice(0, 200)}`, data: {}, next: [] };
@@ -95,9 +102,10 @@ export function runInit({ root, json, yes }) {
   return 0;
 }
 
-function doInit(root, yes, config) {
+function doInit(root, yes, config, live = false) {
   const { factsById, capabilities, providerSetHash, toolError } =
-    extractAll(root, { disable: config.providers.disable });
+    extractAll(root, { disable: config.providers.disable,
+      live: live ? { dsnEnv: config.live["dsn-env"] } : null });
   const pkgPath = join(root, "package.json");
   const pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf8")) : null;
   const existingDocs = () => docPathsOf(root, config.docs.dirs);

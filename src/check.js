@@ -22,16 +22,21 @@ function git(repoRoot, args) {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
-export function runCheck({ root, json, ci, since = null }) {
+export function runCheck({ root, json, ci, since = null, live = false }) {
   const repoRoot = root;
   const cfg = loadConfig(repoRoot);
   if (!cfg.ok) {
     return emit(json, 2, { v: 1, ok: false, code: "CONFIG",
       summary: cfg.error.slice(0, 300), data: {}, next: [] }, null);
   }
+  if (live && (ci || process.env.CI === "true" || process.env.CI === "1")) {
+    return emit(json, 2, { v: 1, ok: false, code: "CONFIG",
+      summary: "--live is disabled in CI: network must never enter the pure-function check path (run it locally)",
+      data: {}, next: [] }, null);
+  }
   let report;
   try {
-    report = buildReport(repoRoot, ci, cfg.config, since);
+    report = buildReport(repoRoot, ci, cfg.config, since, live);
   } catch (err) {
     return emit(json, 2, {
       v: 1, ok: false, code: "TOOL_ERROR",
@@ -75,7 +80,7 @@ export function runCheck({ root, json, ci, since = null }) {
   return emit(json, exit, envelope, report);
 }
 
-function buildReport(repoRoot, ci, config, since) {
+function buildReport(repoRoot, ci, config, since, live = false) {
   // now: policy clock only (snooze expiry) - HEAD commit time in CI (spec §6)
   const head = git(repoRoot, ["rev-parse", "HEAD"]);
   const nowIso = ci
@@ -83,7 +88,8 @@ function buildReport(repoRoot, ci, config, since) {
     : new Date().toISOString();
 
   const { factsById, capabilities, gaps, providerSetHash, toolError } =
-    extractAll(repoRoot, { disable: config.providers.disable });
+    extractAll(repoRoot, { disable: config.providers.disable,
+      live: live ? { dsnEnv: config.live["dsn-env"] } : null });
   const rawJournal = loadJournal(repoRoot);
   const journal = effective(rawJournal, nowIso);
 
@@ -118,6 +124,10 @@ function buildReport(repoRoot, ci, config, since) {
     meta: { engine: `keeldocs@${ENGINE_VERSION}`, head, providerSetHash,
             docsScanned: docPaths.length, mode: ci ? "ci" : "local",
             ...(sinceInfo ? { since: sinceInfo } : {}) },
+    // fail closed: a provider failure must surface as TOOL_ERROR exit 2, never
+    // as a smaller-but-CLEAN report (this line was missing once - check said
+    // CLEAN while db-schema was failed; caught by the live DSN-missing test)
+    ...(toolError ? { toolError } : {}),
     capabilities, counts, findings, coverage: cov,
     noise: noiseStats(rawJournal, nowIso),
     quarantined, extractionGaps: gaps,

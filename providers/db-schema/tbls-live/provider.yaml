@@ -1,0 +1,16 @@
+id: tbls-live
+capability: db-schema
+semver: 0.2.0
+tier: code            # wraps tbls (wrap-don't-rebuild); catalog-only introspection
+confidence: INTROSPECTED   # top of the ADR-003 lattice - it IS the database
+live: true            # OPT-IN: runs only under --live, never in default or CI checks
+entry: ./extract_tbls.py
+detect: { always: true }   # gating is the live flag, not detection
+inputs: []
+requires: ["tbls"]
+timeout_class: C
+emits: [table]
+# DSN: env-NAMED via keeldocs.toml [live] dsn-env, resolved by the engine into
+# KEELDOCS_DSN, forwarded to tbls as TBLS_DSN - never argv, never in output.
+# Declared-beats-live (ADR-005): the engine skips a live table when a declared
+# provider already covers it (exact lowercase match, public schema - no guessing).

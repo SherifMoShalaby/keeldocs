@@ -699,6 +699,53 @@ def main():
     except Exception as e:
         failures.append(f"re-anchoring: {e}")
 
+    # ---- live-Postgres via tbls: opt-in, declared-beats-live, CI-guarded ----
+    try:
+        import shutil, tempfile
+        # canned extractor: deterministic double-run + golden (no db, no network)
+        cmd = [sys.executable, "providers/db-schema/tbls-live/extract_tbls.py", "."]
+        cenv = {**os.environ, "KEELDOCS_TBLS_JSON":
+                os.path.join(ROOT, "fixtures", "live-scenario", "tbls-schema.json")}
+        o1 = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, env=cenv)
+        o2 = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, env=cenv)
+        assert o1.returncode == 0 and o1.stdout == o2.stdout, "canned tbls run must be deterministic"
+        gold = open(os.path.join(ROOT, "fixtures", "live-scenario", "golden", "db-schema-live.json")).read()
+        assert canonical(o1.stdout) == canonical(gold), "canned tbls output != golden"
+        tmp = tempfile.mkdtemp(prefix="keeldocs-live-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "live-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        lenv = {**local_env, "KEELDOCS_TBLS_JSON": os.path.join(dst, "tbls-schema.json")}
+        # default (no --live): live provider must not run at all
+        r = kd(dst, "check", "--json", env=lenv)
+        caps = json.loads(kd(dst, "init", "--json", env=lenv).stdout)["data"]["card"]["capabilities"]
+        assert caps["db-schema"]["providers"] == ["prisma@0.1.0"], caps["db-schema"]
+        # --live: tbls facts land; declared-beats-live skips public.item; view skipped
+        r = kd(dst, "init", "--live", "--yes", "--json", env=lenv)
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0, r.stdout[:300]
+        assert sorted(env_["data"]["card"]["capabilities"]["db-schema"]["providers"]) == \
+            ["prisma@0.1.0", "tbls-live@0.2.0"]
+        dm = open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
+        assert "public.orders" in dm and "public.users" in dm and "Item" in dm
+        assert "public.item" not in dm, "declared-beats-live must skip the shadowed table"
+        assert "order_totals" not in dm, "views are not ERD surface"
+        # born clean UNDER --live (live-initialized docs need live checks - documented)
+        rc = kd(dst, "check", "--live", "--json", env=lenv)
+        assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", rc.stdout[:300]
+        # CI guard: --live refused when CI is set
+        r = kd(dst, "check", "--live", "--json", env={**lenv, "CI": "true"})
+        assert r.returncode == 2 and "disabled in CI" in json.loads(r.stdout)["summary"]
+        # env-named DSN: without the canned seam AND without the named env var, fail loud, name the VAR
+        r = kd(dst, "check", "--live", "--json",
+               env={k: v for k, v in lenv.items() if k not in ("KEELDOCS_TBLS_JSON", "LIVE_DB_URL")})
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 2 and "LIVE_DB_URL is not set" in env_["summary"], env_["summary"]
+        shutil.rmtree(tmp)
+        print("  PASS  live-Postgres (tbls): opt-in only, declared-beats-live, CI guard, env-named DSN")
+    except Exception as e:
+        failures.append(f"live integration: {e}")
+
     # ---- redaction barrier: secret in facts -> [REDACTED] in docs, still born clean ----
     try:
         import shutil, tempfile

@@ -19,9 +19,11 @@ import { REGISTRY, REGISTRY_ERROR } from "./registry.js";
 const SCHEMA = {
   providers: { disable: "string[]" },
   docs: { dirs: "string[]" },
+  live: { "dsn-env": "string" }, // the NAME of the env var holding the DSN - never the DSN
 };
 
-const DEFAULTS = () => ({ providers: { disable: [] }, docs: { dirs: ["docs"] } });
+const DEFAULTS = () => ({ providers: { disable: [] }, docs: { dirs: ["docs"] },
+  live: { "dsn-env": "DATABASE_URL" } });
 
 function parseValue(raw, where) {
   const s = raw.trim();

@@ -1,0 +1,86 @@
+{
+ "tables": [
+  {
+   "name": "public.item",
+   "schema": "public",
+   "table": "item",
+   "columns": [
+    {
+     "name": "id",
+     "type": "integer",
+     "nullable": false,
+     "default": null,
+     "comment": null
+    }
+   ],
+   "relations": [],
+   "comment": "shadowed by the declared Item model - declared beats live"
+  },
+  {
+   "name": "public.orders",
+   "schema": "public",
+   "table": "orders",
+   "columns": [
+    {
+     "name": "id",
+     "type": "bigint",
+     "nullable": false,
+     "default": "nextval('orders_id_seq')",
+     "comment": null
+    },
+    {
+     "name": "user_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "comment": null
+    },
+    {
+     "name": "total",
+     "type": "integer",
+     "nullable": false,
+     "default": "0",
+     "comment": null
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "comment": null
+    }
+   ],
+   "relations": [
+    {
+     "field": "user_id",
+     "target": "public.users"
+    }
+   ],
+   "comment": "customer orders"
+  },
+  {
+   "name": "public.users",
+   "schema": "public",
+   "table": "users",
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": "gen_random_uuid()",
+     "comment": null
+    },
+    {
+     "name": "email",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "comment": null
+    }
+   ],
+   "relations": [],
+   "comment": null
+  }
+ ],
+ "source": "canned"
+}

@@ -52,6 +52,15 @@ dirs = ["docs", "handbook"]  # scan roots (default ["docs"]); README.md always s
 
 Schema-strict: a typo'd key is a CONFIG error (exit 2), never a silent no-op.
 
+### Live Postgres (`--live`, opt-in)
+
+```toml
+[live]
+dsn-env = "SUPABASE_DB_URL"  # the NAME of the env var holding the DSN - never the DSN itself
+```
+
+`keeldocs init --live` / `check --live` add catalog-only introspection via [tbls](https://github.com/k1LoW/tbls) (`brew install k1LoW/tap/tbls`): live tables land as schema-qualified facts (`fact:db-schema/public.orders`) with INTROSPECTED confidence and join the ERD. Declared beats live: a table already covered by Prisma is skipped, never duplicated. The DSN travels env-to-env (`TBLS_DSN`), never argv, never any report. `--live` is refused in CI - network never enters the pure-function check path - and docs initialized with `--live` should be checked with `--live`.
+
 ## v0.1 surface
 
 | Command | Does |

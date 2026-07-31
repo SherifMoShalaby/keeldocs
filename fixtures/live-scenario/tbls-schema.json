@@ -1,0 +1,46 @@
+{
+  "name": "livedb",
+  "tables": [
+    {
+      "name": "public.orders",
+      "type": "BASE TABLE",
+      "comment": "customer orders",
+      "columns": [
+        { "name": "id", "type": "bigint", "nullable": false, "default": "nextval('orders_id_seq')" },
+        { "name": "user_id", "type": "uuid", "nullable": false, "default": null },
+        { "name": "total", "type": "integer", "nullable": false, "default": "0" },
+        { "name": "note", "type": "text", "nullable": true, "default": null }
+      ]
+    },
+    {
+      "name": "public.item",
+      "type": "BASE TABLE",
+      "comment": "shadowed by the declared Item model - declared beats live",
+      "columns": [
+        { "name": "id", "type": "integer", "nullable": false, "default": null }
+      ]
+    },
+    {
+      "name": "public.users",
+      "type": "BASE TABLE",
+      "columns": [
+        { "name": "id", "type": "uuid", "nullable": false, "default": "gen_random_uuid()" },
+        { "name": "email", "type": "text", "nullable": false, "default": null }
+      ]
+    },
+    {
+      "name": "public.order_totals",
+      "type": "VIEW",
+      "columns": [ { "name": "total", "type": "integer", "nullable": true, "default": null } ]
+    }
+  ],
+  "relations": [
+    {
+      "table": "public.orders",
+      "columns": ["user_id"],
+      "parent_table": "public.users",
+      "parent_columns": ["id"],
+      "def": "FOREIGN KEY (user_id) REFERENCES users(id)"
+    }
+  ]
+}
