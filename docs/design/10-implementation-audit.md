@@ -167,6 +167,16 @@ runs ending green at `4c6db18`.
 6. **Live-Postgres via tbls (`--live`)** — v0.1.1 remainder, off critical
    path by design.
 7. **Interview/elicitation flow** (cap 5, resumable) — v0.2/v0.3.
+   *(Update 2026-07-31: the deterministic slice shipped - `interview` emits
+   ≤5 cards/≤6,000 chars per batch generated ONLY from engine state (dead
+   bindings lacking tombstones; the hotspot×fan-in plan), `answer` records
+   confirm/correct/reject/unknown to committed
+   `.keeldocs/interview/answers.jsonl` with a regenerated `queue.yaml`
+   export for teammates. Confirmed removals ride the existing journal
+   tombstone semantic; rejects are journaled (`interview-reject`) and never
+   re-asked; resumable purely from committed files; answering is
+   CI-forbidden. Agent-side skill added. PR/commit-subject MINING (`mine`,
+   evidence-quoted rationale candidates) stays v0.3 as designed.)*
 8. **Portfolio manifests** — v0.3.
 9. **Validation debt**: full E-series corpus runs, E7 per-agent skill smoke
    matrix, E9 field trial on a real owner repo. *(Update 2026-07-31: E5

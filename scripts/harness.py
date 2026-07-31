@@ -791,6 +791,59 @@ def main():
     except Exception as e:
         failures.append(f"live integration: {e}")
 
+    # ---- interview: cap-5 cards from engine state, resumable, journal-verified ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-iv-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "drift-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        r1 = kd(dst, "interview", "--json", env=local_env)
+        r2 = kd(dst, "interview", "--json", env=local_env)
+        assert r1.stdout == r2.stdout, "NONDETERMINISTIC interview batch"
+        env_ = json.loads(r1.stdout)
+        assert r1.returncode == 0 and env_["code"] == "INTERVIEW", r1.stdout[:200]
+        cards = env_["data"]["cards"]
+        assert len(cards) == 5 and env_["truncated"] is True, "cap 5 must bind (6 candidates here)"
+        assert env_["data"]["budget"]["chars"] <= 6000, env_["data"]["budget"]
+        assert cards[0]["kind"] == "removal" and cards[1]["kind"] == "removal", \
+            "dead bindings outrank document-next cards"
+        q1 = open(os.path.join(dst, ".keeldocs", "interview", "queue.yaml")).read()
+        # confirm a removal -> tombstone rides the EXISTING drift semantic
+        rm = cards[0]
+        r = kd(dst, "answer", rm["qid"], "confirm", "--by", "harness", "--json", env=local_env)
+        env_ = json.loads(r.stdout)
+        assert env_["code"] == "DECISION_RECORDED" and env_["data"]["effects"] == [f"tombstone {rm['subject']}"], env_
+        c = json.loads(kd(dst, "check", "--json").stdout)["data"]["counts"]
+        assert c.get("intentionally_removed") == 1, c
+        # reject a document card -> journaled interview-reject, never re-asked
+        doc_card = next(x for x in cards if x["kind"] == "document")
+        r = kd(dst, "answer", doc_card["qid"], "reject", "--by", "harness", "--json", env=local_env)
+        assert json.loads(r.stdout)["code"] == "DECISION_RECORDED"
+        jl = open(os.path.join(dst, ".keeldocs", "decisions.jsonl")).read()
+        assert '"type":"tombstone"' in jl and '"type":"interview-reject"' in jl, \
+            "both decisions must be journal-verified"
+        r = kd(dst, "interview", "--json", env=local_env)
+        env_ = json.loads(r.stdout)
+        qids = [x["qid"] for x in env_["data"]["cards"]]
+        assert rm["qid"] not in qids and doc_card["qid"] not in qids, "settled cards must never re-ask"
+        # unknown keeps the card open (re-asked), CI guard refuses answer
+        r = kd(dst, "answer", qids[0], "unknown", "--by", "harness", "--json", env=local_env)
+        assert json.loads(r.stdout)["code"] == "DECISION_RECORDED"
+        r = kd(dst, "interview", "--json", env=local_env)
+        assert qids[0] in [x["qid"] for x in json.loads(r.stdout)["data"]["cards"]], "unknown must re-ask"
+        r = kd(dst, "answer", qids[0], "confirm", "--json", env={**os.environ, "CI": "true"})
+        assert r.returncode == 2 and "disabled in CI" in json.loads(r.stdout)["summary"]
+        r = kd(dst, "answer", qids[0], "bogus", "--json", env=local_env)
+        assert r.returncode == 2 and json.loads(r.stdout)["code"] == "USAGE"
+        # resumable purely from committed files: queue regenerates deterministically
+        q2 = open(os.path.join(dst, ".keeldocs", "interview", "queue.yaml")).read()
+        assert q1 != q2 and "progress:" in q2, "queue export must track the answered state"
+        rmtree(tmp)
+        print("  PASS  interview: cap-5 batch, tombstone/reject effects journaled, resumable, CI-guarded")
+    except Exception as e:
+        failures.append(f"interview integration: {e}")
+
     # ---- redaction barrier: secret in facts -> [REDACTED] in docs, still born clean ----
     try:
         import shutil, tempfile

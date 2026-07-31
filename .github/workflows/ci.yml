@@ -6,8 +6,11 @@ on:
 jobs:
   # Cross-OS determinism matrix (ADR-003's tested invariant): the SAME goldens
   # must reproduce byte-identically on every OS, and the harness double-runs
-  # every extractor. Windows is the reduced-trust tier (owner decision
-  # 2026-07-30): it runs, its result is reported, it cannot block a release.
+  # every extractor. Windows went GREEN 2026-07-31 (posix-emit contract +
+  # fileURLToPath roots + LF-pinned harness) but stays non-blocking per the
+  # reduced-trust owner decision (2026-07-30): its guarantee tier is weaker
+  # (sandboxing), so it reports rather than gates. Promote by deleting the
+  # continue-on-error line.
   harness:
     strategy:
       fail-fast: false
@@ -15,7 +18,6 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
-    permissions: { contents: write } # temporary: windows failure-log publishing, removed once green
     defaults: { run: { shell: bash } }
     steps:
       - uses: actions/checkout@v4
@@ -41,16 +43,6 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit $rc
-      - name: Publish windows failure log (temporary diagnosis)
-        if: ${{ failure() && matrix.os == 'windows-latest' }}
-        run: |
-          d="$RUNNER_TEMP/kd-dbg" && rm -rf "$d" && mkdir -p "$d"
-          cp "$RUNNER_TEMP/harness.log" "$d/harness.log" || echo "(no log)" > "$d/harness.log"
-          { node --version; python3 --version || python --version; git --version; } > "$d/toolchain.txt" 2>&1
-          cd "$d" && git init -q && git checkout -qb "ci-debug-win-${{ github.run_number }}"
-          git add -A && git -c user.name=ci -c user.email=ci@invalid commit -qm "windows harness log"
-          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD
-
   # npm packaging must stay publish-ready: pack the tarball, install it into a
   # clean consumer, run the bin. Publishing itself happens in release.yml.
   pack:

@@ -23,6 +23,32 @@ function gitHead(root) {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
+// Plan = undocumented CONCRETE surfaces, ranked hotspot x fan-in (D5): churn
+// from decision-history, fan-in from module-graph import edges. Same whitelist
+// as coverage: packages/externals/symbols are not owed docs. Shared by init
+// (the report's plan) and interview (document-next cards) - one ranking.
+export function buildPlan(factsById, documented) {
+  const churnBy = new Map([...factsById.values()].filter((f) => f.payload.type === "churn")
+    .map((f) => [f.payload.attrs.path, f.payload.attrs.commits]));
+  const fanIn = new Map();
+  const modulePaths = new Set([...factsById.values()].filter((f) => f.payload.type === "module")
+    .map((f) => f.payload.attrs.path));
+  for (const f of factsById.values()) {
+    if (f.payload.type !== "module") continue;
+    for (const imp of f.payload.attrs.imports) {
+      if (modulePaths.has(imp)) fanIn.set(imp, (fanIn.get(imp) ?? 0) + 1);
+    }
+  }
+  return [...factsById.values()].filter((f) => isCoverageSurface(f) && !documented.has(f.id))
+    .map((f) => {
+      const file = f.provenance?.source?.[0]?.file ?? null;
+      const hot = { commits: file ? (churnBy.get(file) ?? 0) : 0, fanIn: file ? (fanIn.get(file) ?? 0) : 0 };
+      return { surface: f.id, action: "document", hot, _score: (hot.commits + 1) * (hot.fanIn + 1) };
+    })
+    .sort((a, b) => b._score - a._score || a.surface.localeCompare(b.surface))
+    .map(({ _score, ...p }) => p);
+}
+
 export function runInit({ root, json, yes, live = false }) {
   const cfg = loadConfig(root);
   if (!cfg.ok) {
@@ -153,28 +179,7 @@ function doInit(root, yes, config, live = false) {
   const before = covOf(preDocs);
   const after = yes ? covOf(existingDocs()) : before;
 
-  // Plan = undocumented CONCRETE surfaces, ranked hotspot x fan-in (D5):
-  // churn from decision-history, fan-in from module-graph import edges.
-  // Same whitelist as coverage: packages/externals/symbols are not owed docs.
-  const churnBy = new Map([...factsById.values()].filter((f) => f.payload.type === "churn")
-    .map((f) => [f.payload.attrs.path, f.payload.attrs.commits]));
-  const fanIn = new Map();
-  const modulePaths = new Set([...factsById.values()].filter((f) => f.payload.type === "module")
-    .map((f) => f.payload.attrs.path));
-  for (const f of factsById.values()) {
-    if (f.payload.type !== "module") continue;
-    for (const imp of f.payload.attrs.imports) {
-      if (modulePaths.has(imp)) fanIn.set(imp, (fanIn.get(imp) ?? 0) + 1);
-    }
-  }
-  const plan = [...factsById.values()].filter((f) => isCoverageSurface(f) && !after.documented.has(f.id))
-    .map((f) => {
-      const file = f.provenance?.source?.[0]?.file ?? null;
-      const hot = { commits: file ? (churnBy.get(file) ?? 0) : 0, fanIn: file ? (fanIn.get(file) ?? 0) : 0 };
-      return { surface: f.id, action: "document", hot, _score: (hot.commits + 1) * (hot.fanIn + 1) };
-    })
-    .sort((a, b) => b._score - a._score || a.surface.localeCompare(b.surface))
-    .map(({ _score, ...p }) => p);
+  const plan = buildPlan(factsById, after.documented);
 
   return {
     applied: !!yes,
