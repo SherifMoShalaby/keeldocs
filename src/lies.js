@@ -84,6 +84,16 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
     if (/process\.env\[/.test(text)) computedEnvAccess = true;
   }
   const scripts = pkg?.scripts ?? {};
+  // onboarding-verify pre-scans (doc 11 R3): make targets + engine floor
+  const makeTargets = new Set();
+  const mkPath = join(root, "Makefile");
+  if (existsSync(mkPath)) {
+    for (const l of readFileSync(mkPath, "utf8").split("\n")) {
+      const t = l.match(/^([A-Za-z0-9][A-Za-z0-9_.-]*)\s*:(?!=)/);
+      if (t && t[1] !== ".PHONY") makeTargets.add(t[1]);
+    }
+  }
+  const engineNode = (pkg?.engines?.node ?? "").match(/(\d+)/)?.[1] ?? null;
   const deps = { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}) };
   const endpointPaths = new Set([...factsById.keys()]
     .filter((id) => id.startsWith("fact:http-endpoints/"))
@@ -125,6 +135,27 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
         if (!(name in scripts)) {
           add("script-claim", `npm run ${name}`, doc, line,
             `no "${name}" in package.json scripts (${Object.keys(scripts).sort().join(", ") || "none"})`);
+        }
+      }
+
+      // B2. make-target claims (onboarding-verify, R3): the machine checks
+      // that a tutorial's `make x` exists; it never authors the sequencing
+      if (makeTargets.size || existsSync(mkPath)) {
+        for (const m of lineText.matchAll(/`make\s+([A-Za-z0-9][A-Za-z0-9_.-]{0,40})`/g)) {
+          if (!makeTargets.has(m[1])) {
+            add("make-claim", `make ${m[1]}`, doc, line,
+              `no \`${m[1]}\` target in Makefile (${[...makeTargets].sort().join(", ") || "no targets"})`);
+          }
+        }
+      }
+
+      // B3. version-floor claims vs the manifest's engines field (R3):
+      // "requires Node 18+" while engines.node says >=20 is a stale tutorial
+      if (engineNode) {
+        const vm = lineText.match(/\bnode(?:\.js)?\s*(?:>=|v)?\s*(\d\d?)\b/i);
+        if (vm && /requir|need|install|version|newer|至少|\+|>=/i.test(lineText) && vm[1] !== engineNode) {
+          add("version-claim", `node ${vm[1]}`, doc, line,
+            `package.json engines.node says ${pkg.engines.node}`);
         }
       }
 

@@ -126,6 +126,27 @@ Until the gate trips, the only obligation remains versioned fact schemas
 shell-less surface with ≥25 requesting users, and generate it from the CLI
 command table, never by hand.
 
+## 2b. Landed status (2026-07-31, same-day execution)
+
+Phase A and Phase B were executed the day this plan was written, each as a
+green 3-OS CI milestone: **R1** `sql-replay` on pglite (E13: 10/10 chains
+byte-identical to PostgreSQL 16; tbls-live reclassified OBSERVED - the
+ADR-003 deviation is closed); **R2** T2 refusal-first install machinery +
+the first permanent E10 red-team gate (unsigned/untrusted/tampered provably
+refused; marker-forgery dropped at the fact boundary); **N1** drizzle
+(snapshot format verified against real drizzle-kit; the first real conflict
+pair, plus `[resolve]` pins); **N2** Java + Go probe-first (E14: spring
+17/17 declarative via the new member-association mode; gin 15/15 code-tier
+group-chain resolver; workspace + env parity; module-graph/ds symbols for
+both languages named as follow-up); **R3** module-guide recipe (born-clean
+skeleton + one slot) and onboarding-verify lie classes (make targets,
+version floors); **R4** `mine` (local commit subjects only, HEAD-anchored
+window, gitignored cache) feeding `rationale` interview cards. Still open
+from the ADR-002 amendment: the OS-level sandbox, permission-manifest
+display, output caps. Phase C remains gated as designed; the hygiene bumps
+(action majors, CodeQL v4) are deliberately unbundled from this batch so a
+version guess could not redden a green tree.
+
 ## 3. Sequencing
 
 Phase A — *pay the debt that undermines the thesis*: R1 (replay; long pole,

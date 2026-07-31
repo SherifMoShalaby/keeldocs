@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8"));
-const COMMANDS = ["init", "check", "sync", "new", "interview", "answer", "provider", "slot-write", "approve"]; // answer/provider/slot-write/approve: plumbing (ADR-012)
+const COMMANDS = ["init", "check", "sync", "new", "interview", "answer", "mine", "provider", "slot-write", "approve"]; // answer/mine/provider/slot-write/approve: plumbing (ADR-012)
 const args = process.argv.slice(2);
 const cmd = args[0];
 const json = args.includes("--json");
@@ -60,6 +60,11 @@ if (cmd === "interview") {
 if (cmd === "answer") {
   const { runAnswer } = await import("../src/interview.js");
   process.exit(runAnswer({ root: process.cwd(), json, args }));
+}
+
+if (cmd === "mine") {
+  const { runMine } = await import("../src/interview.js");
+  process.exit(runMine({ root: process.cwd(), json }));
 }
 
 if (cmd === "provider") {

@@ -1004,6 +1004,61 @@ def main():
     except Exception as e:
         failures.append(f"interview integration: {e}")
 
+    # ---- R3+R4: module guide, onboarding-verify classes, mine -> rationale ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-r34-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "python-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        # module guide: deterministic skeleton, born clean, one prose slot
+        r = kd(dst, "new", "module-guide", "--json", env=local_env)
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and env_["code"] == "CREATED", r.stdout[:200]
+        mg = open(os.path.join(dst, env_["data"]["path"])).read()
+        assert "keeldocs:slot" in mg and "## Public surface" in mg and "## Module dependencies" in mg
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN", "module guide must be born clean"
+        # onboarding-verify: make-claim + version-claim fire with receipts
+        W(os.path.join(dst, "Makefile"), "serve:\n\tuvicorn app.main:app\n")
+        pj = json.load(open(os.path.join(dst, "package.json"))) if os.path.exists(os.path.join(dst, "package.json")) else {"name": "x", "private": True}
+        pj["engines"] = {"node": ">=20"}
+        W(os.path.join(dst, "package.json"), json.dumps(pj, indent=2) + "\n")
+        os.makedirs(os.path.join(dst, "docs", "guides"), exist_ok=True)
+        W(os.path.join(dst, "docs", "guides", "setup.md"),
+          "# Setup\n\nYou need node 18 or newer installed.\n\nRun `make dev` then `make serve`.\n")
+        r = kd(dst, "init", "--json", env=local_env)
+        lies = {(x["class"], x["claim"]) for x in json.loads(r.stdout)["data"]["lies"]}
+        assert ("make-claim", "make dev") in lies, lies
+        assert ("version-claim", "node 18") in lies, lies
+        assert ("make-claim", "make serve") not in lies, "existing target must not fire"
+        # mine -> rationale cards -> reject is journaled and never re-asked
+        genv = {**os.environ, "GIT_AUTHOR_DATE": "2026-07-01T00:00:00Z",
+                "GIT_COMMITTER_DATE": "2026-07-01T00:00:00Z"}
+        def g(*a):
+            rr = subprocess.run(["git", "-C", dst, "-c", "user.name=h", "-c", "user.email=h@x", *a],
+                                capture_output=True, text=True, env=genv)
+            assert rr.returncode == 0, rr.stderr[-200:]
+        g("init", "-q"); g("config", "core.autocrlf", "false")
+        g("add", "-A"); g("commit", "-qm", "base import")
+        W(os.path.join(dst, "app", "main.py"), "\n# retry tuning\n", "a")
+        g("add", "-A"); g("commit", "-qm", "fix: cap retries at 3 after the 07-12 incident")
+        r = kd(dst, "mine", "--json", env=local_env)
+        env_ = json.loads(r.stdout)
+        assert env_["code"] == "MINED" and env_["data"]["candidates"] >= 1, r.stdout[:200]
+        r = kd(dst, "interview", "--json", env=local_env)
+        cards = json.loads(r.stdout)["data"]["cards"]
+        rat = [c for c in cards if c["kind"] == "rationale"]
+        assert rat and "cap retries at 3" in rat[0]["question"], cards[:2]
+        r = kd(dst, "answer", rat[0]["qid"], "reject", "--by", "harness", "--json", env=local_env)
+        assert json.loads(r.stdout)["code"] == "DECISION_RECORDED"
+        r = kd(dst, "interview", "--json", env=local_env)
+        assert rat[0]["qid"] not in [c["qid"] for c in json.loads(r.stdout)["data"]["cards"]], \
+            "rejected rationale must never re-ask"
+        rmtree(tmp)
+        print("  PASS  R3+R4: module guide born clean, make/version lie classes, mine -> rationale -> reject holds")
+    except Exception as e:
+        failures.append(f"R3/R4 integration: {e}")
+
     # ---- E10 red-team: T2 refusals + marker-forgery neutralized (doc 11 R2) ----
     try:
         import shutil, tempfile

@@ -66,7 +66,21 @@ export function loadAnswers(root) {
 const clip = (s, n) => (s.length <= n ? s : s.slice(0, n - 1) + "…");
 const scrub = (s) => redact(String(s)).clean; // evidence quotes pass the barrier (ADR-013)
 
-export function generateCards({ findings, factsById, documented, journal, answers }) {
+export function loadMined(root) {
+  const p = join(root, ".keeldocs", "cache", "mined", "candidates.jsonl");
+  const out = [];
+  if (!existsSync(p)) return out;
+  for (const line of readFileSync(p, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const e = JSON.parse(line);
+      if (typeof e.sha === "string" && typeof e.subject === "string") out.push(e);
+    } catch { /* mined cache is disposable - skip bad lines */ }
+  }
+  return out;
+}
+
+export function generateCards({ findings, factsById, documented, journal, answers, mined = [] }) {
   const cards = [];
   const seen = new Set();
 
@@ -89,6 +103,25 @@ export function generateCards({ findings, factsById, documented, journal, answer
         },
       });
     }
+  }
+
+  // rationale cards (R4): mined commit subjects, outside-agent-context by
+  // design - the card only QUOTES the (redacted, capped) subject; the human
+  // owns the why. Ranked between removals and document-next.
+  for (const m of mined) {
+    if (seen.has(`rationale\x00${m.sha}`)) continue;
+    seen.add(`rationale\x00${m.sha}`);
+    cards.push({
+      qid: qidOf("rationale", m.sha), kind: "rationale", subject: m.sha,
+      question: `Commit ${m.sha} says ${JSON.stringify(clip(scrub(m.subject), 120))}${m.file ? ` (touching \`${m.file}\`)` : ""}. Is the WHY behind it worth capturing?`,
+      evidence: [],
+      verdicts: {
+        confirm: "yes - draft it as an ADR (keeldocs new adr) and link the commit",
+        correct: "capture with your own wording (--text required)",
+        reject: "no - never ask about this commit again",
+        unknown: "skip for now (re-asked later)",
+      },
+    });
   }
 
   // document cards: the plan's ranked undocumented surfaces
@@ -119,7 +152,7 @@ export function generateCards({ findings, factsById, documented, journal, answer
     const v = answers.get(c.qid)?.verdict;
     return v !== "confirm" && v !== "correct" && v !== "reject";
   });
-  const kindRank = { removal: 0, document: 1 };
+  const kindRank = { removal: 0, rationale: 1, document: 2 };
   open.sort((a, b) => (kindRank[a.kind] - kindRank[b.kind])
     || ((answers.get(a.qid) ? 1 : 0) - (answers.get(b.qid) ? 1 : 0)));
   return { open, total: cards.length };
@@ -156,7 +189,7 @@ function assemble(root) {
   const journal = effective(loadJournal(root), "9999-12-31T00:00:00Z"); // structure only; expiry is check's concern
   const { findings, documented } = evaluate({ anchors, regions, factsById, capabilities, journal });
   const answers = loadAnswers(root);
-  return { state: { findings, factsById, documented, journal, answers } };
+  return { state: { findings, factsById, documented, journal, answers, mined: loadMined(root) } };
 }
 
 // ---------- queue.yaml export (written, never re-read by the engine) ----------
@@ -196,6 +229,63 @@ function humanize(env) {
   }
   if (env.next?.length) lines.push("", `next: ${env.next.join(" | ")}`);
   return lines.join("\n") + "\n";
+}
+
+// keeldocs mine (doc 11 R4): rationale CANDIDATES from local git history -
+// commit subjects only, scored why-strength x file-churn, written to the
+// gitignored mined cache. Runs OUTSIDE agent context (design §10): nothing
+// here enters a prompt; the interview quotes candidates one card at a time.
+// Deterministic: HEAD-anchored window (no wall clock), sorted output.
+// Local git only - PR-title mining waits for a fetch story under the R2
+// injection posture (forge text is attacker-influenceable by definition).
+const WHY_STRONG = /\b(fix|revert|workaround|hotfix|perf|regression|security)\b/i;
+const WHY_WEAK = /\b(because|cap|limit|increase|decrease|switch|migrate|replace|deprecate|tune)\b/i;
+
+export function runMine({ root, json }) {
+  const g = (a) => spawnSync("git", a, { cwd: root, encoding: "utf8" });
+  const head = g(["show", "-s", "--format=%ct", "HEAD"]);
+  if (head.status !== 0) {
+    return emit(json, 2, { v: 1, ok: false, code: "TOOL_ERROR",
+      summary: "mine needs git history (no HEAD here)", data: {}, next: [] });
+  }
+  const since = new Date((parseInt(head.stdout.trim(), 10) - 365 * 86400) * 1000).toISOString();
+  const log = g(["log", "--no-merges", `--since=${since}`, "--date-order",
+    "--pretty=%x00%h%x1f%s", "--name-only"]);
+  if (log.status !== 0) {
+    return emit(json, 2, { v: 1, ok: false, code: "TOOL_ERROR",
+      summary: `git log failed: ${(log.stderr || "").slice(0, 200)}`, data: {}, next: [] });
+  }
+  const touch = new Map(); // file -> commits touching it in window
+  const commits = [];
+  for (const block of log.stdout.split("\x00").slice(1)) {
+    const [headLine, ...files] = block.split("\n").filter(Boolean);
+    const [sha, subject] = headLine.split("\x1f");
+    const fs_ = files.filter((f) => !f.startsWith(".keeldocs/"));
+    commits.push({ sha, subject: subject ?? "", files: fs_ });
+    for (const f of fs_) touch.set(f, (touch.get(f) ?? 0) + 1);
+  }
+  const cands = [];
+  for (const c of commits) {
+    const strength = WHY_STRONG.test(c.subject) ? 2 : WHY_WEAK.test(c.subject) ? 1 : 0;
+    if (!strength || c.subject.length < 10) continue;
+    const hot = c.files.map((f) => touch.get(f) ?? 0).reduce((a, b) => Math.max(a, b), 0);
+    const file = [...c.files].sort((a, b) => (touch.get(b) - touch.get(a)) || a.localeCompare(b))[0] ?? null;
+    cands.push({ sha: c.sha, subject: scrub(c.subject).slice(0, 200), file,
+      score: strength * (1 + hot) });
+  }
+  cands.sort((a, b) => b.score - a.score || a.sha.localeCompare(b.sha));
+  const top = cands.slice(0, 20);
+  const dir = join(root, ".keeldocs", "cache", "mined");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "candidates.jsonl"),
+    top.map((c) => jcs(c)).join("\n") + (top.length ? "\n" : ""));
+  return emit(json, 0, {
+    v: 1, ok: true, code: top.length ? "MINED" : "NOTHING_MINED",
+    summary: `${top.length} rationale candidate(s) from ${commits.length} commit(s) in the HEAD-anchored 365d window (cache only, gitignored)`.slice(0, 300),
+    data: { candidates: top.length, window: { since } },
+    truncated: cands.length > top.length,
+    next: top.length ? ["keeldocs interview"] : [],
+  });
 }
 
 export function runInterview({ root, json }) {

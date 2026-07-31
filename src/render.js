@@ -212,6 +212,50 @@ export function renderEndpointsDoc(factsById, sink) {
   return { path: "docs/reference/endpoints.md", content };
 }
 
+// Module guide (doc 11 R3): deterministic skeleton + ONE labeled prose slot.
+// Reference-tier semantics: the dependency section binds module-graph facts,
+// so import changes make the guide honestly stale (sync regenerates it).
+export function renderModuleGuideDoc(factsById, sink, pkgName) {
+  const pkgs = [...factsById.values()].filter((f) => f.payload.type === "package");
+  const pkg = pkgName ? pkgs.find((p) => p.payload.attrs.name === pkgName) : (pkgs.length === 1 ? pkgs[0] : null);
+  if (!pkg) return null;
+  const name = pkg.payload.attrs.name;
+  const path = pkg.payload.attrs.path;
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const parts = [
+    `# Module guide: ${name}`,
+    `<!-- keeldocs: id=mod.${slug} recipe=module-guide@1 binds=${pkg.id} hash-kind=fact -->`,
+    "",
+    `<!-- keeldocs:slot id=mod.${slug}.overview binds=${pkg.id} max-words=120 -->`,
+    "<!-- /keeldocs:slot -->",
+  ];
+  // regions carry their OWN binds (wildcards): without them they would
+  // inherit the anchor's package-fact bind and go stale at birth. The v0.3
+  // slice reflects the whole repo surface; per-package binds are follow-up.
+  const allEps = endpointFacts(factsById);
+  const allMods = [...factsById.values()].filter((f) => f.payload.type === "module")
+    .sort((a, b) => a.id.localeCompare(b.id));
+  if (allEps.length) {
+    parts.push("", "## Public surface",
+      genBlock(`mod.${slug}.surface`, "fact:http-endpoints/*", allEps.map((f) => f.id),
+        factsById, endpointsTableBody(factsById), sink));
+  }
+  if (allMods.length) {
+    const allFan = new Map();
+    for (const m of allMods) {
+      for (const imp of m.payload.attrs.imports) allFan.set(imp, (allFan.get(imp) ?? 0) + 1);
+    }
+    const top = [...allFan.entries()].filter(([p]) => allMods.some((m) => m.payload.attrs.path === p))
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5);
+    const body = [`${allMods.length} module(s).` + (top.length ? " Highest fan-in:" : ""),
+      ...top.map(([p, n]) => `- \`${p}\` (imported by ${n})`)].join("\n");
+    parts.push("", "## Module dependencies",
+      genBlock(`mod.${slug}.deps`, "fact:module-graph/*", allMods.map((f) => f.id), factsById, body, sink));
+  }
+  parts.push("", "<!-- Human notes below this line are never touched by keeldocs. -->", "");
+  return { path: `docs/reference/modules/${slug}.md`, content: parts.join("\n") };
+}
+
 export function renderDataModelDoc(factsById, sink) {
   const tables = tableFacts(factsById);
   const enums = enumFacts(factsById);
