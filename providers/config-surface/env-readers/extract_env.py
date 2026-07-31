@@ -13,10 +13,17 @@ Deterministic: sorted by name, sources sorted by (file, line).
 """
 import json, os, re, sys
 
-SKIP = {"node_modules", ".git", ".keeldocs", "golden", "docs", "dist", "coverage", "build"}
-CODE_EXT = (".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".prisma")
+SKIP = {"node_modules", ".git", ".keeldocs", "golden", "docs", "dist", "coverage", "build",
+        "__pycache__", ".venv", "venv"}
+CODE_EXT = (".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".prisma", ".py")
 EXAMPLE = re.compile(r"^\.env\.(example|schema|sample)$")
-READS = re.compile(r"(?:process\.env\.|import\.meta\.env\.)([A-Z][A-Z0-9_]*)|\benv\(\s*[\"']([A-Z][A-Z0-9_]*)[\"']\s*\)")
+# JS forms + Python forms (os.environ["X"], os.environ.get("X"), os.getenv("X"));
+# value-blindness holds: only the NAME is ever captured
+READS = re.compile(
+    r"(?:process\.env\.|import\.meta\.env\.)([A-Z][A-Z0-9_]*)"
+    r"|\benv\(\s*[\"']([A-Z][A-Z0-9_]*)[\"']\s*\)"
+    r"|os\.environ(?:\.get)?\s*[\[\(]\s*[\"']([A-Z][A-Z0-9_]*)[\"']"
+    r"|os\.getenv\(\s*[\"']([A-Z][A-Z0-9_]*)[\"']")
 DECL = re.compile(r"^([A-Z][A-Z0-9_]*)\s*=")
 
 
@@ -46,7 +53,7 @@ def main(root):
                     continue
                 for i, line in enumerate(text.split("\n")):
                     for m in READS.finditer(line):
-                        add(m.group(1) or m.group(2), rel, i + 1, "code")
+                        add(next(g for g in m.groups() if g), rel, i + 1, "code")
 
     out = sorted(vars_.values(), key=lambda v: v["name"])
     for v in out:

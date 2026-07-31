@@ -7,7 +7,7 @@
   "mode": "apply"
  },
  "card": {
-  "package": "init-scenario-fixture",
+  "package": null,
   "capabilities": {
    "config-surface": {
     "status": "ok",
@@ -22,10 +22,8 @@
     ]
    },
    "db-schema": {
-    "status": "ok",
-    "providers": [
-     "prisma@0.1.0"
-    ]
+    "status": "absent",
+    "providers": []
    },
    "decision-history": {
     "status": "ok",
@@ -36,7 +34,6 @@
    "http-endpoints": {
     "status": "ok",
     "providers": [
-     "express@0.1.0",
      "fastapi@0.2.0"
     ]
    },
@@ -58,44 +55,12 @@
     ]
    }
   },
-  "facts": 8
+  "facts": 26
  },
  "lies": {
-  "findings": [
-   {
-    "class": "file-claim",
-    "claim": "scripts/seed.js",
-    "doc": "README.md",
-    "line": 8,
-    "receipt": "not found in the repo; no deletion record in reachable history"
-   },
-   {
-    "class": "env-claim",
-    "claim": "ITEMS_CACHE_URL",
-    "doc": "README.md",
-    "line": 9,
-    "receipt": "read nowhere in code (scanned 3 files for process.env.ITEMS_CACHE_URL / env(\"ITEMS_CACHE_URL\"))"
-   },
-   {
-    "class": "script-claim",
-    "claim": "npm run deploy",
-    "doc": "README.md",
-    "line": 16,
-    "receipt": "no \"deploy\" in package.json scripts (lint, start)"
-   },
-   {
-    "class": "route-claim",
-    "claim": "GET /api/items",
-    "doc": "README.md",
-    "line": 20,
-    "receipt": "no matching route registration in extracted endpoints",
-    "candidates": [
-     "fact:http-endpoints/GET /items"
-    ]
-   }
-  ],
-  "suppressed": 2,
-  "scannedCodeFiles": 3,
+  "findings": [],
+  "suppressed": 0,
+  "scannedCodeFiles": 6,
   "notes": []
  },
  "toolError": null,
@@ -103,13 +68,11 @@
  "docs": {
   "written": [
    "docs/reference/endpoints.md",
-   "docs/architecture/data-model.md",
    "docs/reference/configuration.md"
   ],
   "skipped": [],
   "planned": [
    "docs/reference/endpoints.md",
-   "docs/architecture/data-model.md",
    "docs/reference/configuration.md"
   ]
  },
@@ -117,39 +80,31 @@
   "before": {
    "perCapability": {
     "config-surface": {
-     "total": 2,
-     "documented": 0
-    },
-    "db-schema": {
-     "total": 2,
+     "total": 3,
      "documented": 0
     },
     "http-endpoints": {
-     "total": 3,
+     "total": 6,
      "documented": 0
     }
    },
-   "total": 7,
+   "total": 9,
    "documented": 0,
    "pct": 0
   },
   "after": {
    "perCapability": {
     "config-surface": {
-     "total": 2,
-     "documented": 2
-    },
-    "db-schema": {
-     "total": 2,
-     "documented": 2
-    },
-    "http-endpoints": {
      "total": 3,
      "documented": 3
+    },
+    "http-endpoints": {
+     "total": 6,
+     "documented": 6
     }
    },
-   "total": 7,
-   "documented": 7,
+   "total": 9,
+   "documented": 9,
    "pct": 100
   }
  },

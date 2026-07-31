@@ -16,6 +16,15 @@ def pkg_name(d):
             return json.load(open(p)).get("name") or os.path.basename(os.path.abspath(d))
         except Exception:
             pass
+    pt = os.path.join(d, "pyproject.toml")
+    if os.path.exists(pt):
+        try:
+            import tomllib
+            name = (tomllib.load(open(pt, "rb")).get("project") or {}).get("name")
+            if name:
+                return name
+        except Exception:
+            pass
     return os.path.basename(os.path.abspath(d))
 
 
@@ -56,7 +65,9 @@ def main(root):
     if not packages:
         packages = [{"name": pkg_name(root), "path": "."}]
         manager = "single"
-        mfile = "package.json" if os.path.exists(pj) else None
+        mfile = ("package.json" if os.path.exists(pj)
+                 else "pyproject.toml" if os.path.exists(os.path.join(root, "pyproject.toml"))
+                 else None)
     packages.sort(key=lambda p: p["path"])
     print(json.dumps({"manager": manager, "file": mfile, "packages": packages}, indent=1))
 

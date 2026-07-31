@@ -1,0 +1,14 @@
+id: py-imports
+capability: module-graph
+semver: 0.2.0
+tier: code            # tree-sitter-python parse; same signature discipline as ts-imports
+entry: ./extract_pysymbols.py
+detect: { always: true }   # Python surface may exist in any repo; zero files = zero facts
+needs: ["workspace-layout"]   # symbol IDs take their package segment from workspace facts (ADR-007)
+inputs: ["**/*.py"]
+requires: ["tree-sitter", "tree-sitter-python"]
+timeout_class: D
+emits: [module, symbol]
+# Public surface: __all__ when present (all-literal), else non-underscore
+# module-level names. @typing.overload implementation sigs excluded (ADR-007
+# amendment 3, Python form). test_* / *_test.py and test dirs skipped.

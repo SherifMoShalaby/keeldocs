@@ -1,0 +1,10 @@
+{
+ "manager": "single",
+ "file": "pyproject.toml",
+ "packages": [
+  {
+   "name": "python-scenario-fixture",
+   "path": "."
+  }
+ ]
+}

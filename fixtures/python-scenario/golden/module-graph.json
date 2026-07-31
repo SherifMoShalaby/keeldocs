@@ -1,0 +1,193 @@
+{
+ "modules": [
+  {
+   "path": "app/main.py",
+   "imports": [
+    {
+     "specifier": ".routers",
+     "resolved": "app/routers/__init__.py"
+    },
+    {
+     "specifier": ".routers.users",
+     "resolved": "app/routers/users.py"
+    },
+    {
+     "specifier": "fastapi",
+     "resolved": null
+    },
+    {
+     "specifier": "os",
+     "resolved": null
+    }
+   ]
+  },
+  {
+   "path": "app/routers/items.py",
+   "imports": [
+    {
+     "specifier": "fastapi",
+     "resolved": null
+    }
+   ]
+  },
+  {
+   "path": "app/routers/users.py",
+   "imports": [
+    {
+     "specifier": "fastapi",
+     "resolved": null
+    },
+    {
+     "specifier": "os",
+     "resolved": null
+    }
+   ]
+  },
+  {
+   "path": "app/tokens.py",
+   "imports": [
+    {
+     "specifier": "typing",
+     "resolved": null
+    }
+   ]
+  }
+ ],
+ "symbols": [
+  {
+   "path": "app/main.py",
+   "name": "DB_URL",
+   "kind": "const",
+   "sigs": [
+    "const DB_URL = <subscript>"
+   ],
+   "nameless": [
+    "const \u00a7 = <subscript>"
+   ]
+  },
+  {
+   "path": "app/main.py",
+   "name": "DEBUG",
+   "kind": "const",
+   "sigs": [
+    "const DEBUG = <call>"
+   ],
+   "nameless": [
+    "const \u00a7 = <call>"
+   ]
+  },
+  {
+   "path": "app/main.py",
+   "name": "app",
+   "kind": "const",
+   "sigs": [
+    "const app = <call>"
+   ],
+   "nameless": [
+    "const \u00a7 = <call>"
+   ]
+  },
+  {
+   "path": "app/main.py",
+   "name": "health",
+   "kind": "function",
+   "sigs": [
+    "def health (  ) -> dict"
+   ],
+   "nameless": [
+    "def \u00a7 (  ) -> dict"
+   ]
+  },
+  {
+   "path": "app/routers/items.py",
+   "name": "bulk",
+   "kind": "function",
+   "sigs": [
+    "def bulk ( dict ) -> dict"
+   ],
+   "nameless": [
+    "def \u00a7 ( dict ) -> dict"
+   ]
+  },
+  {
+   "path": "app/routers/items.py",
+   "name": "get_item",
+   "kind": "function",
+   "sigs": [
+    "def get_item ( int ) -> dict"
+   ],
+   "nameless": [
+    "def \u00a7 ( int ) -> dict"
+   ]
+  },
+  {
+   "path": "app/routers/items.py",
+   "name": "list_items",
+   "kind": "function",
+   "sigs": [
+    "def list_items ( int =? ) -> list"
+   ],
+   "nameless": [
+    "def \u00a7 ( int =? ) -> list"
+   ]
+  },
+  {
+   "path": "app/routers/items.py",
+   "name": "router",
+   "kind": "const",
+   "sigs": [
+    "const router = <call>"
+   ],
+   "nameless": [
+    "const \u00a7 = <call>"
+   ]
+  },
+  {
+   "path": "app/routers/users.py",
+   "name": "PAGE_SIZE",
+   "kind": "const",
+   "sigs": [
+    "const PAGE_SIZE = <call>"
+   ],
+   "nameless": [
+    "const \u00a7 = <call>"
+   ]
+  },
+  {
+   "path": "app/routers/users.py",
+   "name": "create_user",
+   "kind": "function",
+   "sigs": [
+    "def create_user ( str ) -> dict"
+   ],
+   "nameless": [
+    "def \u00a7 ( str ) -> dict"
+   ]
+  },
+  {
+   "path": "app/routers/users.py",
+   "name": "router",
+   "kind": "const",
+   "sigs": [
+    "const router = <call>"
+   ],
+   "nameless": [
+    "const \u00a7 = <call>"
+   ]
+  },
+  {
+   "path": "app/tokens.py",
+   "name": "parse",
+   "kind": "function",
+   "sigs": [
+    "def parse ( bytes ) -> int",
+    "def parse ( str ) -> int"
+   ],
+   "nameless": [
+    "def \u00a7 ( bytes ) -> int",
+    "def \u00a7 ( str ) -> int"
+   ]
+  }
+ ],
+ "warnings": []
+}

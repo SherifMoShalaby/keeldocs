@@ -1,0 +1,40 @@
+{
+ "vars": [
+  {
+   "name": "APP_DEBUG",
+   "read_in_code": true,
+   "declared_in_example": false,
+   "sources": [
+    {
+     "file": "app/main.py",
+     "line": 10,
+     "kind": "code"
+    }
+   ]
+  },
+  {
+   "name": "DATABASE_URL",
+   "read_in_code": true,
+   "declared_in_example": false,
+   "sources": [
+    {
+     "file": "app/main.py",
+     "line": 11,
+     "kind": "code"
+    }
+   ]
+  },
+  {
+   "name": "USERS_PAGE_SIZE",
+   "read_in_code": true,
+   "declared_in_example": false,
+   "sources": [
+    {
+     "file": "app/routers/users.py",
+     "line": 5,
+     "kind": "code"
+    }
+   ]
+  }
+ ]
+}

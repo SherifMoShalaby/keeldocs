@@ -73,6 +73,33 @@ MATRIX = [
                 "fixtures/rls-scenario"],
         "golden": "fixtures/rls-scenario/golden/db-policies.json",
     },
+    {
+        # v0.2 Python headline: include_router prefix chains resolved (the
+        # Express/E1 mount lesson applied to Python)
+        "name": "python-scenario / http-endpoints (fastapi)",
+        "cmd": [sys.executable, "providers/http-endpoints/fastapi/extract_fastapi.py",
+                "fixtures/python-scenario"],
+        "golden": "fixtures/python-scenario/golden/http-endpoints.json",
+    },
+    {
+        # __all__ honored, @overload impl sigs excluded (ADR-007 am. 3, Python form)
+        "name": "python-scenario / module-graph (py-imports)",
+        "cmd": [sys.executable, "providers/module-graph/py-imports/extract_pysymbols.py",
+                "fixtures/python-scenario"],
+        "golden": "fixtures/python-scenario/golden/module-graph.json",
+    },
+    {
+        "name": "python-scenario / config-surface (os.environ forms)",
+        "cmd": [sys.executable, "providers/config-surface/env-readers/extract_env.py",
+                "fixtures/python-scenario"],
+        "golden": "fixtures/python-scenario/golden/env-readers.json",
+    },
+    {
+        "name": "python-scenario / workspace-layout (pyproject identity)",
+        "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
+                "fixtures/python-scenario"],
+        "golden": "fixtures/python-scenario/golden/workspace-layout.json",
+    },
 ]
 
 
@@ -506,6 +533,47 @@ def main():
         print("  PASS  RLS static surface: replay, policy table, born-clean, surgical drift loop")
     except Exception as e:
         failures.append(f"rls integration: {e}")
+
+    # ---- Python end-to-end: FastAPI docs born clean, drift loop, ds symbols ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-py-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "python-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        r = kd(dst, "init", "--yes", "--json")
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and env_["code"] == "INITIALIZED", r.stdout[:200]
+        caps = env_["data"]["card"]["capabilities"]
+        assert caps["http-endpoints"]["providers"] == ["fastapi@0.2.0"], caps["http-endpoints"]
+        # first multi-provider capability: both symbol providers serve module-graph
+        assert sorted(caps["module-graph"]["providers"]) == ["py-imports@0.2.0", "ts-imports@0.1.0"]
+        assert env_["data"]["coverage"]["after"] == {} or env_["data"]["coverage"]["after"]["pct"] == 100
+        for rel, gold in [("docs/reference/endpoints.md", "endpoints.md"),
+                          ("docs/reference/configuration.md", "configuration.md")]:
+            got = open(os.path.join(dst, rel)).read()
+            want = open(os.path.join(ROOT, "fixtures", "python-scenario", "golden", "docs", gold)).read()
+            assert got == want, f"{rel} differs from golden"
+        rc = kd(dst, "check", "--json")
+        assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", "born-clean invariant violated"
+        # python ds identities exist with the overload rule applied
+        mg = open(os.path.join(dst, ".keeldocs", "cache", "facts", "module-graph.jsonl")).read()
+        assert '"ds python-scenario-fixture . app/tokens.py/parse()."' in mg
+        assert mg.count("def parse ( ") == 2, "overload impl sig must be excluded"
+        # drift loop: add a route -> endpoints table stale -> sync -> clean
+        us = os.path.join(dst, "app", "routers", "users.py")
+        u_src = open(us).read()
+        open(us, "w").write(u_src + "\n\n@router.get(\"/users/{uid}\")\ndef get_user(uid: int) -> dict:\n    return {}\n")
+        r = kd(dst, "check", "--json")
+        top = {t_["id"]: t_["state"] for t_ in json.loads(r.stdout)["data"]["top"]}
+        assert r.returncode == 1 and top == {"api.inventory.table": "stale"}, top
+        assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
+        assert "/api/v1/users/{uid}" in open(os.path.join(dst, "docs", "reference", "endpoints.md")).read()
+        shutil.rmtree(tmp)
+        print("  PASS  python end-to-end: fastapi mounts, ds symbols w/ overload rule, born-clean, drift loop")
+    except Exception as e:
+        failures.append(f"python integration: {e}")
 
     # ---- redaction barrier: secret in facts -> [REDACTED] in docs, still born clean ----
     try:

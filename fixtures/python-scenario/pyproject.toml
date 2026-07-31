@@ -1,0 +1,4 @@
+[project]
+name = "python-scenario-fixture"
+version = "0.0.0"
+dependencies = ["fastapi"]

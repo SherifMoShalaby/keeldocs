@@ -2,7 +2,7 @@
 
 **Test coverage for your docs.** keeldocs anchors every doc section to the code it describes, deterministically flags drift with receipts — *"README references `scripts/setup.sh` — deleted in `8f21ac9`, 4 months ago"* — and proposes reviewable, section-level patches. Any stack, any agent, no SaaS.
 
-> Status: **v0.1.0-rc.1.** Design (nine-expert panel, 13 ADRs) → validation experiments on real repos → all four commands live, all seven v0.1 capabilities live (plus the static RLS surface), real-app beta, cross-OS CI determinism matrix, GitHub Action with SARIF, publish-ready packaging. 32 unit tests + 9 extractor goldens + 8 integration suites, double-run determinism gates on every one.
+> Status: **v0.2.0-dev** (v0.1.0-rc.1 taggable at `927b4cb`). Design (nine-expert panel, 13 ADRs) → validation experiments on real repos → all four commands live, all seven v0.1 capabilities live (plus the static RLS surface), real-app beta, cross-OS CI determinism matrix, GitHub Action with SARIF, publish-ready packaging. 32 unit tests + 9 extractor goldens + 8 integration suites, double-run determinism gates on every one.
 
 ## Why
 
@@ -61,7 +61,7 @@ Schema-strict: a typo'd key is a CONFIG error (exit 2), never a silent no-op.
 | `keeldocs sync` | Reviewable proposals (regenerate/restore/rebind/tombstone) with evidence; `--apply`/`--reject`/`--snooze` + interactive `y/n/s/w`; journal-backed rejection memory; human edits never overwritten. |
 | `keeldocs new <type>` | erd · endpoint-inventory · config-reference · system-map (all born clean, never overwrite) · adr capture; plus `slot-write` (7-gate prose validator, tool-applied draft labels) and `approve` (human attestation). A type without facts in your repo is honestly NOT_AVAILABLE. |
 
-Capabilities (all live): http-endpoints (Express code-tier, NestJS declarative) · db-schema (Prisma) · db-policies (static `CREATE POLICY` replay) · config-surface (env reads + `.env.example`, value-blind) · workspace-layout (pnpm/npm/yarn/single) · services-topology (compose, owned-vs-external) · module-graph (ts-imports: import edges + `ds` symbol identities with S1b move-matching) · decision-history (git-log churn, HEAD-anchored window).
+Capabilities (all live): http-endpoints (Express + **FastAPI** code-tier, NestJS pure-`.scm` declarative) · db-schema (Prisma) · db-policies (static `CREATE POLICY` replay) · config-surface (env reads + `.env.example` incl. `os.environ`/`os.getenv`, value-blind) · workspace-layout (pnpm/npm/yarn/pyproject/single) · services-topology (compose, owned-vs-external) · module-graph (ts-imports **and py-imports**: import edges + `ds` symbol identities with S1b move-matching, `__all__` honored) · decision-history (git-log churn, HEAD-anchored window).
 
 ## Repo layout
 

@@ -1,0 +1,12 @@
+id: fastapi
+capability: http-endpoints
+semver: 0.2.0
+tier: code            # decorator-shaped at the leaf, mount-shaped at the trunk:
+                      # include_router prefix chains need graph resolution (the
+                      # Express/E1 lesson applied to Python)
+entry: ./extract_fastapi.py
+detect: { always: true }   # Python surface may exist in any repo; zero FastAPI = zero facts
+inputs: ["**/*.py"]
+requires: ["tree-sitter", "tree-sitter-python"]
+timeout_class: C
+emits: [endpoint, extraction-gap]

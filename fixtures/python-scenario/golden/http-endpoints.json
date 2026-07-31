@@ -1,0 +1,41 @@
+{
+ "endpoints": [
+  {
+   "file": "app/main.py",
+   "method": "GET",
+   "path": "/health",
+   "line": 14
+  },
+  {
+   "file": "app/routers/items.py",
+   "method": "GET",
+   "path": "/api/items",
+   "line": 6
+  },
+  {
+   "file": "app/routers/items.py",
+   "method": "GET",
+   "path": "/api/items/{item_id}",
+   "line": 11
+  },
+  {
+   "file": "app/routers/items.py",
+   "method": "DELETE",
+   "path": "/api/items/bulk",
+   "line": 16
+  },
+  {
+   "file": "app/routers/items.py",
+   "method": "POST",
+   "path": "/api/items/bulk",
+   "line": 16
+  },
+  {
+   "file": "app/routers/users.py",
+   "method": "POST",
+   "path": "/api/v1/users",
+   "line": 8
+  }
+ ],
+ "warnings": []
+}

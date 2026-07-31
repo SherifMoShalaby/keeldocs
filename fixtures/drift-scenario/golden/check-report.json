@@ -3,7 +3,7 @@
  "meta": {
   "engine": "keeldocs@0.2.0-dev.0",
   "head": null,
-  "providerSetHash": "d432c430c09ffeae",
+  "providerSetHash": "9c24174e04e06464",
   "docsScanned": 2,
   "mode": "local"
  },
@@ -35,7 +35,8 @@
   "http-endpoints": {
    "status": "ok",
    "providers": [
-    "express@0.1.0"
+    "express@0.1.0",
+    "fastapi@0.2.0"
    ]
   },
   "services-topology": {
@@ -51,6 +52,7 @@
   "module-graph": {
    "status": "ok",
    "providers": [
+    "py-imports@0.2.0",
     "ts-imports@0.1.0"
    ]
   }
