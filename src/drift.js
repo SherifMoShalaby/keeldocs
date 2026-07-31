@@ -41,8 +41,21 @@ function overlap(a, b) {
   return inter / union;
 }
 
+// S1b move-matcher (ADR-007 amendment 2, from the hono+zod mini-run): symbols
+// lost to cross-file consolidation dominated orphans (21/24) and every one had
+// a unique same-name candidate repo-wide. Same final descriptor (name+suffix)
+// in another module = candidate; proposal-grade only, never auto-rebind.
+function symbolCandidates(missingId, factsById) {
+  const tail = missingId.slice(missingId.lastIndexOf("/") + 1);
+  return [...factsById.keys()]
+    .filter((id) => id.startsWith("ds ") && id !== missingId
+                 && id.slice(id.lastIndexOf("/") + 1) === tail)
+    .sort().slice(0, 3);
+}
+
 // Candidate suggestions for a missing bind - report-only, max 3, deterministic order.
 export function candidatesFor(missingId, factsById) {
+  if (missingId.startsWith("ds ")) return symbolCandidates(missingId, factsById);
   const out = [];
   const missing = missingId.replace(/^fact:[a-z0-9-]+\//, "");
   const cap = missingId.slice(0, missingId.indexOf("/"));
@@ -65,6 +78,7 @@ export function candidatesFor(missingId, factsById) {
 }
 
 function capabilityOf(bindRaw) {
+  if (bindRaw.startsWith("ds ")) return "module-graph"; // ADR-007 second namespace
   const m = bindRaw.match(/^fact:([a-z0-9-]+)\//);
   return m ? m[1] : null;
 }
@@ -178,7 +192,7 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
 // surfaces; external services (postgres:16) are someone else's architecture.
 export function isCoverageSurface(f) {
   const t = f.payload.type;
-  if (t === "package") return false;
+  if (t === "package" || t === "module" || t === "symbol") return false;
   if (t === "service" && f.payload.attrs.kind === "external") return false;
   return true;
 }
@@ -187,7 +201,7 @@ export function coverage(factsById, documented) {
   const perCap = {};
   for (const [id, f] of factsById) {
     if (!isCoverageSurface(f)) continue;
-    const cap = id.slice(5, id.indexOf("/"));
+    const cap = id.startsWith("ds ") ? "module-graph" : id.slice(5, id.indexOf("/"));
     const c = (perCap[cap] ??= { total: 0, documented: 0 });
     c.total++;
     if (documented.has(id)) c.documented++;

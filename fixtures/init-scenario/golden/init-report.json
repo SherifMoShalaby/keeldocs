@@ -3,7 +3,7 @@
  "meta": {
   "engine": "keeldocs@0.1.0-dev.0",
   "head": null,
-  "providerSetHash": "0184c930db703ead",
+  "providerSetHash": "6b51e4f55c78a5cf",
   "mode": "apply"
  },
  "card": {
@@ -36,6 +36,12 @@
    "services-topology": {
     "status": "absent",
     "providers": []
+   },
+   "module-graph": {
+    "status": "ok",
+    "providers": [
+     "ts-imports@0.1.0"
+    ]
    }
   },
   "facts": 8

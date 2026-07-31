@@ -36,6 +36,8 @@ function knownEntities(factsById) {
     if (f.payload.type === "enum") { known.add(a.name); for (const v of a.values) known.add(v); }
     if (f.payload.type === "env-var") known.add(a.name);
     if (f.payload.type === "package") { known.add(a.name); known.add(a.path); }
+    if (f.payload.type === "symbol") { known.add(a.name); known.add(a.module); }
+    if (f.payload.type === "module") known.add(a.path);
     if (f.payload.type === "service") {
       known.add(a.name);
       if (a.image) known.add(a.image);

@@ -47,4 +47,12 @@ export const REGISTRY = [
     entry: "providers/services-topology/compose/extract_compose.py",
     argMode: "root",
   },
+  {
+    // MUST run after workspace-auto: symbol IDs take their package segment from
+    // workspace-layout facts (ADR-007; the registry array is the v0.1 DAG order).
+    id: "ts-imports", semver: "0.1.0", capability: "module-graph", tier: "code",
+    detect: { always: true }, // TS/ESM surface may exist in any repo; zero files = zero facts
+    entry: "providers/module-graph/ts-imports/extract_symbols.py",
+    argMode: "root",
+  },
 ];

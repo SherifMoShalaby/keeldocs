@@ -49,6 +49,12 @@ MATRIX = [
                 "fixtures/compose-scenario"],
         "golden": "fixtures/compose-scenario/golden/services-topology.json",
     },
+    {
+        "name": "symbols-scenario / module-graph",
+        "cmd": [sys.executable, "providers/module-graph/ts-imports/extract_symbols.py",
+                "fixtures/symbols-scenario"],
+        "golden": "fixtures/symbols-scenario/golden/module-graph.json",
+    },
 ]
 
 
@@ -340,6 +346,40 @@ def main():
         print("  PASS  system-map integration: owned/external topology, born-clean, drift loop, verbatim ${VAR}")
     except Exception as e:
         failures.append(f"system-map integration: {e}")
+
+    # ---- symbol identity + S1b re-anchoring: the ADR-007 loop on `ds` anchors ----
+    try:
+        import shutil, tempfile
+        # in place: the ds-bound anchor resolves and is clean
+        r = run_check("symbols-scenario")
+        assert r.returncode == 0 and json.loads(r.stdout)["code"] == "CLEAN", r.stdout[:200]
+        # copy: move login() from auth.ts to util.ts (cross-file consolidation, S1b's case)
+        tmp = tempfile.mkdtemp(prefix="keeldocs-sym-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "symbols-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        auth = os.path.join(dst, "src", "auth.ts")
+        a_src = open(auth).read()
+        fn = a_src[a_src.index("export function login"):a_src.index("export function parseToken")]
+        open(auth, "w").write(a_src.replace(fn, ""))
+        util = os.path.join(dst, "src", "util.ts")
+        u_src = open(util).read()
+        open(util, "w").write(u_src + "\n" + fn)
+        moved = "ds symbols-scenario-fixture . src/util.ts/login()."
+        r = kd(dst, "check", "--json")
+        top = json.loads(r.stdout)["data"]["top"]
+        assert r.returncode == 1 and top[0]["state"] == "dead" and top[0]["candidates"] == [moved], top
+        # S1b is proposal-grade: sync proposes the unique same-name candidate with evidence
+        r = kd(dst, "sync", "--json", env=local_env)
+        props = json.loads(r.stdout)["data"]["proposals"]
+        assert props[0]["kind"] == "rebind" and props[0]["candidate"] == moved, props
+        assert kd(dst, "sync", "--apply", "auth.login", "--json", env=local_env).returncode == 0
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
+        assert f"binds={moved}" in open(os.path.join(dst, "docs", "auth.md")).read()
+        shutil.rmtree(tmp)
+        print("  PASS  symbol identity: ds anchors, overload-impl exclusion, move -> S1b rebind -> clean")
+    except Exception as e:
+        failures.append(f"symbol identity integration: {e}")
 
     # ---- redaction barrier: secret in facts -> [REDACTED] in docs, still born clean ----
     try:

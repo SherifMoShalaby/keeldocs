@@ -1,9 +1,13 @@
 id: ts-imports
 capability: module-graph
-semver: 0.0.1
-tier: code
-status: stub          # detect contract defined; extractor lands per docs/design/07-scope-roadmap.md
-detect: { any: [ { file: "tsconfig.json" }, { dependency: "typescript" } ] }
-inputs: ["src/**/*.{ts,tsx,js}"]
-requires: []
+semver: 0.1.0
+tier: code            # tree-sitter parse; E2/E3-validated signature normalization
+entry: ./extract_symbols.py
+detect: { always: true }   # TS/ESM surface may exist in any repo; zero files = zero facts
+inputs: ["**/*.{ts,tsx,js,mjs}"]
+requires: ["tree-sitter", "tree-sitter-typescript"]
 timeout_class: D
+emits: [module, symbol]   # symbols carry ADR-007 `ds` identities; modules carry import edges
+# Honest scope (v0.1): ESM/TS only - CommonJS module.exports is not modeled.
+# Overload implementation signatures are excluded from the fact hash
+# (ADR-007 amendment 3); bodies are never part of any signature.

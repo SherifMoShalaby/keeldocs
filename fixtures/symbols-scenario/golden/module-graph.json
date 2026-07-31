@@ -1,0 +1,77 @@
+{
+ "modules": [
+  {
+   "path": "src/auth.ts",
+   "imports": [
+    {
+     "specifier": "./util",
+     "resolved": "src/util.ts"
+    }
+   ]
+  },
+  {
+   "path": "src/util.ts",
+   "imports": []
+  }
+ ],
+ "symbols": [
+  {
+   "path": "src/auth.ts",
+   "name": "MAX_TRIES",
+   "kind": "const",
+   "sigs": [
+    "const MAX_TRIES = <number>"
+   ],
+   "nameless": [
+    "const \u00a7 = <number>"
+   ]
+  },
+  {
+   "path": "src/auth.ts",
+   "name": "Session",
+   "kind": "interface",
+   "sigs": [
+    "interface Session { user : string expires : number }"
+   ],
+   "nameless": [
+    "interface \u00a7 { user : string expires : number }"
+   ]
+  },
+  {
+   "path": "src/auth.ts",
+   "name": "login",
+   "kind": "function",
+   "sigs": [
+    "function login ( string , string ) : Session | null"
+   ],
+   "nameless": [
+    "function \u00a7 ( string , string ) : Session | null"
+   ]
+  },
+  {
+   "path": "src/auth.ts",
+   "name": "parseToken",
+   "kind": "function",
+   "sigs": [
+    "function parseToken ( Uint8Array ) : Session",
+    "function parseToken ( string ) : Session"
+   ],
+   "nameless": [
+    "function \u00a7 ( Uint8Array ) : Session",
+    "function \u00a7 ( string ) : Session"
+   ]
+  },
+  {
+   "path": "src/util.ts",
+   "name": "hashString",
+   "kind": "function",
+   "sigs": [
+    "function hashString ( string ) : string"
+   ],
+   "nameless": [
+    "function \u00a7 ( string ) : string"
+   ]
+  }
+ ],
+ "warnings": []
+}

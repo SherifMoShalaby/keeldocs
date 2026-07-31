@@ -84,6 +84,47 @@ function envFacts(raw, provenanceBase) {
   return { facts, gaps: [] };
 }
 
+function moduleGraphFacts(raw, provenanceBase, packages) {
+  // Longest-prefix package owner; "." (single-package root) matches everything.
+  const pkgFor = (path) => {
+    let best = null;
+    for (const p of packages) {
+      if (p.path === "." || path === p.path || path.startsWith(p.path + "/")) {
+        if (!best || p.path.length > best.path.length) best = p;
+      }
+    }
+    return best?.name ?? ".";
+  };
+  const facts = [];
+  for (const m of raw.modules ?? []) {
+    facts.push({
+      id: `fact:module-graph/${m.path}`,
+      payload: { schema_version: 1, type: "module",
+        attrs: { path: m.path, package: pkgFor(m.path),
+                 imports: (m.imports ?? []).map((i) => i.resolved ?? i.specifier).sort() } },
+      provenance: { ...provenanceBase, source: [{ file: m.path }] },
+    });
+  }
+  for (const s of raw.symbols ?? []) {
+    // ADR-007 symbol identity: `ds <pkg> <version|.> <module-path>/<descriptor>`.
+    // Suffix per SCIP shape: callables `().`, types `#`, terms `.`.
+    const suffix = s.kind.includes("function") ? "()."
+      : ["class", "interface", "type", "enum", "namespace"].some((k) => s.kind.includes(k)) ? "#" : ".";
+    const pkg = pkgFor(s.path);
+    facts.push({
+      id: `ds ${pkg} . ${s.path}/${s.name}${suffix}`,
+      // sigs are the hashed declaration shape (E2-validated); the nameless
+      // variants are provenance-only matching aids for re-anchoring, and the
+      // module path lives in the ID + attrs so a move IS an identity change (S1).
+      payload: { schema_version: 1, type: "symbol",
+        attrs: { name: s.name, module: s.path, package: pkg, kind: s.kind, sigs: s.sigs } },
+      provenance: { ...provenanceBase, source: [{ file: s.path }], nameless: s.nameless },
+    });
+  }
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? "unknown", file: w.file ?? null }));
+  return { facts, gaps };
+}
+
 function packageFacts(raw, provenanceBase) {
   const facts = [];
   for (const p of raw.packages ?? []) {
@@ -192,6 +233,9 @@ export function extractAll(repoRootIn) {
       ? packageFacts(run.raw, provenanceBase)
       : reg.capability === "services-topology"
       ? serviceFacts(run.raw, provenanceBase)
+      : reg.capability === "module-graph"
+      ? moduleGraphFacts(run.raw, provenanceBase,
+          [...factsById.values()].filter((f) => f.payload.type === "package").map((f) => f.payload.attrs))
       : schemaFacts(run.raw, provenanceBase, relative(repoRoot, d.file ?? ""));
     for (const f of norm.facts) {
       f.hash = factHash(f.payload);
@@ -209,7 +253,8 @@ export function extractAll(repoRootIn) {
   mkdirSync(factsDir, { recursive: true });
   const byCap = {};
   for (const f of factsById.values()) {
-    const cap = f.id.slice(5, f.id.indexOf("/"));
+    // second namespace (ADR-007): `ds ...` symbol ids belong to module-graph
+    const cap = f.id.startsWith("ds ") ? "module-graph" : f.id.slice(5, f.id.indexOf("/"));
     (byCap[cap] ??= []).push(f);
   }
   for (const [cap, list] of Object.entries(byCap)) {
