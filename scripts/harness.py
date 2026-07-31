@@ -109,6 +109,12 @@ def main():
                               capture_output=True, text=True, timeout=180)
 
     try:
+        import shutil as _sh
+        out_dir = os.path.join(ROOT, "fixtures", "drift-scenario", ".keeldocs", "out")
+        # one report per HEAD accumulates here across commits in a working tree;
+        # clear first so the file we read is THIS run's (a stale pick once let a
+        # stale golden pass locally while every clean CI checkout failed)
+        _sh.rmtree(out_dir, ignore_errors=True)
         r1, r2 = run_check("drift-scenario"), run_check("drift-scenario")
         env = json.loads(r1.stdout)
         assert r1.returncode == 1, f"expected exit 1, got {r1.returncode}"
@@ -116,8 +122,9 @@ def main():
         assert len(r1.stdout) <= 8192, "envelope exceeds 8KB cap"
         if r1.stdout != r2.stdout:
             raise AssertionError("NONDETERMINISTIC envelope (two runs differ)")
-        out_dir = os.path.join(ROOT, "fixtures", "drift-scenario", ".keeldocs", "out")
-        report_file = [f for f in os.listdir(out_dir) if f.startswith("check-")][0]
+        files = [f for f in os.listdir(out_dir) if f.startswith("check-")]
+        assert len(files) == 1, f"expected exactly one fresh report, found {files}"
+        report_file = files[0]
         report = json.load(open(os.path.join(out_dir, report_file)))
         report["meta"]["head"] = None  # volatile across commits
         golden = json.load(open(os.path.join(ROOT, "fixtures", "drift-scenario", "golden", "check-report.json")))
