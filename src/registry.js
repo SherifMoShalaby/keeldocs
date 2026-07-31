@@ -55,4 +55,10 @@ export const REGISTRY = [
     entry: "providers/module-graph/ts-imports/extract_symbols.py",
     argMode: "root",
   },
+  {
+    id: "git-log", semver: "0.1.0", capability: "decision-history", tier: "code",
+    detect: { always: true }, // answers honestly (zero files + warning) off a git toplevel
+    entry: "providers/decision-history/git-log/extract_gitlog.py",
+    argMode: "root",
+  },
 ];

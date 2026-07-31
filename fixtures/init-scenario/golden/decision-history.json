@@ -1,0 +1,10 @@
+{
+ "head": null,
+ "window_days": 180,
+ "files": [],
+ "warnings": [
+  {
+   "kind": "not-a-git-root"
+  }
+ ]
+}

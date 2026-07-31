@@ -192,7 +192,7 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
 // surfaces; external services (postgres:16) are someone else's architecture.
 export function isCoverageSurface(f) {
   const t = f.payload.type;
-  if (t === "package" || t === "module" || t === "symbol") return false;
+  if (t === "package" || t === "module" || t === "symbol" || t === "churn") return false;
   if (t === "service" && f.payload.attrs.kind === "external") return false;
   return true;
 }

@@ -1,9 +1,13 @@
 id: git-log
 capability: decision-history
-semver: 0.0.1
-tier: code
-status: stub          # detect contract defined; extractor lands per docs/design/07-scope-roadmap.md
-detect: { any: [ { always: true } ] }
+semver: 0.1.0
+tier: code            # subprocess git; window anchored to HEAD committer time, never wall clock
+entry: ./extract_gitlog.py
+detect: { always: true }   # answers honestly (zero files + warning) when root isn't a git toplevel
 inputs: [".git/"]
-requires: []
+requires: ["git"]
 timeout_class: D
+emits: [churn]
+# Churn facts feed init's hotspot x fan-in plan ranking (D5). They are NOT
+# coverage surfaces and are poor anchor targets by nature (they change with
+# history); author identities are counted, never emitted.

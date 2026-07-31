@@ -55,6 +55,14 @@ MATRIX = [
                 "fixtures/symbols-scenario"],
         "golden": "fixtures/symbols-scenario/golden/module-graph.json",
     },
+    {
+        # fixtures are subdirs of THIS repo, not git toplevels - the provider
+        # must refuse to report the outer repo's history as the fixture's
+        "name": "init-scenario / decision-history (not-a-git-root honesty)",
+        "cmd": [sys.executable, "providers/decision-history/git-log/extract_gitlog.py",
+                "fixtures/init-scenario"],
+        "golden": "fixtures/init-scenario/golden/decision-history.json",
+    },
 ]
 
 
@@ -380,6 +388,46 @@ def main():
         print("  PASS  symbol identity: ds anchors, overload-impl exclusion, move -> S1b rebind -> clean")
     except Exception as e:
         failures.append(f"symbol identity integration: {e}")
+
+    # ---- decision-history + plan ranking: hotspot x fan-in on a real git repo ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-hot-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        genv = {**os.environ, "GIT_AUTHOR_DATE": "2026-07-01T00:00:00Z",
+                "GIT_COMMITTER_DATE": "2026-07-01T00:00:00Z"}
+        def g(*a, date=None):
+            e = dict(genv)
+            if date:
+                e["GIT_AUTHOR_DATE"] = e["GIT_COMMITTER_DATE"] = date
+            r = subprocess.run(["git", "-C", dst, "-c", "user.name=h", "-c", "user.email=h@x", *a],
+                               capture_output=True, text=True, env=e)
+            assert r.returncode == 0, r.stderr[-200:]
+        g("init", "-q")
+        g("add", "-A"); g("commit", "-qm", "c1")
+        for i, d in enumerate(["2026-07-02T00:00:00Z", "2026-07-03T00:00:00Z"]):
+            with open(os.path.join(dst, "app.js"), "a") as f:
+                f.write(f"\n// churn {i}\n")
+            g("add", "-A"); g("commit", "-qm", f"c{i+2}", date=d)
+        # dry-run init: every surface undocumented; app.js churn=3 must rank endpoints first
+        r = kd(dst, "init", "--json")
+        env_ = json.loads(r.stdout)
+        assert env_["code"] == "DRY_RUN", r.stdout[:200]
+        plan = env_["data"]["plan"]
+        # hottest file (app.js, 3 commits) surfaces first: the env var read there
+        # and both endpoints tie at score (3+1); cold prisma surfaces trail
+        assert plan and plan[0]["hot"]["commits"] == 3, plan[:3]
+        assert all(p["hot"]["commits"] == 3 for p in plan[:3]), plan[:3]
+        epi = min(i for i, p in enumerate(plan) if p["surface"].startswith("fact:http-endpoints/"))
+        dbi = min(i for i, p in enumerate(plan) if p["surface"].startswith("fact:db-schema/"))
+        assert epi < dbi, "churn-hot endpoints must outrank cold schema surfaces"
+        assert all(p["hot"]["commits"] >= 0 for p in plan)
+        shutil.rmtree(tmp)
+        print("  PASS  decision-history: HEAD-anchored churn, hotspot x fan-in plan ranking")
+    except Exception as e:
+        failures.append(f"decision-history integration: {e}")
 
     # ---- redaction barrier: secret in facts -> [REDACTED] in docs, still born clean ----
     try:

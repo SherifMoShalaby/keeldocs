@@ -125,6 +125,23 @@ function moduleGraphFacts(raw, provenanceBase, packages) {
   return { facts, gaps };
 }
 
+function churnFacts(raw, provenanceBase) {
+  const facts = [];
+  for (const f of raw.files ?? []) {
+    facts.push({
+      id: `fact:decision-history/${f.path}`,
+      // History facts move with history by nature - they rank the doc plan
+      // (hotspot x fan-in) and are excluded from coverage; binding prose to
+      // them is possible but self-inflicted noise.
+      payload: { schema_version: 1, type: "churn",
+        attrs: { path: f.path, commits: f.commits, last: f.last, authors: f.authors } },
+      provenance: { ...provenanceBase, source: [{ file: f.path }] },
+    });
+  }
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? "unknown", file: null }));
+  return { facts, gaps };
+}
+
 function packageFacts(raw, provenanceBase) {
   const facts = [];
   for (const p of raw.packages ?? []) {
@@ -236,6 +253,8 @@ export function extractAll(repoRootIn) {
       : reg.capability === "module-graph"
       ? moduleGraphFacts(run.raw, provenanceBase,
           [...factsById.values()].filter((f) => f.payload.type === "package").map((f) => f.payload.attrs))
+      : reg.capability === "decision-history"
+      ? churnFacts(run.raw, provenanceBase)
       : schemaFacts(run.raw, provenanceBase, relative(repoRoot, d.file ?? ""));
     for (const f of norm.facts) {
       f.hash = factHash(f.payload);

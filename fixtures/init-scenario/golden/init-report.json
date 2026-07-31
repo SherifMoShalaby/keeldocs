@@ -3,7 +3,7 @@
  "meta": {
   "engine": "keeldocs@0.1.0-dev.0",
   "head": null,
-  "providerSetHash": "6b51e4f55c78a5cf",
+  "providerSetHash": "51795f27ec7d6776",
   "mode": "apply"
  },
  "card": {
@@ -41,6 +41,12 @@
     "status": "ok",
     "providers": [
      "ts-imports@0.1.0"
+    ]
+   },
+   "decision-history": {
+    "status": "ok",
+    "providers": [
+     "git-log@0.1.0"
     ]
    }
   },

@@ -150,10 +150,28 @@ function doInit(root, yes) {
   const before = covOf(preDocs);
   const after = yes ? covOf(existingDocs(root)) : before;
 
-  // Plan = undocumented CONCRETE surfaces (the honest v0.1 hotspot proxy) -
-  // same whitelist as coverage: packages and external services are not owed docs.
+  // Plan = undocumented CONCRETE surfaces, ranked hotspot x fan-in (D5):
+  // churn from decision-history, fan-in from module-graph import edges.
+  // Same whitelist as coverage: packages/externals/symbols are not owed docs.
+  const churnBy = new Map([...factsById.values()].filter((f) => f.payload.type === "churn")
+    .map((f) => [f.payload.attrs.path, f.payload.attrs.commits]));
+  const fanIn = new Map();
+  const modulePaths = new Set([...factsById.values()].filter((f) => f.payload.type === "module")
+    .map((f) => f.payload.attrs.path));
+  for (const f of factsById.values()) {
+    if (f.payload.type !== "module") continue;
+    for (const imp of f.payload.attrs.imports) {
+      if (modulePaths.has(imp)) fanIn.set(imp, (fanIn.get(imp) ?? 0) + 1);
+    }
+  }
   const plan = [...factsById.values()].filter((f) => isCoverageSurface(f) && !after.documented.has(f.id))
-    .map((f) => f.id).sort().map((id) => ({ surface: id, action: "document" }));
+    .map((f) => {
+      const file = f.provenance?.source?.[0]?.file ?? null;
+      const hot = { commits: file ? (churnBy.get(file) ?? 0) : 0, fanIn: file ? (fanIn.get(file) ?? 0) : 0 };
+      return { surface: f.id, action: "document", hot, _score: (hot.commits + 1) * (hot.fanIn + 1) };
+    })
+    .sort((a, b) => b._score - a._score || a.surface.localeCompare(b.surface))
+    .map(({ _score, ...p }) => p);
 
   return {
     applied: !!yes,
