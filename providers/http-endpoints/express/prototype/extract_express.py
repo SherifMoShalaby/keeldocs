@@ -70,7 +70,10 @@ def is_creator(call):
 class FileScan:
     def __init__(self, abspath, root):
         global anon_ct
-        self.f = abspath
+        # ONE canonical spelling per file: this key must collide with
+        # resolve_import's normpath output on every OS (on Windows the raw
+        # walk join is mixed-separator and the mount edges silently miss)
+        self.f = os.path.normpath(abspath)
         self.rel = os.path.relpath(abspath, root).replace(os.sep, "/")  # emitted paths are posix on every OS
         self.vars = {}       # local var -> nodeid
         self.imports = {}    # local name -> absfile
@@ -78,7 +81,7 @@ class FileScan:
         lang = TS if abspath.endswith(".ts") else JS
         tree = Parser(lang).parse(open(abspath, "rb").read())
         self.walk(tree.root_node)
-        files[abspath] = self
+        files[self.f] = self
 
     def new_anon(self, kind):
         global anon_ct

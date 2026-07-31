@@ -20,6 +20,20 @@ def W(path, text, mode="w"):
     with open(path, mode, encoding="utf-8", newline="\n") as f:
         f.write(text)
 
+
+def rmtree(path):
+    """Temp-tree cleanup that survives Windows: git object files are read-only
+    there and a plain shutil.rmtree dies with WinError 5. chmod-writable first;
+    cleanup failure must never fail a test whose asserts already passed."""
+    import shutil, stat
+    for dp, _dn, fn in os.walk(path):
+        for n in fn:
+            try:
+                os.chmod(os.path.join(dp, n), stat.S_IWRITE | stat.S_IREAD)
+            except OSError:
+                pass
+    shutil.rmtree(path, ignore_errors=True)
+
 MATRIX = [
     {
         # the .scm tier: NO provider code - one query + provider.yaml through
@@ -179,6 +193,33 @@ def main():
     except Exception as e:
         failures.append(f"check integration express-mounts: {e}")
 
+    # ---- ADR-003 resolution: two providers claim the same fact id ----
+    # express (app.js) and fastapi (main.py) both emit GET /health. Agreement
+    # is CORROBORATION: one fact survives, the total order picks the winner's
+    # provenance (lex backstop: express < fastapi), and NO conflict record is
+    # manufactured. The disagreement path is unit-tested in tests/resolve.test.js.
+    try:
+        import shutil as _shr
+        pg = os.path.join(ROOT, "fixtures", "polyglot-scenario", ".keeldocs")
+        _shr.rmtree(os.path.join(pg, "out"), ignore_errors=True)
+        r1, r2 = run_check("polyglot-scenario"), run_check("polyglot-scenario")
+        assert r1.stdout == r2.stdout, "NONDETERMINISTIC envelope (two runs differ)"
+        env = json.loads(r1.stdout)
+        assert r1.returncode == 0 and env["code"] == "CLEAN", r1.stdout[:200]
+        files = [f for f in os.listdir(os.path.join(pg, "out")) if f.startswith("check-")]
+        assert len(files) == 1, files
+        rep = json.load(open(os.path.join(pg, "out", files[0])))
+        hp = rep["capabilities"]["http-endpoints"]
+        assert hp["providers"] == ["express@0.1.0", "fastapi@0.2.0"], hp
+        assert "conflicts" not in rep and "conflicts" not in hp, "agreement must not manufacture conflicts"
+        assert rep["coverage"]["total"] == 1, rep["coverage"]  # ONE fact, not two
+        cache = open(os.path.join(pg, "cache", "facts", "http-endpoints.jsonl")).read()
+        assert cache.count("GET /health") == 1 and '"express@0.1.0"' in cache and "fastapi" not in cache, \
+            "total order must keep exactly one fact with the winner's provenance"
+        print("  PASS  ADR-003 resolution: same-id claims corroborate to ONE fact, deterministic winner")
+    except Exception as e:
+        failures.append(f"resolution integration: {e}")
+
     # ---- init integration: wow loop end-to-end, born-clean, deterministic ----
     import shutil, tempfile
     def run_init_copy():
@@ -222,7 +263,7 @@ def main():
         for rel in ["docs/reference/endpoints.md", "docs/architecture/data-model.md", "docs/reference/configuration.md"]:
             assert open(os.path.join(dst1, rel)).read() == open(os.path.join(dst2, rel)).read(), \
                 f"NONDETERMINISTIC init output: {rel}"
-        shutil.rmtree(tmp1); shutil.rmtree(tmp2)
+        rmtree(tmp1); rmtree(tmp2)
         print("  PASS  init integration: init-scenario (4 lies w/ receipts, born-clean, idempotent, deterministic)")
     except Exception as e:
         failures.append(f"init integration: {e}")
@@ -290,7 +331,7 @@ def main():
         assert "binds=fact:http-endpoints/POST /orders " in open(os.path.join(dst2, "docs", "api.md")).read()
         c = json.loads(kd(dst2, "check", "--json").stdout)["data"]["counts"]
         assert c["clean"] == 4 and c["driftTotal"] == 2, "rebound anchor now clean; unrelated drift untouched"
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         print("  PASS  sync integration: retention loop (drift->apply->clean), restore, reject->held, rebind")
     except Exception as e:
         failures.append(f"sync integration: {e}")
@@ -357,7 +398,7 @@ def main():
         assert json.loads(kd(dst, "new", "system-map", "--json").stdout)["code"] == "NOT_AVAILABLE"
         assert json.loads(kd(dst, "new", "erd", "--json").stdout)["code"] == "EXISTS"
         assert json.loads(kd(dst, "new", "config-reference", "--json").stdout)["code"] == "EXISTS"
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         print("  PASS  new/slot-write/approve integration: honesty loop (gates, stability, stale->reprose->attest->clean, CI guard)")
     except Exception as e:
         failures.append(f"new/slot-write integration: {e}")
@@ -402,7 +443,7 @@ def main():
         # new: EXISTS on the initialized repo; erd honestly NOT_AVAILABLE (no db facts)
         assert json.loads(kd(dst, "new", "system-map", "--json").stdout)["code"] == "EXISTS"
         assert json.loads(kd(dst, "new", "erd", "--json").stdout)["code"] == "NOT_AVAILABLE"
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         print("  PASS  system-map integration: owned/external topology, born-clean, drift loop, verbatim ${VAR}")
     except Exception as e:
         failures.append(f"system-map integration: {e}")
@@ -436,7 +477,7 @@ def main():
         assert kd(dst, "sync", "--apply", "auth.login", "--json", env=local_env).returncode == 0
         assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
         assert f"binds={moved}" in open(os.path.join(dst, "docs", "auth.md")).read()
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         print("  PASS  symbol identity: ds anchors, overload-impl exclusion, move -> S1b rebind -> clean")
     except Exception as e:
         failures.append(f"symbol identity integration: {e}")
@@ -459,7 +500,7 @@ def main():
         r = kd(dst, "check", "--json")
         env_ = json.loads(r.stdout)
         assert r.returncode == 2 and env_["code"] == "CONFIG" and "disabel" in env_["summary"]
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         print("  PASS  keeldocs.toml: provider disable honored, typo'd key fails loud (CONFIG, exit 2)")
     except Exception as e:
         failures.append(f"config integration: {e}")
@@ -498,7 +539,7 @@ def main():
         dbi = min(i for i, p in enumerate(plan) if p["surface"].startswith("fact:db-schema/"))
         assert epi < dbi, "churn-hot endpoints must outrank cold schema surfaces"
         assert all(p["hot"]["commits"] >= 0 for p in plan)
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         print("  PASS  decision-history: HEAD-anchored churn, hotspot x fan-in plan ranking")
     except Exception as e:
         failures.append(f"decision-history integration: {e}")
@@ -534,7 +575,7 @@ def main():
         assert r.returncode == 1 and top == {"db.policies": "stale"}, top
         assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
         assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         print("  PASS  RLS static surface: replay, policy table, born-clean, surgical drift loop")
     except Exception as e:
         failures.append(f"rls integration: {e}")
@@ -588,7 +629,7 @@ def main():
         assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
         assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
         assert "/api/v1/users/{uid}" in open(os.path.join(dst, "docs", "reference", "endpoints.md")).read()
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         print("  PASS  python end-to-end: fastapi mounts, ds symbols w/ overload rule, born-clean, drift loop")
     except Exception as e:
         failures.append(f"python integration: {e}")
@@ -636,7 +677,8 @@ def main():
         rej = subprocess.run(["node", "-e",
             "import(process.argv[1]).then(j=>{const now=new Date().toISOString();"
             "j.appendDecisions(process.argv[2],[1,2,3].map(i=>({at:now,actor:'h',type:'rejection',target:'r'+i})))})",
-            os.path.join(ROOT, "src", "journal.js"), dst],
+            # file:// URL, not a path: import() rejects C:\ paths on Windows
+            __import__("pathlib").Path(ROOT, "src", "journal.js").as_uri(), dst],
             capture_output=True, text=True, env=local_env)
         assert rej.returncode == 0, rej.stderr[-200:]
         noise = json.loads(kd(dst, "check", "--json").stdout)["data"]["noise"]
@@ -644,7 +686,7 @@ def main():
         # --self with no resolvable base fails LOUDLY (no origin here)
         r = kd(dst, "sync", "--self", "--json", env=local_env)
         assert r.returncode == 2 and "no base ref" in json.loads(r.stdout)["summary"]
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         print("  PASS  noise instruments: self-caused split, sync --self, applied journal, quiet throttle")
     except Exception as e:
         failures.append(f"noise instruments: {e}")
@@ -681,7 +723,7 @@ def main():
         assert f"binds={moved}" in open(os.path.join(dst, "docs", "auth.md")).read()
         jl = open(os.path.join(dst, ".keeldocs", "decisions.jsonl")).read()
         assert '"type":"rebind"' in jl, "auto-rebind must be journaled (the log that makes it reversible)"
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         # CASE 2 - in-place rename: S2-exact alone is ONE signal => proposal, never auto
         tmp, dst, g = mk_repo()
         a = os.path.join(dst, "src", "auth.ts")
@@ -697,7 +739,7 @@ def main():
         r = kd(dst, "sync", "--apply", "auth.login", "--json", env=local_env)
         assert json.loads(r.stdout)["data"]["applied"][0]["action"] == "rebind"
         assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         print("  PASS  re-anchoring: file-move auto-rebind (S1+S2, journaled), in-place rename stays human-choice")
     except Exception as e:
         failures.append(f"re-anchoring: {e}")
@@ -744,7 +786,7 @@ def main():
                env={k: v for k, v in lenv.items() if k not in ("KEELDOCS_TBLS_JSON", "LIVE_DB_URL")})
         env_ = json.loads(r.stdout)
         assert r.returncode == 2 and "LIVE_DB_URL is not set" in env_["summary"], env_["summary"]
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         print("  PASS  live-Postgres (tbls): opt-in only, declared-beats-live, CI guard, env-named DSN")
     except Exception as e:
         failures.append(f"live integration: {e}")
@@ -770,7 +812,7 @@ def main():
         rc = subprocess.run(["node", KD, "check", "--json"], cwd=dst, capture_output=True, text=True, timeout=180)
         assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", \
             "redacted docs must be born clean (hashes computed post-redaction)"
-        shutil.rmtree(tmp)
+        rmtree(tmp)
         print("  PASS  redaction barrier: secret neutralized, envelope loud, born-clean preserved")
     except Exception as e:
         failures.append(f"redaction barrier: {e}")
