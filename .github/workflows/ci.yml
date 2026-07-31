@@ -30,14 +30,14 @@ jobs:
       - name: Fixture matrix + integrations + determinism double-runs
         run: |
           set +e
-          python3 scripts/harness.py 2>&1 | tee /tmp/harness.log
+          python3 scripts/harness.py 2>&1 | tee "$RUNNER_TEMP/harness.log"
           rc=${PIPESTATUS[0]}
           set -e
           {
             echo "### harness (${{ matrix.os }}) rc=$rc"
             echo "- node $(node --version) / $(python3 --version) / $(git --version)"
             echo '```'
-            tail -60 /tmp/harness.log
+            tail -60 "$RUNNER_TEMP/harness.log"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit $rc
@@ -45,7 +45,7 @@ jobs:
         if: ${{ failure() && matrix.os == 'windows-latest' }}
         run: |
           d="$RUNNER_TEMP/kd-dbg" && rm -rf "$d" && mkdir -p "$d"
-          cp /tmp/harness.log "$d/harness.log" || echo "(no log)" > "$d/harness.log"
+          cp "$RUNNER_TEMP/harness.log" "$d/harness.log" || echo "(no log)" > "$d/harness.log"
           { node --version; python3 --version || python --version; git --version; } > "$d/toolchain.txt" 2>&1
           cd "$d" && git init -q && git checkout -qb "ci-debug-win-${{ github.run_number }}"
           git add -A && git -c user.name=ci -c user.email=ci@invalid commit -qm "windows harness log"
