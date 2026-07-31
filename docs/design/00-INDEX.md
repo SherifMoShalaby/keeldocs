@@ -18,6 +18,7 @@ Design produced by a nine-expert panel (each expert an independent agent with it
 | [08-risks-experiments.md](08-risks-experiments.md) | 9 & 10 — risk register + validation experiments, priority-ordered |
 | [10-implementation-audit.md](10-implementation-audit.md) | Post-build audit vs. the originating brief: delivered / changed-with-reasoning / owed |
 | [09-open-questions.md](09-open-questions.md) | 11 — open questions, assumption register, verified sources |
+| [11-v03-plan.md](11-v03-plan.md) | v0.3 plan: v0.2 shipped-vs-promised reconciliation, rolled debt (replay, T2, recipes, mine), gated new surface, sequencing |
 
 ## The ten headline decisions
 
