@@ -1,9 +1,16 @@
 id: drizzle
 capability: db-schema
-semver: 0.0.1
-tier: code
-status: stub          # detect contract defined; extractor lands per docs/design/07-scope-roadmap.md
-detect: { any: [ { dependency: "drizzle-orm" } ] }
-inputs: ["drizzle/**/*.json", "**/meta/_journal.json"]
+semver: 0.3.0
+tier: code            # parses drizzle-kit's committed snapshot JSON (meta/
+                      # NNNN_snapshot.json; format verified against real
+                      # drizzle-kit output 2026-07-31, snapshot version 7) -
+                      # the second static db-schema provider (doc 11 N1) and
+                      # the first REAL disagreement pair for the ADR-003
+                      # resolver: drizzle and prisma can claim the same table
+                      # ids with different type spellings, conflicts by design
+entry: ./extract_drizzle.py
+detect: { deps: ["drizzle-orm", "drizzle-kit"], files: ["_journal.json"] }
+inputs: ["**/meta/_journal.json", "**/meta/*_snapshot.json"]
 requires: []
-timeout_class: D
+timeout_class: B
+emits: [table, enum, extraction-gap]

@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { jcs } from "./jcs.js";
 import { factHash } from "./hash.js";
 import { toPosix } from "./paths.js";
-import { resolveClaims } from "./resolve.js";
+import { resolveClaims, parsePins } from "./resolve.js";
 import { loadExternalProviders, orderEntries } from "./providers.js";
 import { refusalOf, loadLock, parseTrustedKeys } from "./trust.js";
 import { REGISTRY, REGISTRY_ERROR, ENGINE_VERSION } from "./registry.js";
@@ -349,7 +349,7 @@ export function isHostileFact(f) {
   return HOSTILE.test(f.id) || scan(f.payload?.attrs ?? {});
 }
 
-export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = [] } = {}) {
+export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = [], resolvePins = [] } = {}) {
   const repoRoot = resolve(repoRootIn); // subprocess cwd = repoRoot; args must be absolute
   if (REGISTRY_ERROR) {
     // fail closed and loudly - a half-loaded registry would masquerade as "no drift"
@@ -368,6 +368,7 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
     return { factsById: new Map(), capabilities: {}, gaps: [], providerSetHash: null,
              toolError: String(err.message) };
   }
+  const pins = parsePins(resolvePins); // strict; loadConfig pre-validates
   const disabled = new Set(disable);
   // live providers run ONLY under --live (network never enters the default path)
   const active = registry.filter((r) => !disabled.has(r.id) && (!r.live || live));
@@ -480,7 +481,7 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
         // ADR-003: a second claim on the same id resolves by the pure total
         // order (lattice -> precedence -> provider id) - run order irrelevant
         prior.push(f);
-        factsById.set(f.id, resolveClaims(f.id, prior, reg.capability).winner);
+        factsById.set(f.id, resolveClaims(f.id, prior, reg.capability, undefined, pins).winner);
       }
     }
     gaps.push(...norm.gaps);
@@ -494,7 +495,7 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
   const conflicts = [];
   for (const [id, claims] of claimsById) {
     if (claims.length < 2) continue;
-    const { conflict } = resolveClaims(id, claims, capOf(id));
+    const { conflict } = resolveClaims(id, claims, capOf(id), undefined, pins);
     if (conflict) conflicts.push(conflict);
   }
   conflicts.sort((a, b) => a.id.localeCompare(b.id));

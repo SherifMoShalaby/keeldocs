@@ -89,7 +89,7 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     : new Date().toISOString();
 
   const { factsById, capabilities, gaps, providerSetHash, toolError, conflicts } =
-    extractAll(repoRoot, { disable: config.providers.disable, trustKeys: config.trust.keys,
+    extractAll(repoRoot, { disable: config.providers.disable, trustKeys: config.trust.keys, resolvePins: config.resolve.pin,
       live: live ? { dsnEnv: config.live["dsn-env"] } : null });
   const rawJournal = loadJournal(repoRoot);
   const journal = effective(rawJournal, nowIso);

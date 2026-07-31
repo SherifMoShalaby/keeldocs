@@ -1,0 +1,93 @@
+{
+ "models": [
+  {
+   "name": "Item",
+   "fields": [
+    {
+     "name": "id",
+     "type": "serial",
+     "optional": false,
+     "list": false,
+     "is_relation_field": false,
+     "attrs": "primary key"
+    },
+    {
+     "name": "name",
+     "type": "varchar(120)",
+     "optional": false,
+     "list": false,
+     "is_relation_field": false,
+     "attrs": ""
+    },
+    {
+     "name": "status",
+     "type": "Status",
+     "optional": false,
+     "list": false,
+     "is_relation_field": true,
+     "attrs": "default 'ACTIVE'"
+    },
+    {
+     "name": "owner_id",
+     "type": "integer",
+     "optional": true,
+     "list": false,
+     "is_relation_field": false,
+     "attrs": ""
+    },
+    {
+     "name": "user",
+     "type": "User",
+     "is_relation_field": true,
+     "relation": {
+      "fields": [
+       "owner_id"
+      ],
+      "references": [
+       "id"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "User",
+   "fields": [
+    {
+     "name": "id",
+     "type": "serial",
+     "optional": false,
+     "list": false,
+     "is_relation_field": false,
+     "attrs": "primary key"
+    },
+    {
+     "name": "email",
+     "type": "text",
+     "optional": false,
+     "list": false,
+     "is_relation_field": false,
+     "attrs": ""
+    },
+    {
+     "name": "vip",
+     "type": "boolean",
+     "optional": true,
+     "list": false,
+     "is_relation_field": false,
+     "attrs": "default False"
+    }
+   ]
+  }
+ ],
+ "enums": [
+  {
+   "name": "Status",
+   "values": [
+    "ACTIVE",
+    "ARCHIVED"
+   ]
+  }
+ ],
+ "warnings": []
+}

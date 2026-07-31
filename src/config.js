@@ -15,6 +15,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { toPosix } from "./paths.js";
+import { parsePins } from "./resolve.js";
 import { REGISTRY, REGISTRY_ERROR } from "./registry.js";
 
 const SCHEMA = {
@@ -22,10 +23,11 @@ const SCHEMA = {
   docs: { dirs: "string[]" },
   live: { "dsn-env": "string" }, // the NAME of the env var holding the DSN - never the DSN
   trust: { keys: "string[]" },   // T2: trusted signer keys, `name:spki-base64` (R2)
+  resolve: { pin: "string[]" },  // ADR-003 pins, `capability:provider-id` (N1)
 };
 
 const DEFAULTS = () => ({ providers: { disable: [] }, docs: { dirs: ["docs"] },
-  live: { "dsn-env": "DATABASE_URL" }, trust: { keys: [] } });
+  live: { "dsn-env": "DATABASE_URL" }, trust: { keys: [] }, resolve: { pin: [] } });
 
 function parseValue(raw, where) {
   const s = raw.trim();
@@ -100,6 +102,9 @@ export function loadConfig(root) {
         return { ok: false, error: `keeldocs.toml: [providers] disable names unknown provider \`${id}\` (known: ${[...ids].sort().join(", ")})` };
       }
     }
+  }
+  try { parsePins(cfg.resolve.pin); } catch (err) {
+    return { ok: false, error: `keeldocs.toml: ${String(err.message)}` };
   }
   if (cfg.docs.dirs.some((d) => d.startsWith("/") || d.includes(".."))) {
     return { ok: false, error: "keeldocs.toml: [docs] dirs must be repo-relative paths without `..`" };

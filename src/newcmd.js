@@ -75,7 +75,7 @@ export function runNew({ root, json, args }) {
       return emit(json, 2, { v: 1, ok: false, code: "CONFIG", summary: cfg.error.slice(0, 300), data: {}, next: [] });
     }
     const { factsById, toolError } = extractAll(root,
-    { disable: cfg.config.providers.disable, trustKeys: cfg.config.trust.keys });
+    { disable: cfg.config.providers.disable, trustKeys: cfg.config.trust.keys, resolvePins: cfg.config.resolve.pin });
     if (toolError) {
       return emit(json, 2, { v: 1, ok: false, code: "TOOL_ERROR", summary: `tooling error: ${toolError}`, data: {}, next: [] });
     }

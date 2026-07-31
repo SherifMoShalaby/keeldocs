@@ -97,7 +97,7 @@ export function runSlotWrite({ root, json, args }) {
     const cfg = loadConfig(root);
     if (!cfg.ok) throw new Error(cfg.error);
     const { factsById, toolError } = extractAll(root,
-    { disable: cfg.config.providers.disable, trustKeys: cfg.config.trust.keys });
+    { disable: cfg.config.providers.disable, trustKeys: cfg.config.trust.keys, resolvePins: cfg.config.resolve.pin });
     if (toolError) throw new Error(`tooling error: ${toolError}`);
     const binds = slot.binds?.length ? slot.binds : inheritBinds(slot, parsed.anchors);
     const ids = resolveBindIds(binds, factsById);

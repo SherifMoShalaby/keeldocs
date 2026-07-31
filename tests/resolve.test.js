@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveClaims, claimCmp, LATTICE, PRECEDENCE_VERSION } from "../src/resolve.js";
+import { resolveClaims, claimCmp, parsePins, LATTICE, PRECEDENCE_VERSION } from "../src/resolve.js";
 
 const claim = (provider, confidence, hash) => ({
   id: "fact:db-schema/Item", hash,
@@ -64,6 +64,22 @@ test("three claims: all listed winner-first; unknown tier sorts below every know
   assert.deepEqual(conflict.claims.map((x) => x.provider),
     ["beta@1.0.0", "alpha@1.0.0", "gamma@1.0.0"]);
   assert.deepEqual(conflict.claims.map((x) => x.hash), ["h1:bbb", "h1:aaa", "h1:ccc"]);
+});
+
+test("pin (stage 0) outranks even the lattice; rule names it; parsePins is strict", () => {
+  const live = claim("tbls-live@0.2.1", "INTROSPECTED", "h1:aaa");
+  const parsed = claim("prisma@0.1.0", "PARSED", "h1:bbb");
+  const pins = parsePins(["db-schema:prisma"]);
+  for (const claims of [[live, parsed], [parsed, live]]) {
+    const { winner, conflict } = resolveClaims("fact:db-schema/Item", claims, "db-schema", undefined, pins);
+    assert.equal(winner.provenance.provider, "prisma@0.1.0", "the human's pin beats the machine lattice");
+    assert.equal(conflict.rule, "pin");
+  }
+  // pin scoped to its capability; other capabilities keep machine order
+  const other = resolveClaims("fact:http-endpoints/GET /x", [live, parsed], "http-endpoints", undefined, pins);
+  assert.equal(other.winner.provenance.provider, "tbls-live@0.2.1");
+  assert.throws(() => parsePins(["nope"]), /capability:provider-id/);
+  assert.throws(() => parsePins(["a:b", "a:c"]), /pinned twice/);
 });
 
 test("single claim resolves to itself with no conflict; comparator is a strict total order", () => {

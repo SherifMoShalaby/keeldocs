@@ -131,7 +131,7 @@ export function runInit({ root, json, yes, live = false }) {
 
 function doInit(root, yes, config, live = false) {
   const { factsById, capabilities, providerSetHash, toolError, conflicts, gaps } =
-    extractAll(root, { disable: config.providers.disable, trustKeys: config.trust.keys,
+    extractAll(root, { disable: config.providers.disable, trustKeys: config.trust.keys, resolvePins: config.resolve.pin,
       live: live ? { dsnEnv: config.live["dsn-env"] } : null });
   const pkgPath = join(root, "package.json");
   const pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf8")) : null;

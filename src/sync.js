@@ -47,7 +47,7 @@ function resolveSelfBase(root, explicit) {
 
 function collectState(root, config, selfScope = null) {
   const { factsById, capabilities, toolError } = extractAll(root,
-    { disable: config.providers.disable, trustKeys: config.trust.keys });
+    { disable: config.providers.disable, trustKeys: config.trust.keys, resolvePins: config.resolve.pin });
   if (toolError) throw new Error(`tooling error: ${toolError}`);
   const journal = effective(loadJournal(root), new Date().toISOString());
   const anchors = [], regions = [], docTexts = new Map();
@@ -76,7 +76,7 @@ function collectState(root, config, selfScope = null) {
   }
   if (base !== null && (deadDs || selfScope)) {
     baseFacts = extractAtBase(root, base,
-      { disable: config.providers.disable, trustKeys: config.trust.keys });
+      { disable: config.providers.disable, trustKeys: config.trust.keys, resolvePins: config.resolve.pin });
     if (deadDs) {
       reanchor = { baseFacts, renames: renameMapFromStatus(renamesSince(root, base)) };
     }

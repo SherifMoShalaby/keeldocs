@@ -1,0 +1,18 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// The SAME table drizzle's snapshot declares - with prisma's type spellings.
+// This is the deliberate disagreement pair (doc 11 N1): same fact id,
+// different attrs, a REAL ADR-003 conflict.
+model Item {
+  id     Int    @id @default(autoincrement())
+  name   String
+  status Status @default(ACTIVE)
+}
+
+enum Status {
+  ACTIVE
+  ARCHIVED
+}

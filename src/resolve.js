@@ -31,9 +31,29 @@ const latticeRank = (c) => {
 
 export const providerIdOf = (f) => String(f.provenance?.provider ?? "").split("@")[0];
 
+// keeldocs.toml [resolve] pin entries -> Map<capability, providerId>; strict
+export function parsePins(entries) {
+  const out = new Map();
+  for (const e of entries ?? []) {
+    const m = /^([a-z0-9-]+):([a-z0-9-]+)$/.exec(e);
+    if (!m) throw new Error(`[resolve] pin entries must be \`capability:provider-id\` (got \`${String(e).slice(0, 40)}\`)`);
+    if (out.has(m[1])) throw new Error(`[resolve] pin: capability \`${m[1]}\` is pinned twice`);
+    out.set(m[1], m[2]);
+  }
+  return out;
+}
+
 // Total order over claims on ONE id. Winner = minimum under this comparator,
 // i.e. a max over a total order - independent of the order claims arrived.
-export function claimCmp(a, b, capability, precedence = PRECEDENCE) {
+// Stage 0 is the PIN (keeldocs.toml [resolve] pin = ["cap:provider"]): the
+// human's committed override outranks even the lattice - ADR-003's
+// "pinnable" clause. Everything else is unchanged machine order.
+export function claimCmp(a, b, capability, precedence = PRECEDENCE, pins = null) {
+  const pin = pins?.get(capability);
+  if (pin) {
+    const pa = providerIdOf(a) === pin ? 0 : 1, pb = providerIdOf(b) === pin ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+  }
   const la = latticeRank(a.provenance?.confidence), lb = latticeRank(b.provenance?.confidence);
   if (la !== lb) return la - lb;
   const table = precedence[capability] ?? [];
@@ -44,7 +64,9 @@ export function claimCmp(a, b, capability, precedence = PRECEDENCE) {
   return pa < pb ? -1 : pa > pb ? 1 : 0;
 }
 
-function decidingRule(a, b, capability, precedence) {
+function decidingRule(a, b, capability, precedence, pins) {
+  const pin = pins?.get(capability);
+  if (pin && (providerIdOf(a) === pin) !== (providerIdOf(b) === pin)) return "pin";
   if (latticeRank(a.provenance?.confidence) !== latticeRank(b.provenance?.confidence)) return "lattice";
   const table = precedence[capability] ?? [];
   const ia = table.indexOf(providerIdOf(a)), ib = table.indexOf(providerIdOf(b));
@@ -54,8 +76,8 @@ function decidingRule(a, b, capability, precedence) {
 
 // Resolve every claim on one fact id. Returns { winner, conflict } where
 // conflict is null for single claims and for corroboration (all hashes equal).
-export function resolveClaims(id, claims, capability, precedence = PRECEDENCE) {
-  const sorted = [...claims].sort((a, b) => claimCmp(a, b, capability, precedence));
+export function resolveClaims(id, claims, capability, precedence = PRECEDENCE, pins = null) {
+  const sorted = [...claims].sort((a, b) => claimCmp(a, b, capability, precedence, pins));
   const winner = sorted[0];
   if (claims.length < 2 || new Set(claims.map((c) => c.hash)).size <= 1) {
     return { winner, conflict: null };
@@ -65,7 +87,7 @@ export function resolveClaims(id, claims, capability, precedence = PRECEDENCE) {
     conflict: {
       id,
       winner: winner.provenance.provider,
-      rule: decidingRule(sorted[0], sorted[1], capability, precedence),
+      rule: decidingRule(sorted[0], sorted[1], capability, precedence, pins),
       precedenceVersion: PRECEDENCE_VERSION,
       claims: sorted.map((c) => ({
         provider: c.provenance.provider,

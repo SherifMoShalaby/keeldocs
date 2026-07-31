@@ -137,12 +137,12 @@ test("the real registry loads: nestjs is a query provider, workspace precedes mo
   // db-schema provider (declared-beats-replayed identity rule needs it)
   assert.equal(r.find((e) => e.id === "sql-replay").exec, "node");
   assert.deepEqual(r.filter((e) => e.capability === "db-schema").map((e) => e.id),
-    ["prisma", "sql-replay", "tbls-live"]);
+    ["drizzle", "prisma", "sql-replay", "tbls-live"], "declared providers precede replay, replay precedes live");
   const tsi = r.find((e) => e.id === "ts-imports");
   assert.deepEqual(tsi.factInputs, ["workspace-layout"], "the shipped declared read");
   assert.equal(nest.entry, "providers/_runtime/tsq.py");
   const order = r.map((e) => e.capability);
   assert.ok(order.indexOf("workspace-layout") < order.indexOf("module-graph"),
     "needs must order workspace-layout before module-graph");
-  assert.ok(!r.some((e) => e.id === "drizzle"), "stubs stay honestly absent");
+  assert.ok(!r.some((e) => e.id === "rails-sql"), "stubs stay honestly absent (drizzle graduated in N1)");
 });

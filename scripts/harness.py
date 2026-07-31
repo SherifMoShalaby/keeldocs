@@ -70,6 +70,13 @@ MATRIX = [
         "golden": "fixtures/replay-scenario/golden/db-schema-replay.json",
     },
     {
+        # N1: second static db-schema provider - drizzle snapshot parsing
+        "name": "conflict-scenario / db-schema (drizzle snapshot)",
+        "cmd": [sys.executable, "providers/db-schema/drizzle/extract_drizzle.py",
+                "fixtures/conflict-scenario"],
+        "golden": "fixtures/conflict-scenario/golden/db-schema-drizzle.json",
+    },
+    {
         "name": "compose-scenario / workspace-layout",
         "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
                 "fixtures/compose-scenario"],
@@ -227,6 +234,47 @@ def main():
         print("  PASS  ADR-003 resolution: same-id claims corroborate to ONE fact, deterministic winner")
     except Exception as e:
         failures.append(f"resolution integration: {e}")
+
+    # ---- N1: the first REAL conflict pair (drizzle vs prisma) + the pin ----
+    try:
+        import shutil as _shc
+        cs = os.path.join(ROOT, "fixtures", "conflict-scenario", ".keeldocs")
+        _shc.rmtree(cs, ignore_errors=True)
+        r1, r2 = run_check("conflict-scenario"), run_check("conflict-scenario")
+        assert r1.stdout == r2.stdout, "NONDETERMINISTIC conflict resolution"
+        files = [f for f in os.listdir(os.path.join(cs, "out")) if f.startswith("check-")]
+        rep = json.load(open(os.path.join(cs, "out", files[0])))
+        card = rep["capabilities"]["db-schema"]
+        assert card["providers"] == ["drizzle@0.3.0", "prisma@0.1.0"] and card["conflicts"] == 1, card
+        c = rep["conflicts"][0]
+        assert c["id"] == "fact:db-schema/Item" and c["winner"] == "drizzle@0.3.0" \
+            and c["rule"] == "provider-id" and len(c["claims"]) == 2, c
+        cache = open(os.path.join(cs, "cache", "facts", "db-schema.jsonl")).read()
+        assert cache.count('"fact:db-schema/') == 3, "union: Item (contested) + User + enum.Status"
+        assert '"serial"' in cache, "the drizzle claim's attrs must have won"
+        # the PIN (keeldocs.toml [resolve]) flips the winner; rule says so
+        W(os.path.join(ROOT, "fixtures", "conflict-scenario", "keeldocs.toml"),
+          '[resolve]\npin = ["db-schema:prisma"]\n')
+        try:
+            _shc.rmtree(os.path.join(cs, "out"), ignore_errors=True)
+            r = run_check("conflict-scenario")
+            files = [f for f in os.listdir(os.path.join(cs, "out")) if f.startswith("check-")]
+            rep = json.load(open(os.path.join(cs, "out", files[0])))
+            c = rep["conflicts"][0]
+            assert c["winner"] == "prisma@0.1.0" and c["rule"] == "pin", c
+            item = next(l for l in open(os.path.join(cs, "cache", "facts", "db-schema.jsonl"))
+                        if '"fact:db-schema/Item"' in l)
+            assert '"Int"' in item and '"serial"' not in item, "pinned provider's attrs must win Item"
+            # a pin naming an unknown shape is a CONFIG error, never a no-op
+            W(os.path.join(ROOT, "fixtures", "conflict-scenario", "keeldocs.toml"),
+              '[resolve]\npin = ["not a valid pin"]\n')
+            r = run_check("conflict-scenario")
+            assert r.returncode == 2 and json.loads(r.stdout)["code"] == "CONFIG", r.stdout[:200]
+        finally:
+            os.remove(os.path.join(ROOT, "fixtures", "conflict-scenario", "keeldocs.toml"))
+        print("  PASS  N1 conflict pair: drizzle-vs-prisma conflict recorded, union kept, pin flips winner")
+    except Exception as e:
+        failures.append(f"conflict integration: {e}")
 
     # ---- init integration: wow loop end-to-end, born-clean, deterministic ----
     import shutil, tempfile
