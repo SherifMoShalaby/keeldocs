@@ -15,15 +15,17 @@ import json, os, re, sys
 
 SKIP = {"node_modules", ".git", ".keeldocs", "golden", "docs", "dist", "coverage", "build",
         "__pycache__", ".venv", "venv"}
-CODE_EXT = (".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".prisma", ".py")
+CODE_EXT = (".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".prisma", ".py", ".go", ".java")
 EXAMPLE = re.compile(r"^\.env\.(example|schema|sample)$")
-# JS forms + Python forms (os.environ["X"], os.environ.get("X"), os.getenv("X"));
+# JS + Python + Go (os.Getenv/LookupEnv) + Java (System.getenv) read forms;
 # value-blindness holds: only the NAME is ever captured
 READS = re.compile(
     r"(?:process\.env\.|import\.meta\.env\.)([A-Z][A-Z0-9_]*)"
     r"|\benv\(\s*[\"']([A-Z][A-Z0-9_]*)[\"']\s*\)"
     r"|os\.environ(?:\.get)?\s*[\[\(]\s*[\"']([A-Z][A-Z0-9_]*)[\"']"
-    r"|os\.getenv\(\s*[\"']([A-Z][A-Z0-9_]*)[\"']")
+    r"|os\.getenv\(\s*[\"']([A-Z][A-Z0-9_]*)[\"']"
+    r"|os\.(?:Getenv|LookupEnv)\(\s*\"([A-Z][A-Z0-9_]*)\""
+    r"|System\.getenv\(\s*\"([A-Z][A-Z0-9_]*)\"")
 DECL = re.compile(r"^([A-Z][A-Z0-9_]*)\s*=")
 
 

@@ -1,0 +1,10 @@
+{
+ "manager": "single",
+ "file": "go.mod",
+ "packages": [
+  {
+   "name": "go-scenario-fixture",
+   "path": "."
+  }
+ ]
+}

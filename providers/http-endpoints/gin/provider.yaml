@@ -1,0 +1,15 @@
+id: gin
+capability: http-endpoints
+semver: 0.3.0
+tier: code            # E14 probe (go-gin-example, 2026-07-31): gin routes are
+                      # registered through group VARIABLES (g := r.Group("/api");
+                      # g.GET(...)) - invisible to a single-tree query, the same
+                      # dynamic-registration shape that scored 5% for declarative
+                      # on express (E1). Code tier with a same-file group-chain
+                      # resolver; cross-file groups emit gaps, never guesses.
+entry: ./extract_gin.py
+detect: { deps: [], files: ["go.mod"] }
+inputs: ["**/*.go"]
+requires: ["tree-sitter", "tree-sitter-go"]
+timeout_class: C
+emits: [endpoint, extraction-gap]

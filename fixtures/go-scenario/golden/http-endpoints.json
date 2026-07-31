@@ -1,0 +1,34 @@
+{
+ "endpoints": [
+  {
+   "file": "main.go",
+   "method": "DELETE",
+   "path": "/api/v1/tags/:id"
+  },
+  {
+   "file": "main.go",
+   "method": "GET",
+   "path": "/api/v1/tags"
+  },
+  {
+   "file": "main.go",
+   "method": "GET",
+   "path": "/health"
+  },
+  {
+   "file": "main.go",
+   "method": "POST",
+   "path": "/api/v1/tags"
+  }
+ ],
+ "warnings": [
+  {
+   "file": "main.go",
+   "reason": "non-literal group prefix"
+  },
+  {
+   "file": "routers/extra.go",
+   "reason": "cross-file or unknown receiver `g`"
+  }
+ ]
+}

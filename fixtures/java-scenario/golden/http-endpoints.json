@@ -1,0 +1,40 @@
+{
+ "endpoints": [
+  {
+   "file": "src/main/java/demo/HealthController.java",
+   "method": "ALL",
+   "path": "/legacy"
+  },
+  {
+   "file": "src/main/java/demo/HealthController.java",
+   "method": "GET",
+   "path": "/health"
+  },
+  {
+   "file": "src/main/java/demo/OwnerController.java",
+   "method": "GET",
+   "path": "/owners"
+  },
+  {
+   "file": "src/main/java/demo/OwnerController.java",
+   "method": "GET",
+   "path": "/owners/find"
+  },
+  {
+   "file": "src/main/java/demo/OwnerController.java",
+   "method": "GET",
+   "path": "/owners/search"
+  },
+  {
+   "file": "src/main/java/demo/OwnerController.java",
+   "method": "GET",
+   "path": "/owners/{id}"
+  },
+  {
+   "file": "src/main/java/demo/OwnerController.java",
+   "method": "POST",
+   "path": "/owners/new"
+  }
+ ],
+ "warnings": []
+}

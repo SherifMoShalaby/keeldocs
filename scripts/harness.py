@@ -77,6 +77,33 @@ MATRIX = [
         "golden": "fixtures/conflict-scenario/golden/db-schema-drizzle.json",
     },
     {
+        # N2 java: spring via the .scm tier's new member-association mode
+        # (E14: 17/17 on spring-petclinic, zero warnings)
+        "name": "java-scenario / http-endpoints (spring via tsq, member mode)",
+        "cmd": [sys.executable, "providers/_runtime/tsq.py",
+                "providers/http-endpoints/spring", "fixtures/java-scenario"],
+        "golden": "fixtures/java-scenario/golden/http-endpoints.json",
+    },
+    {
+        # N2 go: gin group-chain resolver (E14: 15/15 on go-gin-example)
+        "name": "go-scenario / http-endpoints (gin group chains)",
+        "cmd": [sys.executable, "providers/http-endpoints/gin/extract_gin.py",
+                "fixtures/go-scenario"],
+        "golden": "fixtures/go-scenario/golden/http-endpoints.json",
+    },
+    {
+        "name": "java-scenario / workspace-layout (maven artifactId identity)",
+        "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
+                "fixtures/java-scenario"],
+        "golden": "fixtures/java-scenario/golden/workspace-layout.json",
+    },
+    {
+        "name": "go-scenario / workspace-layout (go.mod module identity)",
+        "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
+                "fixtures/go-scenario"],
+        "golden": "fixtures/go-scenario/golden/workspace-layout.json",
+    },
+    {
         "name": "compose-scenario / workspace-layout",
         "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
                 "fixtures/compose-scenario"],
@@ -193,6 +220,7 @@ def main():
         report_file = files[0]
         report = json.load(open(os.path.join(out_dir, report_file)))
         report["meta"]["head"] = None  # volatile across commits
+        report["meta"]["providerSetHash"] = None  # cache identity, not golden identity
         golden = json.load(open(os.path.join(ROOT, "fixtures", "drift-scenario", "golden", "check-report.json")))
         if canonical(json.dumps(report)) != canonical(json.dumps(golden)):
             raise AssertionError("full report != golden/check-report.json (regenerate deliberately if behavior changed)")
@@ -301,6 +329,7 @@ def main():
         # init report matches golden (volatile head stripped)
         rep = json.load(open(os.path.join(dst1, ".keeldocs", "out", "init-nogit.json")))
         rep["meta"]["head"] = None
+        rep["meta"]["providerSetHash"] = None
         gold = json.load(open(os.path.join(ROOT, "fixtures", "init-scenario", "golden", "init-report.json")))
         assert canonical(json.dumps(rep)) == canonical(json.dumps(gold)), "init report != golden"
         assert len(rep["lies"]["findings"]) == 4 and rep["coverage"]["after"]["pct"] == 100
@@ -481,6 +510,7 @@ def main():
         assert "${PG_TAG}" in got, "unresolvable compose interpolation must be preserved verbatim"
         rep = json.load(open(os.path.join(dst, ".keeldocs", "out", "init-nogit.json")))
         rep["meta"]["head"] = None
+        rep["meta"]["providerSetHash"] = None
         gold = json.load(open(os.path.join(ROOT, "fixtures", "compose-scenario", "golden", "init-report.json")))
         assert canonical(json.dumps(rep)) == canonical(json.dumps(gold)), "init report != golden"
         # born clean
@@ -882,6 +912,44 @@ def main():
         print("  PASS  replay engine: chain -> catalog ERD, born-clean, migration drift loop closes")
     except Exception as e:
         failures.append(f"replay integration: {e}")
+
+    # ---- N2: java + go end-to-end (born clean, drift loop closes) ----
+    try:
+        import shutil, tempfile
+        for fx, mut, newpath in [
+            ("java-scenario",
+             ("src/main/java/demo/HealthController.java",
+              '    @GetMapping("/health")',
+              '    @GetMapping("/health")\n    public String h2() { return "x"; }\n\n    @GetMapping("/ready")'),
+             "/ready"),
+            ("go-scenario",
+             ("main.go", '\tr.GET("/health", health)',
+              '\tr.GET("/health", health)\n\tr.GET("/ready", ready)'),
+             "/ready"),
+        ]:
+            tmp = tempfile.mkdtemp(prefix=f"keeldocs-{fx[:4]}-")
+            dst = os.path.join(tmp, "repo")
+            shutil.copytree(os.path.join(ROOT, "fixtures", fx), dst,
+                            ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+            r = kd(dst, "init", "--yes", "--json")
+            env_ = json.loads(r.stdout)
+            assert r.returncode == 0 and env_["code"] == "INITIALIZED", (fx, r.stdout[:200])
+            eps = open(os.path.join(dst, "docs", "reference", "endpoints.md")).read()
+            assert "/health" in eps or "/owners" in eps, (fx, "endpoints doc must render")
+            rc = kd(dst, "check", "--json")
+            assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", (fx, "born-clean violated")
+            rel, needle, repl = mut
+            srcp = os.path.join(dst, rel)
+            W(srcp, open(srcp).read().replace(needle, repl))
+            r = kd(dst, "check", "--json")
+            assert r.returncode == 1, (fx, "new endpoint must drift the docs")
+            assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
+            assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN", (fx, "loop must close")
+            assert newpath in open(os.path.join(dst, "docs", "reference", "endpoints.md")).read()
+            rmtree(tmp)
+        print("  PASS  N2 java+go: spring member-mode + gin chains, born-clean, drift loops close")
+    except Exception as e:
+        failures.append(f"java/go integration: {e}")
 
     # ---- interview: cap-5 cards from engine state, resumable, journal-verified ----
     try:

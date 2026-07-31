@@ -1,0 +1,10 @@
+{
+ "manager": "single",
+ "file": "pom.xml",
+ "packages": [
+  {
+   "name": "java-scenario-fixture",
+   "path": "."
+  }
+ ]
+}

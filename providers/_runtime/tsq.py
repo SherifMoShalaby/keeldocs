@@ -43,6 +43,9 @@ def load_language(name):
     if name == "javascript":
         import tree_sitter_javascript as tsj
         return Language(tsj.language())
+    if name == "java":
+        import tree_sitter_java as tsv
+        return Language(tsv.language())
     raise SystemExit(f"tsq: unsupported language {name!r}")
 
 
@@ -54,16 +57,37 @@ def string_text(node):
 
 
 def decorator_paths(args_node):
-    """(paths, literal) from a decorator arguments node - @Get(), @Get(':id'),
-    @Controller(['a','b']), @Controller({path: 'x'}). None args = no-arg form."""
+    """(paths, literal) from a decorator/annotation arguments node - @Get(),
+    @Get(':id'), @Controller(['a','b']), @Controller({path: 'x'}), and the
+    Java forms @GetMapping("/x"), @GetMapping({"/a","/b"}),
+    @RequestMapping(value = "/x") / (path = "/x"). None args = no-arg form."""
     if args_node is None:
         return [""], True
     vals = [c for c in args_node.children if c.type not in ("(", ")", ",")]
     if not vals:
         return [""], True
     first = vals[0]
-    if first.type == "string":
+    # Java: named element-value pairs (value=/path= carry the paths; anything
+    # else - e.g. method=, params= - is not a path and stays non-literal-safe)
+    if first.type == "element_value_pair":
+        for pair in vals:
+            if pair.type != "element_value_pair":
+                continue
+            key = pair.child_by_field_name("key")
+            val = pair.child_by_field_name("value")
+            if key is not None and key.text.decode() in ("value", "path") and val is not None:
+                if val.type == "string_literal":
+                    return [string_text(val)], True
+                if val.type == "element_value_array_initializer":
+                    out = [string_text(c) for c in val.children if c.type == "string_literal"]
+                    return (out or [""]), True
+                return [None], False
+        return [""], True  # pairs without value/path (e.g. only method=) => bare prefix
+    if first.type in ("string", "string_literal"):
         return [string_text(first)], True
+    if first.type == "element_value_array_initializer":
+        out = [string_text(c) for c in first.children if c.type == "string_literal"]
+        return (out or [""]), all(c.type in ("string_literal", "{", "}", ",") for c in first.children)
     if first.type == "array":
         out = [string_text(c) for c in first.children if c.type == "string"]
         return (out or [""]), all(c.type in ("string", "[", "]", ",") for c in first.children)
@@ -137,6 +161,62 @@ def emit_endpoints(cfg, query, parser, files, root):
     return {"endpoints": endpoints, "warnings": warns}
 
 
+def emit_endpoints_member(cfg, query, parser, files, root):
+    """`association: member` (Java/Spring): the verb annotation sits INSIDE its
+    method's modifiers, so association is by ENCLOSURE, not sibling position -
+    each @verb walks up to its member and its @scope; @prefix.args rides the
+    scope's class annotation. Same path composition, gaps, and sort contract."""
+    verbs = cfg.get("verbs") or {}
+    method_nodes = set(cfg.get("member-nodes") or ["method_declaration"])
+    endpoints, warns = [], []
+    for rel in files:
+        tree = parser.parse(open(os.path.join(root, rel), "rb").read())
+        scopes = {}  # scope node id -> prefix args node or None
+        hits = []    # (verb ident node, args node or None)
+        for _pat, caps in QueryCursor(query).matches(tree.root_node):
+            if "scope" in caps:
+                pref = caps.get("prefix.args")
+                sid = caps["scope"][0].id
+                # a scope may match twice (with and without the optional
+                # prefix annotation) - the armed prefix wins
+                if sid not in scopes or pref:
+                    scopes[sid] = pref[0] if pref else None
+            if "verb" in caps:
+                name = caps["verb"][0].text.decode()
+                if name in verbs:
+                    args = caps.get("verb.args")
+                    hits.append((caps["verb"][0], args[0] if args else None))
+        seen = set()
+        for verb_node, args in sorted(hits, key=lambda h: h[0].start_byte):
+            if verb_node.id in seen:
+                continue
+            seen.add(verb_node.id)
+            member = verb_node.parent
+            while member is not None and member.type not in method_nodes:
+                member = member.parent
+            if member is None:
+                continue  # annotation outside any member shape - not an endpoint
+            scope = member.parent
+            while scope is not None and scope.id not in scopes:
+                scope = scope.parent
+            prefixes, plit = decorator_paths(scopes.get(scope.id) if scope is not None else None)
+            if not plit or prefixes == [None]:
+                warns.append({"file": rel, "reason": "non-literal controller path"})
+                prefixes = [""]
+            verb_name = verb_node.text.decode()
+            paths, mlit = decorator_paths(args)
+            if not mlit or paths == [None]:
+                warns.append({"file": rel, "reason": f"non-literal @{verb_name} path"})
+                paths = [""]
+            for pre in prefixes:
+                for p in paths:
+                    endpoints.append({"file": rel, "method": verbs[verb_name],
+                                      "path": compose(pre, p)})
+    endpoints.sort(key=lambda e: (e["file"], e["method"], e["path"]))
+    warns.sort(key=lambda w: (w["file"], w["reason"]))
+    return {"endpoints": endpoints, "warnings": warns}
+
+
 EMITTERS = {"endpoint": emit_endpoints}
 
 
@@ -159,7 +239,10 @@ def main(provider_dir, root):
     emits = cfg.get("emits") or []
     if len(emits) != 1 or emits[0] not in EMITTERS:
         raise SystemExit(f"tsq: emits must name exactly one of {sorted(EMITTERS)} (got {emits})")
-    print(json.dumps(EMITTERS[emits[0]](cfg, query, parser, files, root), indent=1))
+    emitter = EMITTERS[emits[0]]
+    if emits[0] == "endpoint" and (cfg.get("association") or "sibling") == "member":
+        emitter = emit_endpoints_member
+    print(json.dumps(emitter(cfg, query, parser, files, root), indent=1))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,18 @@
+id: spring
+capability: http-endpoints
+semver: 0.3.0
+tier: declarative     # E14 probe (spring-petclinic, 2026-07-31): 17/17 method
+                      # annotations + the class-level prefix - annotation-shaped
+                      # exactly like nestjs, so the .scm tier fits (doc 11 N2,
+                      # probe-first). Java annotations are member-attached, not
+                      # sibling decorators - hence association: member.
+runtime: query
+language: java
+association: member
+query: endpoints.scm
+detect: { files: ["pom.xml", "build.gradle", "application.properties", "application.yml"] }
+files: [".java"]
+skip-files: ["Test.java", "Tests.java", "IT.java"]
+verbs: { GetMapping: GET, PostMapping: POST, PutMapping: PUT, DeleteMapping: DELETE, PatchMapping: PATCH, RequestMapping: ALL }
+emits: [endpoint]
+timeout_class: D

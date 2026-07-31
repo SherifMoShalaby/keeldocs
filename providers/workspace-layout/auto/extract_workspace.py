@@ -25,6 +25,25 @@ def pkg_name(d):
                 return name
         except Exception:
             pass
+    gm = os.path.join(d, "go.mod")
+    if os.path.exists(gm):  # module path's last segment is the go identity (N2)
+        try:
+            for line in open(gm, encoding="utf-8"):
+                if line.startswith("module "):
+                    return line.split()[1].rstrip("/").rsplit("/", 1)[-1]
+        except OSError:
+            pass
+    pom = os.path.join(d, "pom.xml")
+    if os.path.exists(pom):  # maven artifactId, PROJECT-level only (N2)
+        try:
+            import re as _re
+            top = _re.sub(r"<(parent|dependencies|build|profiles)[\s\S]*?</\1>", "",
+                          open(pom, encoding="utf-8").read())
+            m = _re.search(r"<artifactId>\s*([^<\s]+)\s*</artifactId>", top)
+            if m:
+                return m.group(1)
+        except OSError:
+            pass
     return os.path.basename(os.path.abspath(d))
 
 
@@ -67,6 +86,8 @@ def main(root):
         manager = "single"
         mfile = ("package.json" if os.path.exists(pj)
                  else "pyproject.toml" if os.path.exists(os.path.join(root, "pyproject.toml"))
+                 else "go.mod" if os.path.exists(os.path.join(root, "go.mod"))
+                 else "pom.xml" if os.path.exists(os.path.join(root, "pom.xml"))
                  else None)
     packages.sort(key=lambda p: p["path"])
     print(json.dumps({"manager": manager, "file": mfile, "packages": packages}, indent=1))

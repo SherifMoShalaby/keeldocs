@@ -3,7 +3,7 @@
  "meta": {
   "engine": "keeldocs@0.2.0-dev.0",
   "head": null,
-  "providerSetHash": "c6c00942468e5ec4",
+  "providerSetHash": null,
   "mode": "apply"
  },
  "card": {
@@ -108,5 +108,11 @@
    "pct": 100
   }
  },
- "plan": []
+ "plan": [],
+ "extractionGaps": [
+  {
+   "kind": "not-a-git-root",
+   "file": null
+  }
+ ]
 }

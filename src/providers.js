@@ -24,7 +24,7 @@ const KNOWN_KEYS = new Set([
   "id", "capability", "semver", "tier", "confidence", "entry", "runtime",
   "query", "language", "detect", "argMode", "needs", "inputs", "requires",
   "timeout_class", "emits", "status", "verbs", "files", "skip-files", "live",
-  "exec",
+  "exec", "association",
 ]);
 const DETECT_KEYS = new Set(["always", "deps", "files", "dirs"]);
 
