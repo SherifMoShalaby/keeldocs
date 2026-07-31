@@ -19,26 +19,15 @@ import { extractAll } from "./facts.js";
 import { evaluate } from "./drift.js";
 import { buildProposals } from "./proposals.js";
 import { patchRegion, patchBind } from "./patch.js";
+import { loadConfig, docPathsOf } from "./config.js";
 import { ENGINE_VERSION } from "./registry.js";
 
-function collectState(root) {
-  const { factsById, capabilities, toolError } = extractAll(root);
+function collectState(root, config) {
+  const { factsById, capabilities, toolError } = extractAll(root, { disable: config.providers.disable });
   if (toolError) throw new Error(`tooling error: ${toolError}`);
   const journal = effective(loadJournal(root), new Date().toISOString());
   const anchors = [], regions = [], docTexts = new Map();
-  const { readdirSync, statSync, existsSync } = fsx();
-  const docs = [];
-  const rec = (dir) => {
-    for (const name of readdirSync(dir).sort()) {
-      if ([".keeldocs", "node_modules", "golden", ".git"].includes(name)) continue;
-      const p = join(dir, name);
-      if (statSync(p).isDirectory()) rec(p);
-      else if (name.endsWith(".md")) docs.push(relative(root, p));
-    }
-  };
-  if (existsSync(join(root, "docs"))) rec(join(root, "docs"));
-  if (existsSync(join(root, "README.md"))) docs.push("README.md");
-  for (const d of docs.sort()) {
+  for (const d of docPathsOf(root, config.docs.dirs)) {
     const text = readFileSync(join(root, d), "utf8");
     docTexts.set(d, text);
     const parsed = parseDoc(text, d);
@@ -49,9 +38,6 @@ function collectState(root) {
   const proposals = buildProposals({ findings, regions, anchors, factsById });
   return { factsById, findings, proposals, anchors, regions, docTexts };
 }
-
-import * as _fs from "node:fs";
-function fsx() { return _fs; }
 
 function actor() { return process.env.KEELDOCS_ACTOR || process.env.USER || "unknown"; }
 
@@ -108,9 +94,14 @@ function currentContentDisplay(root, p) {
 }
 
 export function runSync({ root, json, args }) {
+  const cfg = loadConfig(root);
+  if (!cfg.ok) {
+    return emit(json, 2, { v: 1, ok: false, code: "CONFIG",
+      summary: cfg.error.slice(0, 300), data: {}, next: [] });
+  }
   let state;
   try {
-    state = collectState(root);
+    state = collectState(root, cfg.config);
   } catch (err) {
     return emit(json, 2, { v: 1, ok: false, code: "TOOL_ERROR",
       summary: String(err.message).slice(0, 300), data: {}, next: [] });
@@ -154,7 +145,7 @@ export function runSync({ root, json, args }) {
     errors.push(String(err.message));
   }
 
-  const remaining = collectRemaining(root);
+  const remaining = collectRemaining(root, cfg.config);
   const code = errors.length ? "TOOL_ERROR"
     : applied.length ? "APPLIED"
     : proposals.length ? "PROPOSALS" : "NOTHING_TO_SYNC";
@@ -188,8 +179,8 @@ export function runSync({ root, json, args }) {
   });
 }
 
-function collectRemaining(root) {
-  const { proposals } = collectState(root);
+function collectRemaining(root, config) {
+  const { proposals } = collectState(root, config);
   const kinds = {};
   for (const p of proposals) kinds[p.kind] = (kinds[p.kind] ?? 0) + 1;
   return {

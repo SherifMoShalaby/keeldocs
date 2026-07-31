@@ -5,7 +5,7 @@
 // applies writes; existing files are NEVER overwritten (skip + report).
 // Exit codes: 0 success (lies are the value, not a failure) | 2 tool error.
 
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, dirname, relative } from "node:path";
 import { extractAll } from "./facts.js";
@@ -14,23 +14,8 @@ import { detectLies } from "./lies.js";
 import { parseDoc } from "./anchors.js";
 import { evaluate, coverage, isCoverageSurface } from "./drift.js";
 import { loadJournal, effective } from "./journal.js";
+import { loadConfig, docPathsOf } from "./config.js";
 import { ENGINE_VERSION } from "./registry.js";
-
-function existingDocs(root) {
-  const out = [];
-  const rec = (dir) => {
-    for (const name of readdirSync(dir).sort()) {
-      if ([".keeldocs", "node_modules", "golden", ".git"].includes(name)) continue;
-      const p = join(dir, name);
-      if (statSync(p).isDirectory()) rec(p);
-      else if (name.endsWith(".md")) out.push(relative(root, p));
-    }
-  };
-  const docsDir = join(root, "docs");
-  if (existsSync(docsDir)) rec(docsDir);
-  if (existsSync(join(root, "README.md"))) out.push("README.md");
-  return out.sort();
-}
 
 function gitHead(root) {
   const r = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
@@ -38,9 +23,15 @@ function gitHead(root) {
 }
 
 export function runInit({ root, json, yes }) {
+  const cfg = loadConfig(root);
+  if (!cfg.ok) {
+    const env = { v: 1, ok: false, code: "CONFIG", summary: cfg.error.slice(0, 300), data: {}, next: [] };
+    process.stdout.write(json ? JSON.stringify(env) + "\n" : env.summary + "\n");
+    return 2;
+  }
   let result;
   try {
-    result = doInit(root, yes);
+    result = doInit(root, yes, cfg.config);
   } catch (err) {
     const env = { v: 1, ok: false, code: "TOOL_ERROR",
       summary: `init failed: ${String(err.message).slice(0, 200)}`, data: {}, next: [] };
@@ -104,10 +95,12 @@ export function runInit({ root, json, yes }) {
   return 0;
 }
 
-function doInit(root, yes) {
-  const { factsById, capabilities, providerSetHash, toolError } = extractAll(root);
+function doInit(root, yes, config) {
+  const { factsById, capabilities, providerSetHash, toolError } =
+    extractAll(root, { disable: config.providers.disable });
   const pkgPath = join(root, "package.json");
   const pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf8")) : null;
+  const existingDocs = () => docPathsOf(root, config.docs.dirs);
 
   // Detection card - correctable before anything else runs (the agent surfaces it).
   const card = {
@@ -118,7 +111,7 @@ function doInit(root, yes) {
   };
 
   // Lie-detector runs against docs that exist BEFORE anything is written.
-  const preDocs = existingDocs(root);
+  const preDocs = existingDocs();
   const lies = detectLies({ root, docPaths: preDocs, factsById, pkg });
 
   // Starter docs - never overwrite; an existing file is human-owned, full stop.
@@ -148,7 +141,7 @@ function doInit(root, yes) {
     return { cov: coverage(factsById, ev.documented), documented: ev.documented };
   };
   const before = covOf(preDocs);
-  const after = yes ? covOf(existingDocs(root)) : before;
+  const after = yes ? covOf(existingDocs()) : before;
 
   // Plan = undocumented CONCRETE surfaces, ranked hotspot x fan-in (D5):
   // churn from decision-history, fan-in from module-graph import edges.

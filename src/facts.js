@@ -217,14 +217,16 @@ function schemaFacts(raw, provenanceBase, schemaFile) {
   return { facts, gaps: [] };
 }
 
-export function extractAll(repoRootIn) {
+export function extractAll(repoRootIn, { disable = [] } = {}) {
   const repoRoot = resolve(repoRootIn); // subprocess cwd = repoRoot; args must be absolute
+  const disabled = new Set(disable);
+  const active = REGISTRY.filter((r) => !disabled.has(r.id));
   const capabilities = {};
   const factsById = new Map();
   const gaps = [];
   let toolError = null;
 
-  for (const reg of REGISTRY) {
+  for (const reg of active) {
     const d = detect(reg, repoRoot);
     if (!d.applicable) {
       capabilities[reg.capability] ??= { status: "absent", providers: [] };
@@ -281,8 +283,10 @@ export function extractAll(repoRootIn) {
     const lines = list.map((f) => jcs({ id: f.id, hash: f.hash, payload: f.payload, provenance: f.provenance }));
     writeFileSync(join(factsDir, `${cap}.jsonl`), lines.join("\n") + "\n");
   }
+  // Cache identity covers the EFFECTIVE provider set - disabling a provider
+  // via keeldocs.toml is a different extraction universe, so it must re-key.
   const providerSetHash = createHash("sha256")
-    .update([...REGISTRY.map((r) => `${r.id}@${r.semver}`)].sort().join(",") + `|engine:${ENGINE_VERSION.split(".")[0]}`)
+    .update([...active.map((r) => `${r.id}@${r.semver}`)].sort().join(",") + `|engine:${ENGINE_VERSION.split(".")[0]}`)
     .digest("hex").slice(0, 16);
 
   return { factsById, capabilities, gaps, providerSetHash, toolError };

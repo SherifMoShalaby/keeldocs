@@ -5,12 +5,13 @@
 // Exit codes: 0 clean | 1 findings | 2 tool/config error | 3 budget-degraded.
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { parseDoc } from "./anchors.js";
 import { loadJournal, effective } from "./journal.js";
 import { extractAll } from "./facts.js";
 import { evaluate, coverage } from "./drift.js";
+import { loadConfig, docPathsOf } from "./config.js";
 import { ENGINE_VERSION } from "./registry.js";
 
 const DRIFT_STATES = new Set(["stale", "tampered", "dead"]);
@@ -20,29 +21,16 @@ function git(repoRoot, args) {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
-function findDocs(repoRoot) {
-  const docs = [];
-  const docsDir = join(repoRoot, "docs");
-  const skip = new Set(["node_modules", ".git", ".keeldocs", "golden"]);
-  const walk = (dir) => {
-    for (const name of readdirSync(dir).sort()) {
-      if (skip.has(name)) continue;
-      const p = join(dir, name);
-      if (statSync(p).isDirectory()) walk(p);
-      else if (name.endsWith(".md")) docs.push(p);
-    }
-  };
-  if (existsSync(docsDir)) walk(docsDir);
-  const readme = join(repoRoot, "README.md");
-  if (existsSync(readme)) docs.push(readme);
-  return docs.sort();
-}
-
 export function runCheck({ root, json, ci }) {
   const repoRoot = root;
+  const cfg = loadConfig(repoRoot);
+  if (!cfg.ok) {
+    return emit(json, 2, { v: 1, ok: false, code: "CONFIG",
+      summary: cfg.error.slice(0, 300), data: {}, next: [] }, null);
+  }
   let report;
   try {
-    report = buildReport(repoRoot, ci);
+    report = buildReport(repoRoot, ci, cfg.config);
   } catch (err) {
     return emit(json, 2, {
       v: 1, ok: false, code: "TOOL_ERROR",
@@ -81,20 +69,21 @@ export function runCheck({ root, json, ci }) {
   return emit(json, exit, envelope, report);
 }
 
-function buildReport(repoRoot, ci) {
+function buildReport(repoRoot, ci, config) {
   // now: policy clock only (snooze expiry) - HEAD commit time in CI (spec §6)
   const head = git(repoRoot, ["rev-parse", "HEAD"]);
   const nowIso = ci
     ? (git(repoRoot, ["show", "-s", "--format=%cI", "HEAD"]) ?? "9999-12-31T00:00:00Z")
     : new Date().toISOString();
 
-  const { factsById, capabilities, gaps, providerSetHash, toolError } = extractAll(repoRoot);
+  const { factsById, capabilities, gaps, providerSetHash, toolError } =
+    extractAll(repoRoot, { disable: config.providers.disable });
   const journal = effective(loadJournal(repoRoot), nowIso);
 
   const anchors = [], regions = [], quarantined = [];
-  const docPaths = findDocs(repoRoot);
+  const docPaths = docPathsOf(repoRoot, config.docs.dirs);
   for (const p of docPaths) {
-    const parsed = parseDoc(readFileSync(p, "utf8"), relative(repoRoot, p));
+    const parsed = parseDoc(readFileSync(join(repoRoot, p), "utf8"), p);
     anchors.push(...parsed.anchors);
     regions.push(...parsed.regions);
     quarantined.push(...parsed.quarantined);

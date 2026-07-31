@@ -389,6 +389,31 @@ def main():
     except Exception as e:
         failures.append(f"symbol identity integration: {e}")
 
+    # ---- keeldocs.toml: provider disable respected; bad config fails loud ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-cfg-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        with open(os.path.join(dst, "keeldocs.toml"), "w") as f:
+            f.write('[providers]\ndisable = ["prisma"]\n')
+        r = kd(dst, "init", "--json")
+        env_ = json.loads(r.stdout)
+        caps = env_["data"]["card"]["capabilities"]
+        assert "db-schema" not in caps, "disabled provider must not even detect"
+        assert "docs/architecture/data-model.md" not in env_["data"]["docs"]["planned"]
+        # schema-strict config: a typo'd key is a CONFIG error, never a silent no-op
+        with open(os.path.join(dst, "keeldocs.toml"), "w") as f:
+            f.write('[providers]\ndisabel = ["prisma"]\n')
+        r = kd(dst, "check", "--json")
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 2 and env_["code"] == "CONFIG" and "disabel" in env_["summary"]
+        shutil.rmtree(tmp)
+        print("  PASS  keeldocs.toml: provider disable honored, typo'd key fails loud (CONFIG, exit 2)")
+    except Exception as e:
+        failures.append(f"config integration: {e}")
+
     # ---- decision-history + plan ranking: hotspot x fan-in on a real git repo ----
     try:
         import shutil, tempfile
