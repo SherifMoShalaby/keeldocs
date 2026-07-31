@@ -4,8 +4,18 @@ on:
   pull_request:
 
 jobs:
+  # Cross-OS determinism matrix (ADR-003's tested invariant): the SAME goldens
+  # must reproduce byte-identically on every OS, and the harness double-runs
+  # every extractor. Windows is the reduced-trust tier (owner decision
+  # 2026-07-30): it runs, its result is reported, it cannot block a release.
   harness:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    defaults: { run: { shell: bash } }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -13,11 +23,39 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - name: Install extractor runtime (pinned)
-        run: pip install "tree-sitter==0.26.0" "tree-sitter-typescript==0.23.2" tree-sitter-javascript pyyaml
+        run: pip install -r providers/requirements.txt
       - name: Engine unit tests
         run: node --test tests/*.test.js
-      - name: Fixture matrix + check integration + determinism double-runs
+      - name: Fixture matrix + integrations + determinism double-runs
         run: python3 scripts/harness.py
-      # The determinism gate above is ADR-003's tested invariant in embryo:
-      # when the engine lands, this job grows the cross-OS byte-identical matrix
-      # (linux/macos/windows x 2 runs) and the golden resolution tests.
+
+  # npm packaging must stay publish-ready: pack the tarball, install it into a
+  # clean consumer, run the bin. Publishing itself happens in release.yml.
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Pack and consume the tarball
+        run: |
+          npm pack
+          mkdir /tmp/consume && cd /tmp/consume && npm init -y > /dev/null
+          npm install --no-fund --no-audit "$GITHUB_WORKSPACE"/keeldocs-*.tgz
+          npx keeldocs --version
+          npx keeldocs check --json > /dev/null || test $? -le 1
+
+  # Dogfood the composite action against this repo - it must come back CLEAN.
+  action-smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run keeldocs action on this repo
+        id: kd
+        uses: ./
+        with: { comment: "false" }
+      - name: Assert clean
+        run: test "${{ steps.kd.outputs.code }}" = "CLEAN"

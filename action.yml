@@ -1,0 +1,102 @@
+name: "keeldocs check"
+description: >-
+  Deterministic doc-drift check with receipts. Runs `keeldocs check --ci`,
+  uploads SARIF to code scanning, and maintains one sticky PR comment.
+  Coverage never gates (ratchet, not gate); drift does, by default.
+branding: { icon: "anchor", color: "blue" }
+
+inputs:
+  working-directory:
+    description: "Repo subdirectory to check"
+    default: "."
+  fail-on-drift:
+    description: "Fail the job when drift is found (exit 1). Tooling errors (exit 2) always fail."
+    default: "true"
+  sarif:
+    description: "Upload findings to GitHub code scanning (needs security-events: write)"
+    default: "true"
+  comment:
+    description: "Maintain one sticky PR comment with the current drift state (needs pull-requests: write)"
+    default: "true"
+
+outputs:
+  code:
+    description: "Envelope code: CLEAN | DRIFT_FOUND | TOOL_ERROR | CONFIG"
+    value: ${{ steps.check.outputs.code }}
+  exit:
+    description: "keeldocs exit code (0 clean, 1 drift, 2 tool/config error)"
+    value: ${{ steps.check.outputs.exit }}
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-node@v4
+      with: { node-version: 20 }
+    - uses: actions/setup-python@v5
+      with: { python-version: "3.12" }
+    - name: Install extractor runtime (pinned)
+      shell: bash
+      run: pip install -q -r "${{ github.action_path }}/providers/requirements.txt"
+    - name: keeldocs check --ci
+      id: check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set +e
+        node "${{ github.action_path }}/bin/keeldocs.js" check --ci --json > keeldocs-envelope.json
+        rc=$?
+        set -e
+        echo "exit=$rc" >> "$GITHUB_OUTPUT"
+        echo "code=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("keeldocs-envelope.json","utf8")).code)')" >> "$GITHUB_OUTPUT"
+        full=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("keeldocs-envelope.json","utf8")).full ?? "")')
+        echo "full=$full" >> "$GITHUB_OUTPUT"
+        cat keeldocs-envelope.json
+        if [ "$rc" -ge 2 ]; then exit "$rc"; fi
+    - name: Convert full report to SARIF
+      if: ${{ inputs.sarif == 'true' && steps.check.outputs.full != '' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: node "${{ github.action_path }}/scripts/sarif.js" "${{ steps.check.outputs.full }}" > keeldocs.sarif
+    - name: Upload SARIF
+      if: ${{ inputs.sarif == 'true' && steps.check.outputs.full != '' }}
+      uses: github/codeql-action/upload-sarif@v3
+      continue-on-error: true # code scanning may be off for this repo - never fail the check for that
+      with:
+        sarif_file: ${{ inputs.working-directory }}/keeldocs.sarif
+        category: keeldocs
+    - name: Sticky PR comment
+      if: ${{ inputs.comment == 'true' && github.event_name == 'pull_request' }}
+      uses: actions/github-script@v7
+      continue-on-error: true # commenting needs pull-requests: write; absence must not fail the check
+      env:
+        WORKDIR: ${{ inputs.working-directory }}
+      with:
+        script: |
+          const fs = require("fs");
+          const path = require("path");
+          const env = JSON.parse(fs.readFileSync(path.join(process.env.WORKDIR, "keeldocs-envelope.json"), "utf8"));
+          const marker = "<!-- keeldocs-sticky -->";
+          const rows = (env.data.top ?? []).map(f =>
+            `| ${f.state} | \`${f.id}\` | ${f.doc}:${f.line} | ${(f.missing ?? []).join(", ") || "-"} |`).join("\n");
+          const body = [
+            marker,
+            `### keeldocs - ${env.code}`,
+            "",
+            env.summary,
+            "",
+            rows ? "| state | id | where | missing |\n|---|---|---|---|\n" + rows : "_No drift. Docs match the code._",
+            "",
+            env.code === "DRIFT_FOUND" ? "Run `keeldocs sync` locally to review section-level proposals." : "",
+          ].join("\n");
+          const { owner, repo } = context.repo;
+          const issue_number = context.payload.pull_request.number;
+          const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+          const mine = comments.find(c => c.body && c.body.startsWith(marker));
+          if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+          else await github.rest.issues.createComment({ owner, repo, issue_number, body });
+    - name: Gate on drift
+      if: ${{ inputs.fail-on-drift == 'true' && steps.check.outputs.exit == '1' }}
+      shell: bash
+      run: |
+        echo "keeldocs found drift (see the report above). Coverage never gates; drift does."
+        exit 1

@@ -1,0 +1,4 @@
+# Byte determinism across OSes (ADR-003/ADR-008): content hashes and golden
+# comparisons are defined over exact bytes, so git must never rewrite line
+# endings on checkout. The repo is LF everywhere, on every platform.
+* -text

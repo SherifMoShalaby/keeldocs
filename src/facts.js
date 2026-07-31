@@ -52,9 +52,11 @@ function runProvider(reg, repoRoot, detectInfo) {
     if (!schema) return { status: "not_applicable" };
     arg = schema;
   }
-  const r = spawnSync("python3", [join(ENGINE_ROOT, reg.entry), arg], {
+  const spawnPy = (bin) => spawnSync(bin, [join(ENGINE_ROOT, reg.entry), arg], {
     cwd: repoRoot, timeout: 60_000, maxBuffer: 16 * 1024 * 1024, encoding: "utf8",
   });
+  let r = spawnPy("python3");
+  if (r.error?.code === "ENOENT") r = spawnPy("python"); // Windows installs often lack a python3 shim
   if (r.status !== 0 || r.error) {
     return { status: "failed", reason: r.error ? String(r.error.message) : `rc=${r.status}`,
              stderr: (r.stderr || "").slice(-400) };

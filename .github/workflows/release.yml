@@ -1,0 +1,33 @@
+# Publish to npm with provenance on version tags (v0.1.0, v0.1.0-rc.1, ...).
+# Auth: either configure npm Trusted Publishing for this repo/workflow (then
+# NPM_TOKEN is unnecessary), or add an npm automation token as NPM_TOKEN.
+# The full test suite gates the publish - a red harness cannot ship.
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm --provenance attestation via OIDC
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, registry-url: "https://registry.npmjs.org" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install extractor runtime (pinned)
+        run: pip install -r providers/requirements.txt
+      - name: Full suite
+        run: npm test
+      - name: Tag must match package.json version
+        run: |
+          v=$(node -p 'require("./package.json").version')
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != package version $v"; exit 1; }
+      - name: Publish (provenance)
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

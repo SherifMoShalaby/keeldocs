@@ -1,0 +1,6 @@
+# Pinned extractor runtime - keep in lockstep with .github/workflows/ci.yml.
+# Providers are pure subprocesses; this is their entire dependency surface.
+tree-sitter==0.26.0
+tree-sitter-typescript==0.23.2
+tree-sitter-javascript
+pyyaml

@@ -4,7 +4,7 @@
 // then this file is the single machine-read source and provider.yaml is the contract
 // documentation. Keep them in lockstep - the harness compares ids/semvers at test time.
 
-export const ENGINE_VERSION = "0.1.0-dev.0";
+export const ENGINE_VERSION = "0.1.0-rc.1";
 
 export const REGISTRY = [
   {
