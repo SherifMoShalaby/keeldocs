@@ -25,29 +25,43 @@ export function changedFilesSince(root, ref) {
   return { changed, base: mb };
 }
 
-// FACT-level change set: extract at the merge-base in a throwaway worktree and
-// diff fact hashes against the current extraction. File granularity was tried
-// first and over-attributed - a fact merely LIVING in an edited file is not
-// caused by the edit; a fact whose HASH moved (or that appeared/disappeared)
-// is. This is the precise meaning of "drift caused by ref..HEAD".
-export function changedFactsSince(root, base, factsNow, { disable = [] } = {}) {
+// Extract the fact universe AS OF a base commit, via a throwaway worktree.
+// Shared by --since/--self classification and the re-anchoring pipeline
+// (S2 compares against the dead fact's LAST KNOWN shape, which lives here).
+export function extractAtBase(root, base, { disable = [] } = {}) {
   const wt = mkdtempSync(join(tmpdir(), "keeldocs-base-"));
   try {
     const r = spawnSync("git", ["worktree", "add", "--detach", "--force", wt, base],
       { cwd: root, encoding: "utf8" });
     if (r.status !== 0) throw new Error(`cannot materialize base \`${base}\`: ${(r.stderr || "").slice(-160)}`);
-    const { factsById: baseFacts, toolError } = extractAll(wt, { disable });
+    const { factsById, toolError } = extractAll(wt, { disable });
     if (toolError) throw new Error(`base extraction failed: ${toolError}`);
-    const changedFactIds = new Set();
-    for (const [id, f] of factsNow) {
-      if (baseFacts.get(id)?.hash !== f.hash) changedFactIds.add(id); // new or modified
-    }
-    for (const id of baseFacts.keys()) {
-      if (!factsNow.has(id)) changedFactIds.add(id); // deleted since base
-    }
-    return changedFactIds;
+    return factsById;
   } finally {
     spawnSync("git", ["worktree", "remove", "--force", wt], { cwd: root, encoding: "utf8" });
     rmSync(wt, { recursive: true, force: true });
   }
+}
+
+// FACT-level change set: base extraction diffed against the current one. File
+// granularity was tried first and over-attributed - a fact merely LIVING in an
+// edited file is not caused by the edit; a fact whose HASH moved (or that
+// appeared/disappeared) is. Precise meaning of "drift caused by ref..HEAD".
+export function changedFactsSince(root, base, factsNow, opts = {}, baseFactsIn = null) {
+  const baseFacts = baseFactsIn ?? extractAtBase(root, base, opts);
+  const changedFactIds = new Set();
+  for (const [id, f] of factsNow) {
+    if (baseFacts.get(id)?.hash !== f.hash) changedFactIds.add(id); // new or modified
+  }
+  for (const id of baseFacts.keys()) {
+    if (!factsNow.has(id)) changedFactIds.add(id); // deleted since base
+  }
+  return changedFactIds;
+}
+
+// Rename map for S1: `git diff --name-status -M60 <base>` against the working
+// tree - the same base the rest of the pipeline uses.
+export function renamesSince(root, base) {
+  const out = git(root, ["diff", "--name-status", "-M60", base]);
+  return out ?? "";
 }

@@ -12,6 +12,7 @@ disable-model-invocation: true
    - `keeldocs sync --reject <id>` - records a rejection; an identical proposal is never re-made (the user's hand edit stands; check reports it as held, not drift)
    - `keeldocs sync --snooze <id> [--days N]`
 3. `restore` proposals DISCARD a human's hand edit inside a gen region - always show the diff and get explicit consent, or reject to keep it.
+   Rebind proposals name their evidence signals (S1 file-rename, S2 signature exact/near, S1b unique same-name). `--apply-all` auto-applies a rebind ONLY when marked auto-qualified (one candidate, S1+S2-exact - a file move); everything else is the human's call via `--apply <id> [--to <fact-id>]`.
 4. After applying, run `keeldocs check` to confirm the loop closed clean. Journal writes are disabled in CI by design; decisions happen locally.
 
 ## Post-edit nudge (the retention loop - strict protocol)

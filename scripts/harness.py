@@ -633,6 +633,59 @@ def main():
     except Exception as e:
         failures.append(f"noise instruments: {e}")
 
+    # ---- re-anchoring pipeline: S1+S2 auto-rebind gate, S2-only stays proposal ----
+    try:
+        import shutil, tempfile
+        genv = {**os.environ, "GIT_AUTHOR_DATE": "2026-07-01T00:00:00Z",
+                "GIT_COMMITTER_DATE": "2026-07-01T00:00:00Z"}
+        def mk_repo():
+            tmp = tempfile.mkdtemp(prefix="keeldocs-reanchor-")
+            dst = os.path.join(tmp, "repo")
+            shutil.copytree(os.path.join(ROOT, "fixtures", "symbols-scenario"), dst,
+                            ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+            def g(*a):
+                r = subprocess.run(["git", "-C", dst, "-c", "user.name=h", "-c", "user.email=h@x", *a],
+                                   capture_output=True, text=True, env=genv)
+                assert r.returncode == 0, r.stderr[-200:]
+            g("init", "-q"); g("add", "-A"); g("commit", "-qm", "base")
+            return tmp, dst, g
+        # CASE 1 - file move: S1 rename + S2 exact + unique => AUTO-rebind in --apply-all
+        tmp, dst, g = mk_repo()
+        g("mv", "src/auth.ts", "src/identity.ts")
+        moved = "ds symbols-scenario-fixture . src/identity.ts/login()."
+        r = kd(dst, "sync", "--json", env=local_env)
+        props = json.loads(r.stdout)["data"]["proposals"]
+        assert props and props[0]["kind"] == "rebind" and props[0]["candidate"] == moved, props
+        assert "S1 file-rename" in props[0]["evidence"] and "S2 signature exact" in props[0]["evidence"]
+        assert props[0].get("auto") is True and props[0]["signals"] == {"s1": True, "s2": "exact", "s1b": True}, props[0]
+        r = kd(dst, "sync", "--apply-all", "--json", env=local_env)
+        env_ = json.loads(r.stdout)
+        assert env_["code"] == "APPLIED" and env_["data"]["applied"][0]["action"] == "rebind", env_["data"]
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
+        assert f"binds={moved}" in open(os.path.join(dst, "docs", "auth.md")).read()
+        jl = open(os.path.join(dst, ".keeldocs", "decisions.jsonl")).read()
+        assert '"type":"rebind"' in jl, "auto-rebind must be journaled (the log that makes it reversible)"
+        shutil.rmtree(tmp)
+        # CASE 2 - in-place rename: S2-exact alone is ONE signal => proposal, never auto
+        tmp, dst, g = mk_repo()
+        a = os.path.join(dst, "src", "auth.ts")
+        src_a = open(a).read().replace("export function login(", "export function signIn(")
+        open(a, "w").write(src_a)
+        r = kd(dst, "sync", "--json", env=local_env)
+        props = json.loads(r.stdout)["data"]["proposals"]
+        assert props and props[0]["kind"] == "rebind", props
+        assert props[0]["candidate"].endswith("src/auth.ts/signIn()."), props[0]
+        assert props[0]["signals"] == {"s2": "exact"} and props[0].get("auto") is None, props[0]
+        r = kd(dst, "sync", "--apply-all", "--json", env=local_env)
+        assert json.loads(r.stdout)["data"]["applied"] == [], "one signal must NOT auto-apply"
+        r = kd(dst, "sync", "--apply", "auth.login", "--json", env=local_env)
+        assert json.loads(r.stdout)["data"]["applied"][0]["action"] == "rebind"
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
+        shutil.rmtree(tmp)
+        print("  PASS  re-anchoring: file-move auto-rebind (S1+S2, journaled), in-place rename stays human-choice")
+    except Exception as e:
+        failures.append(f"re-anchoring: {e}")
+
     # ---- redaction barrier: secret in facts -> [REDACTED] in docs, still born clean ----
     try:
         import shutil, tempfile

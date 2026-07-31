@@ -2,8 +2,10 @@
 // Kinds:
 //   regenerate  - stale gen region the engine can re-render from current facts
 //   restore     - tampered gen region, re-rendered content (human diff shows the loss)
-//   rebind      - dead binding with candidates; NEVER auto-applied (ADR-007:
-//                 fact-key rebinding lacks the two-signal evidence - human chooses)
+//   rebind      - dead binding with candidates. Auto-applied by --apply-all ONLY
+//                 when the ADR-007 two-signal gate holds (exactly one candidate,
+//                 S1 rename + S2 exact signature - see src/reanchor.js); every
+//                 other rebind is a ranked proposal a human chooses
 //   tombstone   - dead binding with no candidates; records intentionally-removed
 //   unrenderable- stale/tampered region with no registered renderer (hand-authored
 //                 gen id) - listed with evidence, not appliable in v0.1
@@ -14,8 +16,9 @@ import { redact } from "./redact.js";
 import { resolveBindIds, aggregateHash } from "./drift.js";
 import { contentHash, display } from "./hash.js";
 import { inheritBinds } from "./anchors.js";
+import { rankSymbolCandidates, evidenceText } from "./reanchor.js";
 
-export function buildProposals({ findings, regions, anchors, factsById }) {
+export function buildProposals({ findings, regions, anchors, factsById, reanchor = null }) {
   const regionById = new Map(regions.map((r) => [r.id, r]));
   const proposals = [];
 
@@ -55,6 +58,20 @@ export function buildProposals({ findings, regions, anchors, factsById }) {
       continue;
     }
     if (f.state === "dead") {
+      // deep pipeline (sync-only, base-aware) for single-missing ds bindings
+      if (reanchor && f.missing?.length === 1 && f.missing[0].startsWith("ds ")) {
+        const ranked = rankSymbolCandidates({ missingId: f.missing[0], factsNow: factsById,
+          baseFacts: reanchor.baseFacts, renames: reanchor.renames });
+        if (ranked.length) {
+          proposals.push({ id: f.id, kind: "rebind", doc: f.doc, line: f.line,
+            missing: f.missing, candidate: ranked[0].id,
+            allCandidates: ranked.map((c) => c.id),
+            ...(ranked[0].auto ? { auto: true } : {}),
+            signals: ranked[0].signals,
+            evidence: evidenceText(f.missing[0], ranked) });
+          continue;
+        }
+      }
       if (f.candidates?.length) {
         proposals.push({ id: f.id, kind: "rebind", doc: f.doc, line: f.line,
           missing: f.missing, candidate: f.candidates[0], allCandidates: f.candidates,

@@ -21,7 +21,8 @@ import { evaluate, classifySelfCaused } from "./drift.js";
 import { buildProposals } from "./proposals.js";
 import { patchRegion, patchBind } from "./patch.js";
 import { loadConfig, docPathsOf } from "./config.js";
-import { changedFilesSince, changedFactsSince } from "./gitx.js";
+import { changedFilesSince, changedFactsSince, extractAtBase, renamesSince } from "./gitx.js";
+import { renameMapFromStatus } from "./reanchor.js";
 import { ENGINE_VERSION } from "./registry.js";
 
 const inCI = () => process.env.CI === "true" || process.env.CI === "1";
@@ -56,10 +57,32 @@ function collectState(root, config, selfScope = null) {
     regions.push(...parsed.regions);
   }
   const { findings } = evaluate({ anchors, regions, factsById, capabilities, journal });
-  let proposals = buildProposals({ findings, regions, anchors, factsById });
+
+  // Re-anchoring context (S1 rename map + S2 base shapes) whenever a dead ds
+  // binding exists and a base is resolvable - degrades silently to the cheap
+  // S1b candidates otherwise. The --self base is reused when present.
+  let reanchor = null;
+  let baseFacts = null;
+  const deadDs = findings.some((f) => f.state === "dead" && f.missing?.some((m) => m.startsWith("ds ")));
+  let base = selfScope?.base ?? null;
+  if (base === null && deadDs) {
+    // origin chain when available; else HEAD - the binding resolved at HEAD,
+    // so HEAD carries the dead fact's last known shape for S2
+    let ref;
+    try { ref = resolveSelfBase(root, null); } catch { ref = "HEAD"; }
+    base = git(root, ["merge-base", ref, "HEAD"]) ?? git(root, ["rev-parse", "HEAD"]);
+  }
+  if (base !== null && (deadDs || selfScope)) {
+    baseFacts = extractAtBase(root, base, { disable: config.providers.disable });
+    if (deadDs) {
+      reanchor = { baseFacts, renames: renameMapFromStatus(renamesSince(root, base)) };
+    }
+  }
+
+  let proposals = buildProposals({ findings, regions, anchors, factsById, reanchor });
   if (selfScope) {
     const changedFactIds = changedFactsSince(root, selfScope.base, factsById,
-      { disable: config.providers.disable });
+      { disable: config.providers.disable }, baseFacts);
     classifySelfCaused({ findings, anchors, regions, factsById,
       changed: selfScope.changed, changedFactIds });
     const self = new Set(findings.filter((f) => f.selfCaused).map((f) => `${f.id}\x00${f.doc}`));
@@ -164,7 +187,8 @@ export function runSync({ root, json, args }) {
 
   try {
     if (args.includes("--apply-all")) {
-      for (const p of proposals.filter((p) => p.kind === "regenerate" || p.kind === "restore")) {
+      // regenerate/restore always; rebinds ONLY when the two-signal gate held
+      for (const p of proposals.filter((p) => p.kind === "regenerate" || p.kind === "restore" || (p.kind === "rebind" && p.auto && !inCI()))) {
         applied.push(applyOne(root, docTexts, p));
       }
     } else if (flag("--apply")) {
@@ -222,6 +246,8 @@ export function runSync({ root, json, args }) {
       proposals: remaining.proposals.slice(0, 10).map((p) => ({
         id: p.id, kind: p.kind, doc: p.doc, line: p.line, evidence: p.evidence.slice(0, 200),
         ...(p.candidate ? { candidate: p.candidate } : {}),
+        ...(p.auto ? { auto: true } : {}),
+        ...(p.signals ? { signals: p.signals } : {}),
       })),
     },
     truncated: remaining.proposals.length > 10,
