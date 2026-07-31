@@ -88,7 +88,7 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     ? (git(repoRoot, ["show", "-s", "--format=%cI", "HEAD"]) ?? "9999-12-31T00:00:00Z")
     : new Date().toISOString();
 
-  const { factsById, capabilities, gaps, providerSetHash, toolError } =
+  const { factsById, capabilities, gaps, providerSetHash, toolError, conflicts } =
     extractAll(repoRoot, { disable: config.providers.disable,
       live: live ? { dsnEnv: config.live["dsn-env"] } : null });
   const rawJournal = loadJournal(repoRoot);
@@ -132,6 +132,9 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     capabilities, counts, findings, coverage: cov,
     noise: noiseStats(rawJournal, nowIso),
     quarantined, extractionGaps: gaps,
+    // ADR-003 conflict records ride the full report; absent when empty so
+    // conflict-free goldens stay byte-stable
+    ...(conflicts?.length ? { conflicts } : {}),
   };
 }
 

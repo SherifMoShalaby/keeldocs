@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { jcs } from "./jcs.js";
 import { factHash } from "./hash.js";
 import { toPosix } from "./paths.js";
+import { resolveClaims } from "./resolve.js";
 import { REGISTRY, REGISTRY_ERROR, ENGINE_VERSION } from "./registry.js";
 
 // fileURLToPath, never URL.pathname (Windows: "/D:/..." breaks join - item 10)
@@ -295,6 +296,7 @@ export function extractAll(repoRootIn, { disable = [], live = null } = {}) {
   const active = REGISTRY.filter((r) => !disabled.has(r.id) && (!r.live || live));
   const capabilities = {};
   const factsById = new Map();
+  const claimsById = new Map(); // id -> every provider's claim (ADR-003 resolution input)
   const gaps = [];
   let toolError = null;
 
@@ -385,11 +387,35 @@ export function extractAll(repoRootIn, { disable = [], live = null } = {}) {
       : schemaFacts(run.raw, provenanceBase, toPosix(relative(repoRoot, d.file ?? "")));
     for (const f of norm.facts) {
       f.hash = factHash(f.payload);
-      factsById.set(f.id, f); // single provider per capability in v0.1 - conflicts land with resolution
+      const prior = claimsById.get(f.id);
+      if (!prior) {
+        claimsById.set(f.id, [f]);
+        factsById.set(f.id, f);
+      } else {
+        // ADR-003: a second claim on the same id resolves by the pure total
+        // order (lattice -> precedence -> provider id) - run order irrelevant
+        prior.push(f);
+        factsById.set(f.id, resolveClaims(f.id, prior, reg.capability).winner);
+      }
     }
     gaps.push(...norm.gaps);
     if (cap.status !== "failed") cap.status = "ok";
     flushGroup();
+  }
+
+  // Disagreeing claims become conflict records: every claim, the winner, the
+  // deciding rule (ADR-003 - "conflicts as facts", so silent averaging is
+  // structurally impossible). Corroborating claims (same hash) report nothing.
+  const conflicts = [];
+  for (const [id, claims] of claimsById) {
+    if (claims.length < 2) continue;
+    const { conflict } = resolveClaims(id, claims, capOf(id));
+    if (conflict) conflicts.push(conflict);
+  }
+  conflicts.sort((a, b) => a.id.localeCompare(b.id));
+  for (const c of conflicts) {
+    const cap = capabilities[capOf(c.id)];
+    if (cap) cap.conflicts = (cap.conflicts ?? 0) + 1; // noted on the card
   }
 
   // Cache identity covers the EFFECTIVE provider set - disabling a provider
@@ -398,5 +424,5 @@ export function extractAll(repoRootIn, { disable = [], live = null } = {}) {
     .update([...active.map((r) => `${r.id}@${r.semver}`)].sort().join(",") + `|engine:${ENGINE_VERSION.split(".")[0]}`)
     .digest("hex").slice(0, 16);
 
-  return { factsById, capabilities, gaps, providerSetHash, toolError };
+  return { factsById, capabilities, gaps, providerSetHash, toolError, conflicts };
 }

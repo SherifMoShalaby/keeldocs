@@ -104,7 +104,7 @@ export function runInit({ root, json, yes, live = false }) {
 }
 
 function doInit(root, yes, config, live = false) {
-  const { factsById, capabilities, providerSetHash, toolError } =
+  const { factsById, capabilities, providerSetHash, toolError, conflicts } =
     extractAll(root, { disable: config.providers.disable,
       live: live ? { dsnEnv: config.live["dsn-env"] } : null });
   const pkgPath = join(root, "package.json");
@@ -115,7 +115,8 @@ function doInit(root, yes, config, live = false) {
   const card = {
     package: pkg?.name ?? null,
     capabilities: Object.fromEntries(Object.entries(capabilities)
-      .map(([k, v]) => [k, { status: v.status, providers: v.providers ?? [] }])),
+      .map(([k, v]) => [k, { status: v.status, providers: v.providers ?? [],
+        ...(v.conflicts ? { conflicts: v.conflicts } : {}) }])), // ADR-003: noted on the card
     facts: factsById.size,
   };
 
@@ -185,6 +186,8 @@ function doInit(root, yes, config, live = false) {
       docs: { written, skipped, planned },
       coverage: { before: before.cov, after: after.cov },
       plan,
+      // ADR-003 conflict records; absent when empty so goldens stay byte-stable
+      ...(conflicts?.length ? { conflicts } : {}),
     },
   };
 }

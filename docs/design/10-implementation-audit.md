@@ -175,9 +175,22 @@ runs ending green at `4c6db18`.
    E9 field trial remain owner-side.)*
 10. **Windows** from reduced-trust red to green (path separators are the
     likely culprit); **npm publish + placeholders + org transfer** — owner
-    actions.
+    actions. *(Update 2026-07-31: root-caused exactly as predicted - URL
+    .pathname engine roots and native-separator emission. Fixed at the
+    contract level: everything keeldocs emits is posix-slash on every OS
+    (src/paths.js), engine roots use fileURLToPath, harness writes pin LF,
+    fixture repos pin autocrlf=false. npm publish/org transfer remain
+    owner actions.)*
 11. **Multi-provider resolution** exercised with a second db-schema provider
-    (drizzle is the natural candidate).
+    (drizzle is the natural candidate). *(Update 2026-07-31: the ADR-003
+    resolver is implemented and wired - enumerated lattice, versioned
+    per-capability precedence table (v1, deliberately empty), lexicographic
+    backstop; disagreements emit conflict records in reports and counts on
+    the capabilities card, corroboration keeps one fact silently. Exercised
+    in CI by the polyglot fixture (express + fastapi both claiming
+    `GET /health`) plus unit coverage of every disagreement path. A second
+    db-schema provider to produce REAL disagreements remains v0.3 - drizzle
+    still the natural candidate.)*
 
 ## 7. Scoreboard
 
