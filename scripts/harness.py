@@ -772,6 +772,27 @@ def main():
     except Exception as e:
         failures.append(f"redaction barrier: {e}")
 
+    # ---- skill lint (E7's runnable slice): ADR-010 budget caps, structurally ----
+    try:
+        total_listing = 0
+        skill_dirs = sorted(os.path.join("skills", d) for d in os.listdir(os.path.join(ROOT, "skills")))
+        for sd in skill_dirs:
+            sp = os.path.join(ROOT, sd, "SKILL.md")
+            assert os.path.exists(sp), f"{sd}: missing SKILL.md"
+            text = open(sp, encoding="utf-8").read()
+            assert text.startswith("---"), f"{sd}: missing frontmatter"
+            fm = text.split("---", 2)[1]
+            fields = dict(l.split(":", 1) for l in fm.strip().split("\n") if ":" in l)
+            assert "name" in fields and "description" in fields, f"{sd}: frontmatter needs name+description"
+            desc = fields["description"].strip()
+            assert len(desc) <= 1536, f"{sd}: description {len(desc)} chars > 1536 (Claude truncation cap)"
+            total_listing += len(fields["name"]) + len(desc)
+            assert len(text) <= 20000, f"{sd}: SKILL.md {len(text)} chars - keep well under compaction budgets"
+        assert total_listing <= 8000, f"skills listing {total_listing} chars > 8000 (Codex listing cap)"
+        print(f"  PASS  skill lint: {len(skill_dirs)} skills within ADR-010 budgets (listing {total_listing}/8000)")
+    except Exception as e:
+        failures.append(f"skill lint: {e}")
+
     # CLI envelope smoke: usage error must be exit 2 with a parseable envelope
     r = subprocess.run(["node", "bin/keeldocs.js", "bogus-command", "--json"],
                        cwd=ROOT, capture_output=True, text=True)

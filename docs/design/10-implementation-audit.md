@@ -169,7 +169,10 @@ runs ending green at `4c6db18`.
 7. **Interview/elicitation flow** (cap 5, resumable) — v0.2/v0.3.
 8. **Portfolio manifests** — v0.3.
 9. **Validation debt**: full E-series corpus runs, E7 per-agent skill smoke
-   matrix, E9 field trial on a real owner repo.
+   matrix, E9 field trial on a real owner repo. *(Update 2026-07-31: E5
+   corpus rerun and E6 FastAPI validation measured - see experiments/; the
+   skill-budget lint runs in every CI pass. Cross-agent E7 behavior and the
+   E9 field trial remain owner-side.)*
 10. **Windows** from reduced-trust red to green (path separators are the
     likely culprit); **npm publish + placeholders + org transfer** — owner
     actions.
