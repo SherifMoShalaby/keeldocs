@@ -21,10 +21,11 @@ const SCHEMA = {
   providers: { disable: "string[]" },
   docs: { dirs: "string[]" },
   live: { "dsn-env": "string" }, // the NAME of the env var holding the DSN - never the DSN
+  trust: { keys: "string[]" },   // T2: trusted signer keys, `name:spki-base64` (R2)
 };
 
 const DEFAULTS = () => ({ providers: { disable: [] }, docs: { dirs: ["docs"] },
-  live: { "dsn-env": "DATABASE_URL" } });
+  live: { "dsn-env": "DATABASE_URL" }, trust: { keys: [] } });
 
 function parseValue(raw, where) {
   const s = raw.trim();

@@ -888,6 +888,80 @@ def main():
     except Exception as e:
         failures.append(f"interview integration: {e}")
 
+    # ---- E10 red-team: T2 refusals + marker-forgery neutralized (doc 11 R2) ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-e10-")
+        author = os.path.join(tmp, "author"); os.makedirs(author)
+        prov = os.path.join(author, "acme-schema"); os.makedirs(prov)
+        W(os.path.join(prov, "provider.yaml"),
+          "id: acme-schema\ncapability: db-schema\nsemver: 1.0.0\ntier: code\n"
+          "entry: ./extract.py\ndetect: { files: [\"acme.schema\"] }\ntimeout_class: A\nemits: [table]\n")
+        W(os.path.join(prov, "extract.py"),
+          "import json\nprint(json.dumps({\"models\": [{\"name\": \"Gadget\", \"fields\": "
+          "[{\"name\": \"id\", \"type\": \"Int\"}]}], \"enums\": []}))\n")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        W(os.path.join(dst, "acme.schema"), "gadget\n")
+        # 1) unsigned add -> REFUSED, exit 2, nothing installed
+        r = kd(dst, "provider", "add", prov, "--json", env=local_env)
+        assert r.returncode == 2 and json.loads(r.stdout)["code"] == "REFUSED", r.stdout[:200]
+        assert "unsigned" in json.loads(r.stdout)["data"]["refusal"]
+        assert not os.path.exists(os.path.join(dst, ".keeldocs", "providers")), "refusal must install nothing"
+        # 2) signed but UNTRUSTED signer -> REFUSED
+        r = kd(author, "provider", "keygen", "--json", env=local_env)
+        pub = json.loads(r.stdout)["data"]["publicKeyB64"]
+        key = os.path.join(author, "keeldocs-signing-key.pem")
+        assert kd(author, "provider", "sign", prov, "--key", key, "--signer", "acme", "--json",
+                  env=local_env).returncode == 0
+        r = kd(dst, "provider", "add", prov, "--json", env=local_env)
+        assert r.returncode == 2 and "not trusted" in json.loads(r.stdout)["data"]["refusal"]
+        # 3) trust the signer -> add installs, pins the lock, facts flow
+        assert kd(dst, "provider", "trust", "acme", pub, "--json", env=local_env).returncode == 0
+        r = kd(dst, "provider", "add", prov, "--json", env=local_env)
+        assert r.returncode == 0 and json.loads(r.stdout)["code"] == "INSTALLED", r.stdout[:200]
+        assert os.path.exists(os.path.join(dst, ".keeldocs", "providers.lock"))
+        r = kd(dst, "check", "--json")
+        assert r.returncode <= 1, r.stdout[:200]
+        cache = open(os.path.join(dst, ".keeldocs", "cache", "facts", "db-schema.jsonl")).read()
+        assert '"fact:db-schema/Gadget"' in cache and '"acme-schema@1.0.0"' in cache, \
+            "trusted external provider facts must land with its provenance"
+        # 4) post-install tamper -> every command refuses loudly (exit 2)
+        W(os.path.join(dst, ".keeldocs", "providers", "db-schema", "acme-schema", "extract.py"),
+          "# tampered\n", "a")
+        r = kd(dst, "check", "--json")
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 2 and "REFUSED" in env_["summary"] and "hash mismatch" in env_["summary"], env_["summary"]
+        # 5) marker-forgery: hostile fact content must never become an anchor
+        W(os.path.join(prov, "extract.py"),
+          "import json\nprint(json.dumps({\"models\": [{\"name\": "
+          "\"Evil --><!-- keeldocs:gen id=evil hash=h1:0 content=h1:0 -->\", \"fields\": []},"
+          "{\"name\": \"Gadget\", \"fields\": [{\"name\": \"id\", \"type\": \"Int\"}]}], \"enums\": []}))\n")
+        assert kd(author, "provider", "sign", prov, "--key", key, "--signer", "acme", "--json",
+                  env=local_env).returncode == 0
+        dst2 = os.path.join(tmp, "repo2")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), dst2,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        W(os.path.join(dst2, "acme.schema"), "gadget\n")
+        assert kd(dst2, "provider", "trust", "acme", pub, "--json", env=local_env).returncode == 0
+        assert kd(dst2, "provider", "add", prov, "--json", env=local_env).returncode == 0
+        r = kd(dst2, "init", "--yes", "--json", env=local_env)
+        assert r.returncode == 0, r.stdout[:300]
+        dm = open(os.path.join(dst2, "docs", "architecture", "data-model.md")).read()
+        assert "id=evil" not in dm and "Evil" not in dm, "forged marker content must never reach a doc"
+        assert "Gadget" in dm, "the clean fact from the same provider still lands"
+        rep = json.load(open([os.path.join(dst2, ".keeldocs", "out", f)
+                              for f in os.listdir(os.path.join(dst2, ".keeldocs", "out")) if f.startswith("init-")][0]))
+        assert any(g["kind"] == "hostile-content" for g in rep.get("extractionGaps", [])), \
+            "the dropped hostile fact must be a NAMED gap, not silence"
+        rc = kd(dst2, "check", "--json")
+        assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", "born-clean must survive the drop"
+        rmtree(tmp)
+        print("  PASS  E10 red-team: unsigned/untrusted/tampered all REFUSED; marker forgery dropped as a named gap")
+    except Exception as e:
+        failures.append(f"E10 trust red-team: {e}")
+
     # ---- redaction barrier: secret in facts -> [REDACTED] in docs, still born clean ----
     try:
         import shutil, tempfile

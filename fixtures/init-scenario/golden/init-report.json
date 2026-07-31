@@ -153,5 +153,11 @@
    "pct": 100
   }
  },
- "plan": []
+ "plan": [],
+ "extractionGaps": [
+  {
+   "kind": "not-a-git-root",
+   "file": null
+  }
+ ]
 }

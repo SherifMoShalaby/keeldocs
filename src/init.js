@@ -130,8 +130,8 @@ export function runInit({ root, json, yes, live = false }) {
 }
 
 function doInit(root, yes, config, live = false) {
-  const { factsById, capabilities, providerSetHash, toolError, conflicts } =
-    extractAll(root, { disable: config.providers.disable,
+  const { factsById, capabilities, providerSetHash, toolError, conflicts, gaps } =
+    extractAll(root, { disable: config.providers.disable, trustKeys: config.trust.keys,
       live: live ? { dsnEnv: config.live["dsn-env"] } : null });
   const pkgPath = join(root, "package.json");
   const pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf8")) : null;
@@ -191,8 +191,9 @@ function doInit(root, yes, config, live = false) {
       docs: { written, skipped, planned },
       coverage: { before: before.cov, after: after.cov },
       plan,
-      // ADR-003 conflict records; absent when empty so goldens stay byte-stable
-      ...(conflicts?.length ? { conflicts } : {}),
+      // absent when empty so goldens stay byte-stable
+      ...(conflicts?.length ? { conflicts } : {}),         // ADR-003 records
+      ...(gaps?.length ? { extractionGaps: gaps } : {}),   // incl. E10 hostile-content drops
     },
   };
 }

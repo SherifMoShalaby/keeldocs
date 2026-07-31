@@ -89,7 +89,7 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     : new Date().toISOString();
 
   const { factsById, capabilities, gaps, providerSetHash, toolError, conflicts } =
-    extractAll(repoRoot, { disable: config.providers.disable,
+    extractAll(repoRoot, { disable: config.providers.disable, trustKeys: config.trust.keys,
       live: live ? { dsnEnv: config.live["dsn-env"] } : null });
   const rawJournal = loadJournal(repoRoot);
   const journal = effective(rawJournal, nowIso);
@@ -110,7 +110,7 @@ function buildReport(repoRoot, ci, config, since, live = false) {
   if (since) {
     const { changed, base } = changedFilesSince(repoRoot, since);
     const changedFactIds = changedFactsSince(repoRoot, base, factsById,
-      { disable: config.providers.disable });
+      { disable: config.providers.disable, trustKeys: config.trust.keys });
     classifySelfCaused({ findings, anchors, regions, factsById, changed, changedFactIds });
     sinceInfo = { ref: since, changedFiles: changed.size, changedFacts: changedFactIds.size };
   }

@@ -149,6 +149,35 @@ function validate(y, dir, file) {
   }
 }
 
+function entryOf(y, cap, id, dir, relFile) {
+  // path containment: the entry/query may never leave the provider dir - a
+  // manifest is attacker-authored input in the T2 world (E10 surface)
+  for (const p of [y.entry, y.query]) {
+    if (typeof p === "string" && (p.includes("..") || p.startsWith("/") || /^[A-Za-z]:/.test(p))) {
+      throw new Error(`${relFile}: entry/query must stay inside the provider directory (got \`${p}\`)`);
+    }
+  }
+  const factInputs = (Array.isArray(y.inputs) ? y.inputs : [])
+    .map((i) => (typeof i === "string" ? i.match(/^\$\{facts:([a-z0-9-]+)\}$/) : null))
+    .filter(Boolean).map((m) => m[1]);
+  return {
+    id: y.id, semver: y.semver, capability: y.capability, tier: y.tier,
+    ...(y.confidence ? { confidence: y.confidence } : {}),
+    detect: y.detect,
+    argMode: y.argMode ?? (y.runtime === "query" ? "providerDir" : "root"),
+    // dir is emitted posix-slash (registry entries are contract data, and
+    // the python runtime accepts D:/-style paths); fs joins above stay native
+    ...(y.runtime === "query"
+      ? { runtime: "query", entry: QUERY_RUNTIME, dir: toPosix(dir) }
+      : { entry: `providers/${cap}/${id}/${y.entry.replace(/^\.\//, "")}`, dir: toPosix(dir) }),
+    factInputs,
+    ...(y.live === true ? { live: true } : {}),
+    ...(y.exec === "node" ? { exec: "node" } : {}), // default python stays implicit
+    timeoutClass: y.timeout_class ?? "D",
+    needs: [...new Set([...(y.needs ?? []), ...factInputs])],
+  };
+}
+
 export function loadProviders(root = ENGINE_ROOT) {
   const provDir = join(root, "providers");
   const entries = [];
@@ -167,33 +196,52 @@ export function loadProviders(root = ENGINE_ROOT) {
       // ${facts:<cap>} tokens in `inputs` are DECLARED CROSS-CAPABILITY READS
       // (provider contract §9): the engine hands the provider the upstream
       // capability's resolved fact file, and the read IS a dependency edge.
-      const factInputs = (Array.isArray(y.inputs) ? y.inputs : [])
-        .map((i) => (typeof i === "string" ? i.match(/^\$\{facts:([a-z0-9-]+)\}$/) : null))
-        .filter(Boolean).map((m) => m[1]);
-      entries.push({
-        id: y.id, semver: y.semver, capability: y.capability, tier: y.tier,
-        ...(y.confidence ? { confidence: y.confidence } : {}),
-        detect: y.detect,
-        argMode: y.argMode ?? (y.runtime === "query" ? "providerDir" : "root"),
-        // dir is emitted posix-slash (registry entries are contract data, and
-        // the python runtime accepts D:/-style paths); fs joins above stay native
-        ...(y.runtime === "query"
-          ? { runtime: "query", entry: QUERY_RUNTIME, dir: toPosix(dir) }
-          : { entry: `providers/${cap}/${id}/${y.entry.replace(/^\.\//, "")}`, dir: toPosix(dir) }),
-        factInputs,
-        ...(y.live === true ? { live: true } : {}),
-        ...(y.exec === "node" ? { exec: "node" } : {}), // default python stays implicit
-        timeoutClass: y.timeout_class ?? "D",
-        needs: [...new Set([...(y.needs ?? []), ...factInputs])],
-      });
+      entries.push(entryOf(y, cap, id, dir, relFile));
     }
   }
+  return orderEntries(entries);
+}
+
+// T2 external providers (doc 11 R2): repo-local `.keeldocs/providers/`,
+// committed and PR-reviewable. EVERY external dir must pass the full trust
+// proof (lock + signature + trusted signer) or loading THROWS naming it -
+// refusal is the feature, a silently smaller registry is the failure mode.
+// The refusal check is injected (src/trust.js) to keep this module fs-pure.
+export function loadExternalProviders(repoRoot, { refusalOf, lock, trustedKeys }) {
+  const base = join(repoRoot, ".keeldocs", "providers");
+  const entries = [];
+  if (!existsSync(base)) return entries;
+  for (const cap of readdirSync(base).sort()) {
+    const capDir = join(base, cap);
+    if (!statSync(capDir).isDirectory()) continue;
+    for (const id of readdirSync(capDir).sort()) {
+      const dir = join(capDir, id);
+      const relFile = `.keeldocs/providers/${cap}/${id}/provider.yaml`;
+      if (!statSync(dir).isDirectory() || !existsSync(join(dir, "provider.yaml"))) continue;
+      const refusal = refusalOf(dir, lock.get(`${cap}/${id}`), trustedKeys);
+      if (refusal) throw new Error(`external provider ${cap}/${id} REFUSED: ${refusal}`);
+      const y = parseProviderYaml(readFileSync(join(dir, "provider.yaml"), "utf8"), relFile);
+      if (y.status === "stub") continue;
+      validate(y, dir, relFile);
+      if (y.capability !== cap) throw new Error(`${relFile}: capability \`${y.capability}\` != directory \`${cap}\``);
+      const e = entryOf(y, cap, id, dir, relFile);
+      // externals execute from their own dir, never resolved against the
+      // engine tree; query externals run the ENGINE's runtime on their dir
+      e.external = true;
+      if (e.runtime !== "query") e.absEntry = toPosix(join(dir, y.entry.replace(/^\.\//, "")));
+      entries.push(e);
+    }
+  }
+  return entries;
+}
+
+// Execution order: topological over the CAPABILITY `needs` graph (a provider
+// needing workspace-layout runs after every workspace-layout provider), with
+// lexicographic (capability, id) tie-breaking - fully deterministic.
+export function orderEntries(entries) {
   const dupes = entries.map((e) => e.id).filter((id, i, a) => a.indexOf(id) !== i);
   if (dupes.length) throw new Error(`duplicate provider id(s): ${[...new Set(dupes)].join(", ")}`);
 
-  // Execution order: topological over the CAPABILITY `needs` graph (a provider
-  // needing workspace-layout runs after every workspace-layout provider), with
-  // lexicographic (capability, id) tie-breaking - fully deterministic.
   const caps = [...new Set(entries.map((e) => e.capability))].sort();
   const needsOf = (cap) => [...new Set(entries.filter((e) => e.capability === cap).flatMap((e) => e.needs))];
   for (const cap of caps) {

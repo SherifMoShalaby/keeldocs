@@ -145,7 +145,7 @@ function assemble(root) {
   const cfg = loadConfig(root);
   if (!cfg.ok) return { error: { code: "CONFIG", summary: cfg.error } };
   const { factsById, capabilities, toolError } =
-    extractAll(root, { disable: cfg.config.providers.disable });
+    extractAll(root, { disable: cfg.config.providers.disable, trustKeys: cfg.config.trust.keys });
   if (toolError) return { error: { code: "TOOL_ERROR", summary: `interview needs a healthy extraction: ${toolError}` } };
   const anchors = [], regions = [];
   for (const p of docPathsOf(root, cfg.config.docs.dirs)) {

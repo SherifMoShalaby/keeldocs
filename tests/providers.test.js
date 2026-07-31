@@ -107,6 +107,16 @@ test("loader: ${facts:cap} inputs become factInputs and imply needs edges", (t) 
   assert.deepEqual(r.map((e) => e.id), ["a1", "b1"], "topo respects the implied edge");
 });
 
+test("loader: entry path traversal is rejected (E10 containment)", (t) => {
+  const root = tree({
+    "providers/cap/t1/provider.yaml":
+      "id: t1\ncapability: cap\nsemver: 0.1.0\ntier: code\nentry: ../../../evil.py\ndetect: { always: true }\n",
+    "evil.py": "",
+  });
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  assert.throws(() => loadProviders(root), /must stay inside the provider directory/);
+});
+
 test("loader: exec key - node accepted onto the entry, anything else rejected", (t) => {
   const root = tree({
     "providers/cap/n1/provider.yaml": OK("cap", "n1", "exec: node\n"),

@@ -15,6 +15,8 @@ import { jcs } from "./jcs.js";
 import { factHash } from "./hash.js";
 import { toPosix } from "./paths.js";
 import { resolveClaims } from "./resolve.js";
+import { loadExternalProviders, orderEntries } from "./providers.js";
+import { refusalOf, loadLock, parseTrustedKeys } from "./trust.js";
 import { REGISTRY, REGISTRY_ERROR, ENGINE_VERSION } from "./registry.js";
 
 // fileURLToPath, never URL.pathname (Windows: "/D:/..." breaks join - item 10)
@@ -66,7 +68,9 @@ function runProvider(reg, repoRoot, detectInfo, factEnv = {}) {
   } else if (reg.argMode === "providerDir") {
     args = [reg.dir, repoRoot]; // generic .scm runtime: which provider + which repo
   }
-  const spawnWith = (bin) => spawnSync(bin, [join(ENGINE_ROOT, reg.entry), ...args], {
+  // externals resolve from their installed dir (absEntry); first-party from the engine tree
+  const entryPath = reg.absEntry ?? join(ENGINE_ROOT, reg.entry);
+  const spawnWith = (bin) => spawnSync(bin, [entryPath, ...args], {
     cwd: repoRoot, timeout: TIMEOUTS[reg.timeoutClass] ?? TIMEOUTS.D,
     maxBuffer: 16 * 1024 * 1024, encoding: "utf8",
     env: { ...process.env, ...factEnv },
@@ -332,16 +336,41 @@ function schemaFacts(raw, provenanceBase, schemaFile) {
 
 const capOf = (id) => id.startsWith("ds ") ? "module-graph" : id.slice(5, id.indexOf("/"));
 
-export function extractAll(repoRootIn, { disable = [], live = null } = {}) {
+// E10 injection barrier at the FACT boundary: no legitimate natural key or
+// attribute ever contains HTML comment markers, but a hostile provider could
+// use them to FORGE keeldocs anchors inside generated docs (the renderer
+// interpolates fact strings into marker-bearing bodies). Such facts are
+// dropped with a named gap - one choke point instead of per-render escaping.
+const HOSTILE = /<!--|-->/;
+export function isHostileFact(f) {
+  const scan = (v) => typeof v === "string" ? HOSTILE.test(v)
+    : Array.isArray(v) ? v.some(scan)
+    : v && typeof v === "object" ? Object.values(v).some(scan) : false;
+  return HOSTILE.test(f.id) || scan(f.payload?.attrs ?? {});
+}
+
+export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = [] } = {}) {
   const repoRoot = resolve(repoRootIn); // subprocess cwd = repoRoot; args must be absolute
   if (REGISTRY_ERROR) {
     // fail closed and loudly - a half-loaded registry would masquerade as "no drift"
     return { factsById: new Map(), capabilities: {}, gaps: [], providerSetHash: null,
              toolError: `provider registry: ${REGISTRY_ERROR}` };
   }
+  // T2 (R2): repo-local external providers join the registry ONLY behind the
+  // full trust proof (lock + signature + trusted signer). Any refusal is a
+  // loud tool error - a silently smaller registry is the failure mode.
+  let registry = REGISTRY;
+  try {
+    const ext = loadExternalProviders(repoRoot, {
+      refusalOf, lock: loadLock(repoRoot), trustedKeys: parseTrustedKeys(trustKeys) });
+    if (ext.length) registry = orderEntries([...REGISTRY, ...ext]);
+  } catch (err) {
+    return { factsById: new Map(), capabilities: {}, gaps: [], providerSetHash: null,
+             toolError: String(err.message) };
+  }
   const disabled = new Set(disable);
   // live providers run ONLY under --live (network never enters the default path)
-  const active = REGISTRY.filter((r) => !disabled.has(r.id) && (!r.live || live));
+  const active = registry.filter((r) => !disabled.has(r.id) && (!r.live || live));
   const capabilities = {};
   const factsById = new Map();
   const claimsById = new Map(); // id -> every provider's claim (ADR-003 resolution input)
@@ -438,6 +467,10 @@ export function extractAll(repoRootIn, { disable = [], live = null } = {}) {
           [...factsById.values()].filter((f) => f.payload.type === "table").map((f) => f.payload.attrs.name))
       : schemaFacts(run.raw, provenanceBase, toPosix(relative(repoRoot, d.file ?? "")));
     for (const f of norm.facts) {
+      if (isHostileFact(f)) { // E10: marker-forging content never becomes a fact
+        gaps.push({ kind: "hostile-content", file: null });
+        continue;
+      }
       f.hash = factHash(f.payload);
       const prior = claimsById.get(f.id);
       if (!prior) {

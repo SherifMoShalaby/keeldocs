@@ -29,7 +29,7 @@ test("toml is schema-strict: unknown section/key/shape/duplicate all throw", () 
 test("loadConfig: defaults, unknown provider id rejected, dir traversal rejected", (t) => {
   const root = mkdtempSync(join(tmpdir(), "keeldocs-cfg-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  assert.deepEqual(loadConfig(root), { ok: true, config: { providers: { disable: [] }, docs: { dirs: ["docs"] }, live: { "dsn-env": "DATABASE_URL" } } });
+  assert.deepEqual(loadConfig(root), { ok: true, config: { providers: { disable: [] }, docs: { dirs: ["docs"] }, live: { "dsn-env": "DATABASE_URL" }, trust: { keys: [] } } });
   writeFileSync(join(root, "keeldocs.toml"), '[providers]\ndisable = ["not-a-provider"]\n');
   assert.match(loadConfig(root).error, /unknown provider/);
   writeFileSync(join(root, "keeldocs.toml"), '[docs]\ndirs = ["../outside"]\n');

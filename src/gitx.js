@@ -28,13 +28,13 @@ export function changedFilesSince(root, ref) {
 // Extract the fact universe AS OF a base commit, via a throwaway worktree.
 // Shared by --since/--self classification and the re-anchoring pipeline
 // (S2 compares against the dead fact's LAST KNOWN shape, which lives here).
-export function extractAtBase(root, base, { disable = [] } = {}) {
+export function extractAtBase(root, base, { disable = [], trustKeys = [] } = {}) {
   const wt = mkdtempSync(join(tmpdir(), "keeldocs-base-"));
   try {
     const r = spawnSync("git", ["worktree", "add", "--detach", "--force", wt, base],
       { cwd: root, encoding: "utf8" });
     if (r.status !== 0) throw new Error(`cannot materialize base \`${base}\`: ${(r.stderr || "").slice(-160)}`);
-    const { factsById, toolError } = extractAll(wt, { disable });
+    const { factsById, toolError } = extractAll(wt, { disable, trustKeys });
     if (toolError) throw new Error(`base extraction failed: ${toolError}`);
     return factsById;
   } finally {

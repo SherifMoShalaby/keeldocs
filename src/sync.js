@@ -46,7 +46,8 @@ function resolveSelfBase(root, explicit) {
 }
 
 function collectState(root, config, selfScope = null) {
-  const { factsById, capabilities, toolError } = extractAll(root, { disable: config.providers.disable });
+  const { factsById, capabilities, toolError } = extractAll(root,
+    { disable: config.providers.disable, trustKeys: config.trust.keys });
   if (toolError) throw new Error(`tooling error: ${toolError}`);
   const journal = effective(loadJournal(root), new Date().toISOString());
   const anchors = [], regions = [], docTexts = new Map();
@@ -74,7 +75,8 @@ function collectState(root, config, selfScope = null) {
     base = git(root, ["merge-base", ref, "HEAD"]) ?? git(root, ["rev-parse", "HEAD"]);
   }
   if (base !== null && (deadDs || selfScope)) {
-    baseFacts = extractAtBase(root, base, { disable: config.providers.disable });
+    baseFacts = extractAtBase(root, base,
+      { disable: config.providers.disable, trustKeys: config.trust.keys });
     if (deadDs) {
       reanchor = { baseFacts, renames: renameMapFromStatus(renamesSince(root, base)) };
     }
@@ -83,7 +85,7 @@ function collectState(root, config, selfScope = null) {
   let proposals = buildProposals({ findings, regions, anchors, factsById, reanchor });
   if (selfScope) {
     const changedFactIds = changedFactsSince(root, selfScope.base, factsById,
-      { disable: config.providers.disable }, baseFacts);
+      { disable: config.providers.disable, trustKeys: config.trust.keys }, baseFacts);
     classifySelfCaused({ findings, anchors, regions, factsById,
       changed: selfScope.changed, changedFactIds });
     const self = new Set(findings.filter((f) => f.selfCaused).map((f) => `${f.id}\x00${f.doc}`));
