@@ -2,6 +2,7 @@
  "modules": [
   {
    "path": "app/main.py",
+   "package": null,
    "imports": [
     {
      "specifier": ".routers",
@@ -23,6 +24,7 @@
   },
   {
    "path": "app/routers/items.py",
+   "package": null,
    "imports": [
     {
      "specifier": "fastapi",
@@ -32,6 +34,7 @@
   },
   {
    "path": "app/routers/users.py",
+   "package": null,
    "imports": [
     {
      "specifier": "fastapi",
@@ -45,6 +48,7 @@
   },
   {
    "path": "app/tokens.py",
+   "package": null,
    "imports": [
     {
      "specifier": "typing",
@@ -57,6 +61,7 @@
   {
    "path": "app/main.py",
    "name": "DB_URL",
+   "package": null,
    "kind": "const",
    "sigs": [
     "const DB_URL = <subscript>"
@@ -68,6 +73,7 @@
   {
    "path": "app/main.py",
    "name": "DEBUG",
+   "package": null,
    "kind": "const",
    "sigs": [
     "const DEBUG = <call>"
@@ -79,6 +85,7 @@
   {
    "path": "app/main.py",
    "name": "app",
+   "package": null,
    "kind": "const",
    "sigs": [
     "const app = <call>"
@@ -90,6 +97,7 @@
   {
    "path": "app/main.py",
    "name": "health",
+   "package": null,
    "kind": "function",
    "sigs": [
     "def health (  ) -> dict"
@@ -101,6 +109,7 @@
   {
    "path": "app/routers/items.py",
    "name": "bulk",
+   "package": null,
    "kind": "function",
    "sigs": [
     "def bulk ( dict ) -> dict"
@@ -112,6 +121,7 @@
   {
    "path": "app/routers/items.py",
    "name": "get_item",
+   "package": null,
    "kind": "function",
    "sigs": [
     "def get_item ( int ) -> dict"
@@ -123,6 +133,7 @@
   {
    "path": "app/routers/items.py",
    "name": "list_items",
+   "package": null,
    "kind": "function",
    "sigs": [
     "def list_items ( int =? ) -> list"
@@ -134,6 +145,7 @@
   {
    "path": "app/routers/items.py",
    "name": "router",
+   "package": null,
    "kind": "const",
    "sigs": [
     "const router = <call>"
@@ -145,6 +157,7 @@
   {
    "path": "app/routers/users.py",
    "name": "PAGE_SIZE",
+   "package": null,
    "kind": "const",
    "sigs": [
     "const PAGE_SIZE = <call>"
@@ -156,6 +169,7 @@
   {
    "path": "app/routers/users.py",
    "name": "create_user",
+   "package": null,
    "kind": "function",
    "sigs": [
     "def create_user ( str ) -> dict"
@@ -167,6 +181,7 @@
   {
    "path": "app/routers/users.py",
    "name": "router",
+   "package": null,
    "kind": "const",
    "sigs": [
     "const router = <call>"
@@ -178,6 +193,7 @@
   {
    "path": "app/tokens.py",
    "name": "parse",
+   "package": null,
    "kind": "function",
    "sigs": [
     "def parse ( bytes ) -> int",

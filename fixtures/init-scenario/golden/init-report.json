@@ -3,7 +3,7 @@
  "meta": {
   "engine": "keeldocs@0.2.0-dev.0",
   "head": null,
-  "providerSetHash": "9c24174e04e06464",
+  "providerSetHash": "8fd95133784dcabd",
   "mode": "apply"
  },
  "card": {
@@ -53,8 +53,8 @@
    "module-graph": {
     "status": "ok",
     "providers": [
-     "py-imports@0.2.0",
-     "ts-imports@0.1.0"
+     "py-imports@0.2.1",
+     "ts-imports@0.2.0"
     ]
    }
   },

@@ -45,7 +45,10 @@ function detect(reg, repoRoot) {
   return { applicable: false };
 }
 
-function runProvider(reg, repoRoot, detectInfo) {
+// timeout classes from the provider contract - C is the heavy code tier
+const TIMEOUTS = { A: 10_000, B: 30_000, C: 120_000, D: 60_000 };
+
+function runProvider(reg, repoRoot, detectInfo, factEnv = {}) {
   let args = [repoRoot];
   if (reg.argMode === "schemaFile") {
     const schema = detectInfo.file ?? walk(repoRoot, (n) => n === "schema.prisma")[0];
@@ -55,7 +58,9 @@ function runProvider(reg, repoRoot, detectInfo) {
     args = [reg.dir, repoRoot]; // generic .scm runtime: which provider + which repo
   }
   const spawnPy = (bin) => spawnSync(bin, [join(ENGINE_ROOT, reg.entry), ...args], {
-    cwd: repoRoot, timeout: 60_000, maxBuffer: 16 * 1024 * 1024, encoding: "utf8",
+    cwd: repoRoot, timeout: TIMEOUTS[reg.timeoutClass] ?? TIMEOUTS.D,
+    maxBuffer: 16 * 1024 * 1024, encoding: "utf8",
+    env: { ...process.env, ...factEnv },
   });
   let r = spawnPy("python3");
   if (r.error?.code === "ENOENT") r = spawnPy("python"); // Windows installs often lack a python3 shim
@@ -104,7 +109,9 @@ function moduleGraphFacts(raw, provenanceBase, packages) {
     facts.push({
       id: `fact:module-graph/${m.path}`,
       payload: { schema_version: 1, type: "module",
-        attrs: { path: m.path, package: pkgFor(m.path),
+        // provider-emitted package (declared ${facts:workspace-layout} read,
+        // contract 9) wins; engine injection is the standalone-run fallback
+        attrs: { path: m.path, package: m.package ?? pkgFor(m.path),
                  imports: (m.imports ?? []).map((i) => i.resolved ?? i.specifier).sort() } },
       provenance: { ...provenanceBase, source: [{ file: m.path }] },
     });
@@ -114,7 +121,7 @@ function moduleGraphFacts(raw, provenanceBase, packages) {
     // Suffix per SCIP shape: callables `().`, types `#`, terms `.`.
     const suffix = s.kind.includes("function") ? "()."
       : ["class", "interface", "type", "enum", "namespace"].some((k) => s.kind.includes(k)) ? "#" : ".";
-    const pkg = pkgFor(s.path);
+    const pkg = s.package ?? pkgFor(s.path);
     facts.push({
       id: `ds ${pkg} . ${s.path}/${s.name}${suffix}`,
       // sigs are the hashed declaration shape (E2-validated); the nameless
@@ -246,6 +253,8 @@ function schemaFacts(raw, provenanceBase, schemaFile) {
   return { facts, gaps: [] };
 }
 
+const capOf = (id) => id.startsWith("ds ") ? "module-graph" : id.slice(5, id.indexOf("/"));
+
 export function extractAll(repoRootIn, { disable = [] } = {}) {
   const repoRoot = resolve(repoRootIn); // subprocess cwd = repoRoot; args must be absolute
   if (REGISTRY_ERROR) {
@@ -260,22 +269,54 @@ export function extractAll(repoRootIn, { disable = [] } = {}) {
   const gaps = [];
   let toolError = null;
 
-  for (const reg of active) {
+  // Canonical fact files - byte-stable, diffable, gitignored (ADR-004). Written
+  // INCREMENTALLY as each capability's provider group completes (the registry is
+  // capability-major topo order), so a later provider's declared ${facts:cap}
+  // read (provider contract §9) sees the complete upstream file. The dir is a
+  // pure cache: cleared first so a capability that dropped to zero facts can't
+  // leave a stale file lying about the current state.
+  const factsDir = join(repoRoot, ".keeldocs", "cache", "facts");
+  rmSync(factsDir, { recursive: true, force: true });
+  mkdirSync(factsDir, { recursive: true });
+  const capFile = (cap) => join(factsDir, `${cap}.jsonl`);
+  const writeCapFile = (cap) => {
+    const list = [...factsById.values()].filter((f) => capOf(f.id) === cap)
+      .sort((a, b) => a.id.localeCompare(b.id));
+    if (!list.length) return;
+    const lines = list.map((f) => jcs({ id: f.id, hash: f.hash, payload: f.payload, provenance: f.provenance }));
+    writeFileSync(capFile(cap), lines.join("\n") + "\n");
+  };
+
+  for (let i = 0; i < active.length; i++) {
+    const reg = active[i];
+    const flushGroup = () => { // last provider of this capability just finished
+      if (active[i + 1]?.capability !== reg.capability) writeCapFile(reg.capability);
+    };
     const d = detect(reg, repoRoot);
     if (!d.applicable) {
       capabilities[reg.capability] ??= { status: "absent", providers: [] };
+      flushGroup();
       continue;
     }
-    const run = runProvider(reg, repoRoot, d);
+    // declared cross-capability reads, delivered by contract as env vars
+    // pointing at the upstream capability's resolved fact file
+    const factEnv = {};
+    for (const cap of reg.factInputs ?? []) {
+      if (existsSync(capFile(cap))) {
+        factEnv[`KEELDOCS_FACTS_${cap.toUpperCase().replace(/-/g, "_")}`] = capFile(cap);
+      }
+    }
+    const run = runProvider(reg, repoRoot, d, factEnv);
     const cap = (capabilities[reg.capability] ??= { status: "absent", providers: [] });
     cap.providers.push(`${reg.id}@${reg.semver}`);
     if (run.status === "failed") {
       cap.status = "failed";
       cap.reason = run.reason;
       toolError = `${reg.id}: ${run.reason}`; // fail closed - never masquerade as "no drift"
+      flushGroup();
       continue;
     }
-    if (run.status !== "ok") continue;
+    if (run.status !== "ok") { flushGroup(); continue; }
     const provenanceBase = { provider: `${reg.id}@${reg.semver}`,
       confidence: reg.confidence ?? (reg.tier === "declarative" ? "PATTERN" : "PARSED") };
     const norm = reg.capability === "http-endpoints"
@@ -300,25 +341,9 @@ export function extractAll(repoRootIn, { disable = [] } = {}) {
     }
     gaps.push(...norm.gaps);
     if (cap.status !== "failed") cap.status = "ok";
+    flushGroup();
   }
 
-  // Canonical fact files - byte-stable, diffable, gitignored (ADR-004).
-  // The dir is a pure cache: clear it first so a capability that dropped to
-  // zero facts can't leave a stale file lying about the current state.
-  const factsDir = join(repoRoot, ".keeldocs", "cache", "facts");
-  rmSync(factsDir, { recursive: true, force: true });
-  mkdirSync(factsDir, { recursive: true });
-  const byCap = {};
-  for (const f of factsById.values()) {
-    // second namespace (ADR-007): `ds ...` symbol ids belong to module-graph
-    const cap = f.id.startsWith("ds ") ? "module-graph" : f.id.slice(5, f.id.indexOf("/"));
-    (byCap[cap] ??= []).push(f);
-  }
-  for (const [cap, list] of Object.entries(byCap)) {
-    list.sort((a, b) => a.id.localeCompare(b.id));
-    const lines = list.map((f) => jcs({ id: f.id, hash: f.hash, payload: f.payload, provenance: f.provenance }));
-    writeFileSync(join(factsDir, `${cap}.jsonl`), lines.join("\n") + "\n");
-  }
   // Cache identity covers the EFFECTIVE provider set - disabling a provider
   // via keeldocs.toml is a different extraction universe, so it must re-key.
   const providerSetHash = createHash("sha256")

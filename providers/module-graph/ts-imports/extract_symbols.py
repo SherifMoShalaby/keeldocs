@@ -43,6 +43,40 @@ EXCLUDE_SUFFIX = (".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx", ".d.ts",
 EXTS = (".ts", ".tsx", ".js", ".mjs")
 
 
+def workspace_packages():
+    """Declared cross-capability read (provider contract 9): the engine hands us
+    workspace-layout's resolved fact file via KEELDOCS_FACTS_WORKSPACE_LAYOUT.
+    Standalone runs (no env) return None -> package emitted as null and the
+    engine normalizer fills the segment from its own view."""
+    path = os.environ.get("KEELDOCS_FACTS_WORKSPACE_LAYOUT")
+    if not path or not os.path.exists(path):
+        return None
+    pkgs = []
+    for line in open(path, encoding="utf-8"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            f = json.loads(line)
+        except ValueError:
+            continue
+        if f.get("payload", {}).get("type") == "package":
+            a = f["payload"]["attrs"]
+            pkgs.append({"name": a["name"], "path": a["path"]})
+    return pkgs or None
+
+
+def pkg_for(path, pkgs):
+    if pkgs is None:
+        return None
+    best = None
+    for p in pkgs:
+        if p["path"] == "." or path == p["path"] or path.startswith(p["path"] + "/"):
+            if best is None or len(p["path"]) > len(best["path"]):
+                best = p
+    return best["name"] if best else None
+
+
 def want_file(rel):
     return rel.endswith(EXTS) and not rel.endswith(EXCLUDE_SUFFIX)
 
@@ -257,6 +291,7 @@ def main(root):
     grouped = {}
     for d in all_decls:
         grouped.setdefault((d["path"], d["name"]), []).append(d)
+    pkgs = workspace_packages()
     symbols = []
     for (path, name), ds in sorted(grouped.items()):
         has_overloads = any(d["kind"] == "function" and not d["impl"] for d in ds) \
@@ -266,15 +301,15 @@ def main(root):
         sigs = sorted({d["sig"] for d in kept})
         nameless = [s.replace(" " + name + " ", " § ", 1)
                     if (" " + name + " ") in s else s for s in sigs]
-        symbols.append({"path": path, "name": name, "kind": kinds,
-                        "sigs": sigs, "nameless": nameless})
+        symbols.append({"path": path, "name": name, "package": pkg_for(path, pkgs),
+                        "kind": kinds, "sigs": sigs, "nameless": nameless})
 
     modules = []
     participating = {s["path"] for s in symbols} | set(mod_imports)
     for rel in sorted(participating):
         edges = [{"specifier": s, "resolved": resolve_relative(rel, s, file_set)}
                  for s in mod_imports.get(rel, [])]
-        modules.append({"path": rel, "imports": edges})
+        modules.append({"path": rel, "package": pkg_for(rel, pkgs), "imports": edges})
 
     print(json.dumps({"modules": modules, "symbols": symbols, "warnings": warnings}, indent=1))
 

@@ -120,3 +120,5 @@ Behavioral contract (design-level): builds per-file tree-sitter ASTs of the decl
 ## 9. Cross-capability reads
 
 A provider may declare another capability's resolved fact file as an input (`inputs: ["${facts:module-graph}"]`). The engine schedules capabilities as a DAG (workspace-layout → module-graph → http-endpoints → …), and the cache key incorporates the upstream fact-file digest, so incrementality composes.
+
+**Implemented (v0.2):** a `${facts:<capability>}` token in `inputs` is parsed by the registry loader, implies a `needs` edge (a declared read IS a dependency), and is delivered at run time as an environment variable `KEELDOCS_FACTS_<CAPABILITY>` pointing at the upstream capability's resolved fact file (canonical JSONL, one fact per line), written incrementally as each capability's provider group completes in topo order. Standalone extractor runs (no engine, no env) must degrade honestly - ts-imports/py-imports emit `package: null` and the engine normalizer fills the segment. `timeout_class` is honored (A 10s / B 30s / C 120s / D 60s).

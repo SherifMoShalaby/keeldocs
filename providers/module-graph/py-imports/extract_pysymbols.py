@@ -35,6 +35,40 @@ EXCLUDE_DIRS = {"node_modules", ".git", ".keeldocs", "golden", "docs", "dist",
                 "examples"}
 
 
+def workspace_packages():
+    """Declared cross-capability read (provider contract 9): the engine hands us
+    workspace-layout's resolved fact file via KEELDOCS_FACTS_WORKSPACE_LAYOUT.
+    Standalone runs (no env) return None -> package emitted as null and the
+    engine normalizer fills the segment from its own view."""
+    path = os.environ.get("KEELDOCS_FACTS_WORKSPACE_LAYOUT")
+    if not path or not os.path.exists(path):
+        return None
+    pkgs = []
+    for line in open(path, encoding="utf-8"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            f = json.loads(line)
+        except ValueError:
+            continue
+        if f.get("payload", {}).get("type") == "package":
+            a = f["payload"]["attrs"]
+            pkgs.append({"name": a["name"], "path": a["path"]})
+    return pkgs or None
+
+
+def pkg_for(path, pkgs):
+    if pkgs is None:
+        return None
+    best = None
+    for p in pkgs:
+        if p["path"] == "." or path == p["path"] or path.startswith(p["path"] + "/"):
+            if best is None or len(p["path"]) > len(best["path"]):
+                best = p
+    return best["name"] if best else None
+
+
 def want(fn):
     return fn.endswith(".py") and not fn.startswith("test_") and not fn.endswith("_test.py")
 
@@ -211,6 +245,7 @@ def main(root):
     files.sort()
     file_set = set(files)
 
+    pkgs = workspace_packages()
     symbols, modules, warnings = [], [], []
     for rel in files:
         try:
@@ -238,11 +273,11 @@ def main(root):
             sigs = sorted({d["sig"] for d in kept})
             nameless = [s.replace(" " + name + " ", " § ", 1) if (" " + name + " ") in s else s
                         for s in sigs]
-            symbols.append({"path": rel, "name": name, "kind": kinds,
-                            "sigs": sigs, "nameless": nameless})
+            symbols.append({"path": rel, "name": name, "package": pkg_for(rel, pkgs),
+                            "kind": kinds, "sigs": sigs, "nameless": nameless})
         imps = imports_of(tree)
         if imps or grouped:
-            modules.append({"path": rel, "imports": [
+            modules.append({"path": rel, "package": pkg_for(rel, pkgs), "imports": [
                 {"specifier": s, "resolved": resolve(rel, s, file_set)} for s in imps]})
 
     symbols.sort(key=lambda s: (s["path"], s["name"]))

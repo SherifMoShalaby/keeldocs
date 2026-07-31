@@ -2,6 +2,7 @@
  "modules": [
   {
    "path": "src/auth.ts",
+   "package": null,
    "imports": [
     {
      "specifier": "./util",
@@ -11,6 +12,7 @@
   },
   {
    "path": "src/util.ts",
+   "package": null,
    "imports": []
   }
  ],
@@ -18,6 +20,7 @@
   {
    "path": "src/auth.ts",
    "name": "MAX_TRIES",
+   "package": null,
    "kind": "const",
    "sigs": [
     "const MAX_TRIES = <number>"
@@ -29,6 +32,7 @@
   {
    "path": "src/auth.ts",
    "name": "Session",
+   "package": null,
    "kind": "interface",
    "sigs": [
     "interface Session { user : string expires : number }"
@@ -40,6 +44,7 @@
   {
    "path": "src/auth.ts",
    "name": "login",
+   "package": null,
    "kind": "function",
    "sigs": [
     "function login ( string , string ) : Session | null"
@@ -51,6 +56,7 @@
   {
    "path": "src/auth.ts",
    "name": "parseToken",
+   "package": null,
    "kind": "function",
    "sigs": [
     "function parseToken ( Uint8Array ) : Session",
@@ -64,6 +70,7 @@
   {
    "path": "src/util.ts",
    "name": "hashString",
+   "package": null,
    "kind": "function",
    "sigs": [
     "function hashString ( string ) : string"

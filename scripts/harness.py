@@ -547,7 +547,7 @@ def main():
         caps = env_["data"]["card"]["capabilities"]
         assert caps["http-endpoints"]["providers"] == ["fastapi@0.2.0"], caps["http-endpoints"]
         # first multi-provider capability: both symbol providers serve module-graph
-        assert sorted(caps["module-graph"]["providers"]) == ["py-imports@0.2.0", "ts-imports@0.1.0"]
+        assert sorted(caps["module-graph"]["providers"]) == ["py-imports@0.2.1", "ts-imports@0.2.0"], caps["module-graph"]
         assert env_["data"]["coverage"]["after"] == {} or env_["data"]["coverage"]["after"]["pct"] == 100
         for rel, gold in [("docs/reference/endpoints.md", "endpoints.md"),
                           ("docs/reference/configuration.md", "configuration.md")]:
@@ -560,6 +560,19 @@ def main():
         mg = open(os.path.join(dst, ".keeldocs", "cache", "facts", "module-graph.jsonl")).read()
         assert '"ds python-scenario-fixture . app/tokens.py/parse()."' in mg
         assert mg.count("def parse ( ") == 2, "overload impl sig must be excluded"
+        # contract 9: the declared ${facts:workspace-layout} read reached the
+        # extractor - run it standalone WITH the env var and see real packages
+        wl = os.path.join(dst, ".keeldocs", "cache", "facts", "workspace-layout.jsonl")
+        r = subprocess.run([sys.executable,
+            os.path.join(ROOT, "providers", "module-graph", "py-imports", "extract_pysymbols.py"), dst],
+            capture_output=True, text=True, env={**os.environ, "KEELDOCS_FACTS_WORKSPACE_LAYOUT": wl})
+        assert r.returncode == 0 and '"package": "python-scenario-fixture"' in r.stdout, \
+            "env-delivered fact file must yield real package names"
+        r = subprocess.run([sys.executable,
+            os.path.join(ROOT, "providers", "module-graph", "py-imports", "extract_pysymbols.py"), dst],
+            capture_output=True, text=True, env={k: v for k, v in os.environ.items()
+                                                 if k != "KEELDOCS_FACTS_WORKSPACE_LAYOUT"})
+        assert '"package": null' in r.stdout, "standalone runs must degrade honestly to null"
         # drift loop: add a route -> endpoints table stale -> sync -> clean
         us = os.path.join(dst, "app", "routers", "users.py")
         u_src = open(us).read()

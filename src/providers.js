@@ -156,6 +156,12 @@ export function loadProviders(root = ENGINE_ROOT) {
       if (y.status === "stub") continue; // declared, not shipped - honestly absent
       validate(y, dir, relFile);
       if (y.capability !== cap) throw new Error(`${relFile}: capability \`${y.capability}\` != directory \`${cap}\``);
+      // ${facts:<cap>} tokens in `inputs` are DECLARED CROSS-CAPABILITY READS
+      // (provider contract §9): the engine hands the provider the upstream
+      // capability's resolved fact file, and the read IS a dependency edge.
+      const factInputs = (Array.isArray(y.inputs) ? y.inputs : [])
+        .map((i) => (typeof i === "string" ? i.match(/^\$\{facts:([a-z0-9-]+)\}$/) : null))
+        .filter(Boolean).map((m) => m[1]);
       entries.push({
         id: y.id, semver: y.semver, capability: y.capability, tier: y.tier,
         ...(y.confidence ? { confidence: y.confidence } : {}),
@@ -164,7 +170,9 @@ export function loadProviders(root = ENGINE_ROOT) {
         ...(y.runtime === "query"
           ? { runtime: "query", entry: QUERY_RUNTIME, dir }
           : { entry: `providers/${cap}/${id}/${y.entry.replace(/^\.\//, "")}`, dir }),
-        needs: y.needs ?? [],
+        factInputs,
+        timeoutClass: y.timeout_class ?? "D",
+        needs: [...new Set([...(y.needs ?? []), ...factInputs])],
       });
     }
   }

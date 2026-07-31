@@ -91,10 +91,28 @@ test("loader: query runtime requires query file + language, entry becomes the sh
   assert.ok(e.dir.endsWith("providers/cap/q1"));
 });
 
+test("loader: ${facts:cap} inputs become factInputs and imply needs edges", (t) => {
+  const root = tree({
+    "providers/alpha/a1/provider.yaml": OK("alpha", "a1"),
+    "providers/alpha/a1/x.py": "",
+    "providers/beta/b1/provider.yaml":
+      OK("beta", "b1", 'inputs: ["${facts:alpha}", "**/*.py"]\n'),
+    "providers/beta/b1/x.py": "",
+  });
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const r = loadProviders(root);
+  const b1 = r.find((e) => e.id === "b1");
+  assert.deepEqual(b1.factInputs, ["alpha"]);
+  assert.deepEqual(b1.needs, ["alpha"], "a declared read IS a dependency edge");
+  assert.deepEqual(r.map((e) => e.id), ["a1", "b1"], "topo respects the implied edge");
+});
+
 test("the real registry loads: nestjs is a query provider, workspace precedes module-graph", () => {
   const r = loadProviders();
   const nest = r.find((e) => e.id === "nestjs");
   assert.equal(nest.runtime, "query");
+  const tsi = r.find((e) => e.id === "ts-imports");
+  assert.deepEqual(tsi.factInputs, ["workspace-layout"], "the shipped declared read");
   assert.equal(nest.entry, "providers/_runtime/tsq.py");
   const order = r.map((e) => e.capability);
   assert.ok(order.indexOf("workspace-layout") < order.indexOf("module-graph"),
