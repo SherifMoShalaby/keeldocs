@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// keeldocs CLI. check is live; init/sync/new land next (docs/design/07-scope-roadmap.md).
+// keeldocs CLI - init/check/sync/new + slot-write/approve, all live (v0.1).
 // Exit codes (ADR-010): 0 clean | 1 findings | 2 tool/config error | 3 budget-degraded
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

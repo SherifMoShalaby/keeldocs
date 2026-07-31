@@ -2,7 +2,7 @@
 
 **Test coverage for your docs.** keeldocs anchors every doc section to the code it describes, deterministically flags drift with receipts — *"README references `scripts/setup.sh` — deleted in `8f21ac9`, 4 months ago"* — and proposes reviewable, section-level patches. Any stack, any agent, no SaaS.
 
-> Status: **v0.1 surface complete.** Design (nine-expert panel, 13 ADRs) -> validation experiments on real repos -> all four commands live: `init` (lie-detector + born-clean starter docs), `check` (deterministic drift/verify/coverage), `sync` (the retention loop with journal-backed decision memory), `new` + `slot-write`/`approve` (the mechanical LLM boundary). 22 unit tests + 9 harness suites under CI determinism gates. Next: publish placeholders, real-repo beta, full E-series corpus runs.
+> Status: **v0.1.0-rc.1.** Design (nine-expert panel, 13 ADRs) → validation experiments on real repos → all four commands live, all seven v0.1 capabilities live (plus the static RLS surface), real-app beta, cross-OS CI determinism matrix, GitHub Action with SARIF, publish-ready packaging. 32 unit tests + 9 extractor goldens + 8 integration suites, double-run determinism gates on every one.
 
 ## Why
 
@@ -10,31 +10,70 @@ AI agents optimize the forward direction: spec → plan → code. Nothing mainta
 
 ## How it works (the short version)
 
-- **Write barrier.** Every machine-generated body passes the redaction barrier before hashing: secret patterns + entropy scan, `[REDACTED:rule]` substitution, loud envelope reporting - a matched secret never lands in a committed doc.
-- **Deterministic spine.** Providers extract typed facts (endpoints, schema, env vars, services) from your repo — sandboxed, cache-keyed, byte-identical across runs. Facts, not prose, define truth.
-- **Anchors.** Doc sections carry tiny identity-only HTML comments binding them to symbols/facts. Drift = the bound fact-hash changed. Formatting churn never pages anyone.
+- **Deterministic spine.** Providers extract typed facts (endpoints, schema, env vars, services, packages, symbols, policies) from your repo — sandboxed, cache-keyed, byte-identical across runs. Facts, not prose, define truth.
+- **Anchors.** Doc sections carry tiny identity-only HTML comments binding them to facts (`fact:http-endpoints/GET /orders`) or symbols (`ds <pkg> . src/auth.ts/login().`). Drift = the bound fact-hash changed. Formatting churn never pages anyone; a moved symbol gets an evidence-backed rebind proposal.
+- **Write barrier.** Every machine-generated body passes the redaction barrier before hashing: secret patterns + entropy scan, `[REDACTED:rule]` substitution, loud envelope reporting — a matched secret never lands in a committed doc. Env **values** are structurally absent from every schema.
 - **Draft-only LLM.** The engine contains zero model-calling code. Your agent writes prose only through a validating gate (`slot-write`); the tool applies the `⚠ inferred` label; verified facts render unbadged.
-- **Noise SLO.** One weekly rollup PR max, self-caused-drift nudges only, journal-backed rejection memory, accept-rate self-throttling. Coverage is a ratchet, never a gate.
+- **Noise SLO.** Journal-backed rejection memory (a rejected proposal is never re-made), snooze/tombstone decisions, surgical binds (a policy edit stales the policy table, never the ERD). Coverage is a ratchet, never a gate.
 
-## Planned v0.1 surface
+## Quickstart
+
+Requires Node ≥ 20, Python 3 (extractor runtime: `pip install -r providers/requirements.txt`), git.
+
+```bash
+npx keeldocs init          # dry-run: detection card + doc lie-detector with receipts
+npx keeldocs init --yes    # write anchored starter docs (born clean, never overwrites)
+npx keeldocs check         # drift + verify + coverage; exit 0/1/2
+npx keeldocs sync          # review section-level proposals; --apply/--reject/--snooze
+```
+
+Until the npm package is published, clone and run `node bin/keeldocs.js` the same way.
+
+### CI (GitHub Action)
+
+```yaml
+permissions: { contents: read, security-events: write, pull-requests: write }
+steps:
+  - uses: actions/checkout@v4
+  - uses: SherifMoShalaby/keeldocs@main   # check --ci + SARIF + one sticky PR comment
+```
+
+Coverage never gates; drift does (`fail-on-drift: "false"` to soften). Findings land in code scanning as `keeldocs/stale|dead|tampered`.
+
+### Config (`keeldocs.toml`, optional)
+
+```toml
+[providers]
+disable = ["compose"]        # provider ids to skip in this repo
+
+[docs]
+dirs = ["docs", "handbook"]  # scan roots (default ["docs"]); README.md always scanned
+```
+
+Schema-strict: a typo'd key is a CONFIG error (exit 2), never a silent no-op.
+
+## v0.1 surface
 
 | Command | Does |
 |---|---|
-| `keeldocs init` | **LIVE.** Detection card → **doc lie-detector with receipts** → anchored starter docs (born clean, never overwrites) + plan. Dry-run by default, `--yes` applies. Zero LLM. |
-| `keeldocs check` | **LIVE.** Drift + verify + coverage. Deterministic, CI-ready: exit 0/1/2/3, `--json` envelope. |
-| `keeldocs sync` | **LIVE.** Reviewable proposals (regenerate/restore/rebind/tombstone) with evidence; `--apply`/`--reject`/`--snooze` + interactive `y/n/s/w`; journal-backed rejection memory; human edits never overwritten. |
-| `keeldocs new <type>` | **LIVE.** erd · endpoint-inventory (born clean, never overwrite) · adr capture; plus `slot-write` (7-gate prose validator, tool-applied draft labels) and `approve` (human attestation). system-map/config-reference honestly NOT_AVAILABLE until their providers land. |
+| `keeldocs init` | Detection card → **doc lie-detector with receipts** → anchored starter docs (born clean, never overwrites) + doc plan ranked hotspot × fan-in. Dry-run by default, `--yes` applies. Zero LLM. |
+| `keeldocs check` | Drift + verify + coverage. Deterministic, CI-ready: exit 0/1/2/3, `--json` envelope ≤8KB, `--ci` uses HEAD commit time (pure function of the SHA). |
+| `keeldocs sync` | Reviewable proposals (regenerate/restore/rebind/tombstone) with evidence; `--apply`/`--reject`/`--snooze` + interactive `y/n/s/w`; journal-backed rejection memory; human edits never overwritten. |
+| `keeldocs new <type>` | erd · endpoint-inventory · config-reference · system-map (all born clean, never overwrite) · adr capture; plus `slot-write` (7-gate prose validator, tool-applied draft labels) and `approve` (human attestation). A type without facts in your repo is honestly NOT_AVAILABLE. |
+
+Capabilities (all live): http-endpoints (Express code-tier, NestJS declarative) · db-schema (Prisma) · db-policies (static `CREATE POLICY` replay) · config-surface (env reads + `.env.example`, value-blind) · workspace-layout (pnpm/npm/yarn/single) · services-topology (compose, owned-vs-external) · module-graph (ts-imports: import edges + `ds` symbol identities with S1b move-matching) · decision-history (git-log churn, HEAD-anchored window).
 
 ## Repo layout
 
 ```
-bin/            CLI entry - init/check/sync/new + slot-write/approve, all live
+bin/            CLI entry - init/check/sync/new + slot-write/approve
+action.yml      GitHub Action (composite): check --ci + SARIF + sticky PR comment
 skills/         Agent Skills (open standard) — init/check/sync/new + core rules
 adapters/       per-agent install manifests (Claude Code, Codex, Cursor)
-providers/      capability providers — declarative (.scm + mapping) and code-tier
-recipes/        doc types (ERD fully specified; others stubbed)
+providers/      capability providers + requirements.txt (pinned extractor runtime)
+recipes/        doc types - erd, endpoint-inventory, config-reference, system-map, adr
 fixtures/       tiny fixture repos + golden fact files — the contribution test bed
-scripts/        harness.py — fixture matrix + determinism double-run (CI runs this)
+scripts/        harness.py (fixture matrix + determinism double-runs), sarif.js
 spec/           anchor specification (versioned, standalone)
 docs/design/    the full panel design: architecture, 13 ADRs, scope, risks
 experiments/    E1/E2/E4 validation prototypes + results (they passed; receipts inside)
@@ -42,7 +81,7 @@ experiments/    E1/E2/E4 validation prototypes + results (they passed; receipts 
 
 ## Contributing
 
-Pattern providers are the funnel: one tree-sitter query + one mapping YAML + one fixture, target ≤2 hours (see `CONTRIBUTING.md`). Run `python3 scripts/harness.py` — no agent required. Apache-2.0, DCO, no CLA.
+Pattern providers are the funnel: one tree-sitter query + one mapping YAML + one fixture, target ≤2 hours (see `CONTRIBUTING.md`). Run `python3 scripts/harness.py` — no agent required. CI runs the same harness on Linux, macOS, and Windows (reduced-trust tier). Apache-2.0, DCO, no CLA.
 
 ## Design principles (non-negotiable)
 

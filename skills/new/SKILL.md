@@ -5,7 +5,7 @@ disable-model-invocation: true
 ---
 # keeldocs new + slot-write
 
-- `keeldocs new erd | endpoint-inventory --json` renders from current facts, born clean; existing files are never overwritten (EXISTS -> use sync instead). `system-map`/`config-reference` return NOT_AVAILABLE until their providers land - never hand-fabricate them.
+- `keeldocs new erd | endpoint-inventory | config-reference | system-map --json` renders from current facts, born clean; existing files are never overwritten (EXISTS -> use sync instead). A type whose facts don't exist in this repo returns NOT_AVAILABLE - never hand-fabricate it.
 - `keeldocs new adr --title "..."` scaffolds a numbered ADR. The Context/Decision/Consequences prose is the USER's - interview them briefly and use their words; never infer rationale from code.
 - Doc prose goes ONLY through `echo "<prose>" | keeldocs slot-write <doc> <slot-id> --json`. If rejected, the envelope names the gate (unresolved-citations, numbers-in-prose, word-cap, prose-stability...); fix the prose and resubmit - never edit the doc file directly, never work around a gate.
 - Cite real entities in backticks (`GET /items`, `Item`, `Status`) - that is what the citation gate verifies. Keep numbers out of prose; they belong in generated tables.
