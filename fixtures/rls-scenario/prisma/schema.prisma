@@ -1,0 +1,16 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Order {
+  id     Int    @id @default(autoincrement())
+  userId String
+  total  Int
+}
+
+model Note {
+  id    Int    @id @default(autoincrement())
+  body  String
+  owner String
+}

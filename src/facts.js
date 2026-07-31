@@ -127,6 +127,31 @@ function moduleGraphFacts(raw, provenanceBase, packages) {
   return { facts, gaps };
 }
 
+function policyFacts(raw, provenanceBase) {
+  // Own capability so db-schema/* stays pure tables+enums (diagram noise
+  // isolation + born-clean); db keys schema-qualified per ADR-007.
+  const facts = [];
+  for (const p of raw.policies ?? []) {
+    facts.push({
+      id: `fact:db-policies/policy.${p.schema}.${p.table}.${p.name}`,
+      payload: { schema_version: 1, type: "policy",
+        attrs: { schema: p.schema, table: p.table, name: p.name, command: p.command,
+                 permissive: !!p.permissive, roles: p.roles ?? [],
+                 using: p.using ?? null, with_check: p.with_check ?? null } },
+      provenance: { ...provenanceBase, source: [{ file: p.file }] },
+    });
+  }
+  for (const r of raw.rls ?? []) {
+    facts.push({
+      id: `fact:db-policies/rls.${r.schema}.${r.table}`,
+      payload: { schema_version: 1, type: "rls",
+        attrs: { schema: r.schema, table: r.table, enabled: !!r.enabled } },
+      provenance: { ...provenanceBase, source: [{ file: r.file }] },
+    });
+  }
+  return { facts, gaps: [] };
+}
+
 function churnFacts(raw, provenanceBase) {
   const facts = [];
   for (const f of raw.files ?? []) {
@@ -259,6 +284,8 @@ export function extractAll(repoRootIn, { disable = [] } = {}) {
           [...factsById.values()].filter((f) => f.payload.type === "package").map((f) => f.payload.attrs))
       : reg.capability === "decision-history"
       ? churnFacts(run.raw, provenanceBase)
+      : reg.capability === "db-policies"
+      ? policyFacts(run.raw, provenanceBase)
       : schemaFacts(run.raw, provenanceBase, relative(repoRoot, d.file ?? ""));
     for (const f of norm.facts) {
       f.hash = factHash(f.payload);

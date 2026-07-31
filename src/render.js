@@ -93,6 +93,35 @@ export function enumsBody(factsById) {
   return enumFacts(factsById).map((e) => `- \`${e.payload.attrs.name}\`: ${e.payload.attrs.values.join(", ")}`).join("\n");
 }
 
+function policyFactsOf(factsById) {
+  return [...factsById.values()].filter((f) => f.payload.type === "policy")
+    .sort((a, b) => (a.payload.attrs.schema + "." + a.payload.attrs.table).localeCompare(b.payload.attrs.schema + "." + b.payload.attrs.table)
+                 || a.payload.attrs.name.localeCompare(b.payload.attrs.name));
+}
+
+function rlsFactsOf(factsById) {
+  return [...factsById.values()].filter((f) => f.payload.type === "rls")
+    .sort((a, b) => (a.payload.attrs.schema + "." + a.payload.attrs.table).localeCompare(b.payload.attrs.schema + "." + b.payload.attrs.table));
+}
+
+export function policiesBody(factsById) {
+  const pols = policyFactsOf(factsById);
+  const rls = rlsFactsOf(factsById);
+  const rows = pols.map((f) => {
+    const a = f.payload.attrs;
+    return `| \`${a.schema}.${a.table}\` | \`${a.name}\` | ${a.command} | ${a.permissive ? "permissive" : "restrictive"} | ${a.roles.join(", ") || "-"} | ${a.using ? `\`${a.using}\`` : "-"} | ${a.with_check ? `\`${a.with_check}\`` : "-"} |`;
+  });
+  const lines = ["| table | policy | command | mode | roles | using | with check |",
+                 "|---|---|---|---|---|---|---|", ...rows];
+  if (rls.length) {
+    lines.push("", ...rls.map((f) => {
+      const a = f.payload.attrs;
+      return `- RLS ${a.enabled ? "enabled" : "**disabled**"} on \`${a.schema}.${a.table}\``;
+    }));
+  }
+  return lines.join("\n");
+}
+
 function serviceFactsOf(factsById) {
   return [...factsById.values()].filter((f) => f.payload.type === "service")
     .sort((a, b) => a.payload.attrs.name.localeCompare(b.payload.attrs.name));
@@ -152,6 +181,7 @@ export function renderRegionBody(regionId, boundIds, factsById) {
   if (regionId === "sys.map.diagram") return servicesDiagramBody(factsById);
   if (regionId === "sys.map.services") return servicesTableBody(factsById);
   if (regionId === "sys.map.packages") return packagesTableBody(factsById);
+  if (regionId === "db.policies") return policiesBody(factsById);
   const m = regionId.match(/^db\..+\.columns$/);
   if (m) {
     const tableId = boundIds.find((id) => id.startsWith("fact:db-schema/") && !id.includes("/enum."));
@@ -214,6 +244,17 @@ export function renderDataModelDoc(factsById, sink) {
     parts.push(
       "## Enums",
       genBlock("db.enums", enums.map((e) => e.id).sort().join(","), enums.map((e) => e.id), factsById, enumsBody(factsById), sink),
+      "",
+    );
+  }
+  const pols = policyFactsOf(factsById);
+  if (pols.length) {
+    // id-prefix wildcards: bounded binds attr however many policies exist,
+    // and table-fact churn can never stale this region (noise isolation)
+    const accessIds = [...pols, ...rlsFactsOf(factsById)].map((f) => f.id).sort();
+    parts.push(
+      "## Access control (RLS)",
+      genBlock("db.policies", "fact:db-policies/*", accessIds, factsById, policiesBody(factsById), sink),
       "",
     );
   }

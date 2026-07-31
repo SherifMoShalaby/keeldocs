@@ -49,14 +49,17 @@ function parseBinds(raw) {
   const binds = [];
   for (const part of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
     if (part.length > MAX_VALUE) return null;
-    const wildcard = part.endsWith("/*");
-    const core = wildcard ? part.slice(0, -2) : part;
+    // Wildcards are PREFIX matches: `fact:cap/*` (whole capability) and
+    // `fact:cap/policy.*` (id-prefix family) are the same mechanism - the
+    // trailing `*` strips to a prefix. Exact ids never end in `*`.
+    const wildcard = part.endsWith("*");
+    const core = wildcard ? part.slice(0, -1) : part;
     if (wildcard) {
-      if (!/^fact:[a-z0-9-]+(\/[^,]*)?$/.test(core)) return null;
+      if (!/^fact:[a-z0-9-]+\/[^,]*$/.test(core)) return null;
     } else if (!BIND_RE.test(part)) {
       return null;
     }
-    binds.push({ raw: part, wildcard, prefix: wildcard ? core + "/" : null });
+    binds.push({ raw: part, wildcard, prefix: wildcard ? core : null });
   }
   return binds.length ? binds : null;
 }

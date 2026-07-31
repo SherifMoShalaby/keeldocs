@@ -63,6 +63,14 @@ MATRIX = [
                 "fixtures/init-scenario"],
         "golden": "fixtures/init-scenario/golden/decision-history.json",
     },
+    {
+        # replay semantics: 0002 drops-and-replaces a 0001 policy; only the
+        # final state may be emitted
+        "name": "rls-scenario / db-policies (migration replay)",
+        "cmd": [sys.executable, "providers/db-policies/sql-policies/extract_policies.py",
+                "fixtures/rls-scenario"],
+        "golden": "fixtures/rls-scenario/golden/db-policies.json",
+    },
 ]
 
 
@@ -453,6 +461,42 @@ def main():
         print("  PASS  decision-history: HEAD-anchored churn, hotspot x fan-in plan ranking")
     except Exception as e:
         failures.append(f"decision-history integration: {e}")
+
+    # ---- RLS static surface: policies render, born clean, drift is surgical ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-rls-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "rls-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        r = kd(dst, "init", "--yes", "--json")
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and env_["code"] == "INITIALIZED", r.stdout[:200]
+        # coverage counts policies as concrete surfaces (rls flags excluded)
+        assert env_["data"]["coverage"]["after"]["pct"] == 100, env_["data"]["coverage"]
+        for rel, gold in [("docs/architecture/data-model.md", "data-model.md"),
+                          ("docs/reference/configuration.md", "configuration.md")]:
+            got = open(os.path.join(dst, rel)).read()
+            want = open(os.path.join(ROOT, "fixtures", "rls-scenario", "golden", "docs", gold)).read()
+            assert got == want, f"{rel} differs from golden"
+        dm = open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
+        assert "notes_all" not in dm, "dropped policy must not survive the replay"
+        assert "notes_owner_rw" in dm and "RLS enabled on `public.orders`" in dm
+        rc = kd(dst, "check", "--json")
+        assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", "born-clean invariant violated"
+        # a new tightening migration must stale ONLY db.policies
+        with open(os.path.join(dst, "supabase", "migrations", "0003_restrict.sql"), "w") as f:
+            f.write("drop policy notes_admin_read on notes;\n"
+                    "create policy notes_admin_read on notes for select to admin using (org_id = 'x');\n")
+        r = kd(dst, "check", "--json")
+        top = {t["id"]: t["state"] for t in json.loads(r.stdout)["data"]["top"]}
+        assert r.returncode == 1 and top == {"db.policies": "stale"}, top
+        assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
+        shutil.rmtree(tmp)
+        print("  PASS  RLS static surface: replay, policy table, born-clean, surgical drift loop")
+    except Exception as e:
+        failures.append(f"rls integration: {e}")
 
     # ---- redaction barrier: secret in facts -> [REDACTED] in docs, still born clean ----
     try:

@@ -7,15 +7,17 @@
   "mode": "apply"
  },
  "card": {
-  "package": "compose-scenario-fixture",
+  "package": "rls-scenario-fixture",
   "capabilities": {
    "http-endpoints": {
     "status": "absent",
     "providers": []
    },
    "db-schema": {
-    "status": "absent",
-    "providers": []
+    "status": "ok",
+    "providers": [
+     "prisma@0.1.0"
+    ]
    },
    "db-policies": {
     "status": "ok",
@@ -36,10 +38,8 @@
     ]
    },
    "services-topology": {
-    "status": "ok",
-    "providers": [
-     "compose@0.1.0"
-    ]
+    "status": "absent",
+    "providers": []
    },
    "module-graph": {
     "status": "ok",
@@ -54,46 +54,64 @@
     ]
    }
   },
-  "facts": 6
+  "facts": 9
  },
  "lies": {
   "findings": [],
-  "suppressed": 1,
-  "scannedCodeFiles": 4,
+  "suppressed": 0,
+  "scannedCodeFiles": 2,
   "notes": []
  },
  "toolError": null,
  "redactions": [],
  "docs": {
   "written": [
-   "docs/architecture/system-map.md"
+   "docs/architecture/data-model.md",
+   "docs/reference/configuration.md"
   ],
   "skipped": [],
   "planned": [
-   "docs/architecture/system-map.md"
+   "docs/architecture/data-model.md",
+   "docs/reference/configuration.md"
   ]
  },
  "coverage": {
   "before": {
    "perCapability": {
-    "services-topology": {
+    "db-schema": {
      "total": 2,
+     "documented": 0
+    },
+    "db-policies": {
+     "total": 3,
+     "documented": 0
+    },
+    "config-surface": {
+     "total": 1,
      "documented": 0
     }
    },
-   "total": 2,
+   "total": 6,
    "documented": 0,
    "pct": 0
   },
   "after": {
    "perCapability": {
-    "services-topology": {
+    "db-schema": {
      "total": 2,
      "documented": 2
+    },
+    "db-policies": {
+     "total": 3,
+     "documented": 3
+    },
+    "config-surface": {
+     "total": 1,
+     "documented": 1
     }
    },
-   "total": 2,
-   "documented": 2,
+   "total": 6,
+   "documented": 6,
    "pct": 100
   }
  },

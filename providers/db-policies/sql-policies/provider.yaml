@@ -1,0 +1,13 @@
+id: sql-policies
+capability: db-policies
+semver: 0.1.0
+tier: declarative     # anchored scans + balanced-paren walker over migration SQL
+confidence: PATTERN   # conventional migration SQL; exotic quoting is unmatched, never guessed
+entry: ./extract_policies.py
+detect: { always: true }   # zero migration dirs = zero facts, honestly
+inputs: ["supabase/migrations/**/*.sql", "migrations/**/*.sql", "db/migrations/**/*.sql", "sql/**/*.sql"]
+requires: []
+timeout_class: D
+emits: [policy, rls]
+# Replay semantics: files applied in sorted order; DROP POLICY removes, the
+# final state is emitted. Value-blind, execution-free, no DSN (ADR-013).

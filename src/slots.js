@@ -39,6 +39,8 @@ function knownEntities(factsById) {
     if (f.payload.type === "package") { known.add(a.name); known.add(a.path); }
     if (f.payload.type === "symbol") { known.add(a.name); known.add(a.module); }
     if (f.payload.type === "module") known.add(a.path);
+    if (f.payload.type === "policy") { known.add(a.name); known.add(`${a.schema}.${a.table}`); known.add(a.table); }
+    if (f.payload.type === "rls") { known.add(`${a.schema}.${a.table}`); known.add(a.table); }
     if (f.payload.type === "service") {
       known.add(a.name);
       if (a.image) known.add(a.image);

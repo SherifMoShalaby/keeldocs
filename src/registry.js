@@ -26,6 +26,13 @@ export const REGISTRY = [
     argMode: "schemaFile",
   },
   {
+    // Static RLS surface - the "ships regardless" slice (roadmap, Live DB row).
+    id: "sql-policies", semver: "0.1.0", capability: "db-policies", tier: "declarative",
+    detect: { always: true }, // zero migration dirs = zero facts, honestly
+    entry: "providers/db-policies/sql-policies/extract_policies.py",
+    argMode: "root",
+  },
+  {
     id: "env-readers", semver: "0.1.0", capability: "config-surface", tier: "code",
     detect: { always: true }, // the env surface exists in any repo; zero vars = zero facts
     entry: "providers/config-surface/env-readers/extract_env.py",

@@ -1,0 +1,58 @@
+{
+ "policies": [
+  {
+   "schema": "public",
+   "table": "notes",
+   "name": "notes_admin_read",
+   "command": "SELECT",
+   "permissive": true,
+   "roles": [
+    "admin",
+    "service_role"
+   ],
+   "using": "true",
+   "with_check": null,
+   "file": "supabase/migrations/0002_tighten.sql"
+  },
+  {
+   "schema": "public",
+   "table": "notes",
+   "name": "notes_owner_rw",
+   "command": "ALL",
+   "permissive": true,
+   "roles": [
+    "authenticated"
+   ],
+   "using": "auth.uid() = owner",
+   "with_check": "auth.uid() = owner",
+   "file": "supabase/migrations/0002_tighten.sql"
+  },
+  {
+   "schema": "public",
+   "table": "orders",
+   "name": "orders_select_own",
+   "command": "SELECT",
+   "permissive": true,
+   "roles": [
+    "authenticated"
+   ],
+   "using": "auth.uid() = user_id",
+   "with_check": null,
+   "file": "supabase/migrations/0001_init.sql"
+  }
+ ],
+ "rls": [
+  {
+   "schema": "public",
+   "table": "notes",
+   "enabled": true,
+   "file": "supabase/migrations/0001_init.sql"
+  },
+  {
+   "schema": "public",
+   "table": "orders",
+   "enabled": true,
+   "file": "supabase/migrations/0001_init.sql"
+  }
+ ]
+}

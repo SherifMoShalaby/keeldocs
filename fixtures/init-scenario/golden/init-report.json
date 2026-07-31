@@ -3,7 +3,7 @@
  "meta": {
   "engine": "keeldocs@0.1.0-rc.1",
   "head": null,
-  "providerSetHash": "51795f27ec7d6776",
+  "providerSetHash": "e95f4861ed192b2b",
   "mode": "apply"
  },
  "card": {
@@ -19,6 +19,12 @@
     "status": "ok",
     "providers": [
      "prisma@0.1.0"
+    ]
+   },
+   "db-policies": {
+    "status": "ok",
+    "providers": [
+     "sql-policies@0.1.0"
     ]
    },
    "config-surface": {
