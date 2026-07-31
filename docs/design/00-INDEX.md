@@ -16,6 +16,7 @@ Design produced by a nine-expert panel (each expert an independent agent with it
 | [06-anchor-spec.md](06-anchor-spec.md) | 6 — anchor grammar, hashing/normalization, re-anchoring, journal |
 | [07-scope-roadmap.md](07-scope-roadmap.md) | 7 & 8 — v0.1 scope (wow resolved) + phased roadmap with go/no-go gates |
 | [08-risks-experiments.md](08-risks-experiments.md) | 9 & 10 — risk register + validation experiments, priority-ordered |
+| [10-implementation-audit.md](10-implementation-audit.md) | Post-build audit vs. the originating brief: delivered / changed-with-reasoning / owed |
 | [09-open-questions.md](09-open-questions.md) | 11 — open questions, assumption register, verified sources |
 
 ## The ten headline decisions
