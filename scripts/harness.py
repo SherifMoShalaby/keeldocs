@@ -575,6 +575,64 @@ def main():
     except Exception as e:
         failures.append(f"python integration: {e}")
 
+    # ---- noise instruments: self-caused scoping, one-keystroke apply, throttle ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-noise-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "python-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        genv = {**os.environ, "GIT_AUTHOR_DATE": "2026-07-01T00:00:00Z",
+                "GIT_COMMITTER_DATE": "2026-07-01T00:00:00Z"}
+        def g(*a):
+            r = subprocess.run(["git", "-C", dst, "-c", "user.name=h", "-c", "user.email=h@x", *a],
+                               capture_output=True, text=True, env=genv)
+            assert r.returncode == 0, r.stderr[-200:]
+        g("init", "-q"); g("add", "-A"); g("commit", "-qm", "base")
+        assert kd(dst, "init", "--yes", "--json").returncode == 0
+        g("add", "-A"); g("commit", "-qm", "docs")
+        # PRE-EXISTING drift, committed before the mark: new env read in items.py
+        with open(os.path.join(dst, "app", "routers", "items.py"), "a") as f:
+            f.write('\nimport os\nITEMS_FLAG = os.getenv("ITEMS_FLAG")\n')
+        g("add", "-A"); g("commit", "-qm", "pre-existing drift")
+        g("branch", "mark")
+        # SELF-caused drift, uncommitted: a new route in users.py
+        with open(os.path.join(dst, "app", "routers", "users.py"), "a") as f:
+            f.write('\n\n@router.get("/users/{uid}")\ndef get_user(uid: int) -> dict:\n    return {}\n')
+        r = kd(dst, "check", "--json", "--since", "mark")
+        env_ = json.loads(r.stdout)
+        c = env_["data"]["counts"]
+        assert r.returncode == 1 and c["driftTotal"] == 2 and c["selfCaused"] == 1, c
+        by = {t_["id"]: t_.get("selfCaused") for t_ in env_["data"]["top"]}
+        assert by == {"api.inventory.table": True, "config.reference.table": False}, by
+        # sync --self scopes to the one self-caused proposal; one keystroke fixes it
+        r = kd(dst, "sync", "--self", "mark", "--json", env=local_env)
+        props = [p["id"] for p in json.loads(r.stdout)["data"]["proposals"]]
+        assert props == ["api.inventory.table"], props
+        r = kd(dst, "sync", "--self", "mark", "--apply-all", "--json", env=local_env)
+        assert json.loads(r.stdout)["code"] == "APPLIED"
+        r = kd(dst, "check", "--json", "--since", "mark")
+        c = json.loads(r.stdout)["data"]["counts"]
+        assert c["driftTotal"] == 1 and c["selfCaused"] == 0, c
+        # the apply was journaled -> accept-rate signal; then 3 rejections flip quiet
+        noise = json.loads(kd(dst, "check", "--json").stdout)["data"]["noise"]
+        assert noise["applies30d"] >= 1 and noise["nudgeLevel"] == "normal", noise
+        rej = subprocess.run(["node", "-e",
+            "import(process.argv[1]).then(j=>{const now=new Date().toISOString();"
+            "j.appendDecisions(process.argv[2],[1,2,3].map(i=>({at:now,actor:'h',type:'rejection',target:'r'+i})))})",
+            os.path.join(ROOT, "src", "journal.js"), dst],
+            capture_output=True, text=True, env=local_env)
+        assert rej.returncode == 0, rej.stderr[-200:]
+        noise = json.loads(kd(dst, "check", "--json").stdout)["data"]["noise"]
+        assert noise["rejections30d"] == 3 and noise["nudgeLevel"] == "quiet", noise
+        # --self with no resolvable base fails LOUDLY (no origin here)
+        r = kd(dst, "sync", "--self", "--json", env=local_env)
+        assert r.returncode == 2 and "no base ref" in json.loads(r.stdout)["summary"]
+        shutil.rmtree(tmp)
+        print("  PASS  noise instruments: self-caused split, sync --self, applied journal, quiet throttle")
+    except Exception as e:
+        failures.append(f"noise instruments: {e}")
+
     # ---- redaction barrier: secret in facts -> [REDACTED] in docs, still born clean ----
     try:
         import shutil, tempfile

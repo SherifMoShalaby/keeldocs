@@ -13,16 +13,37 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { createInterface } from "node:readline";
+import { spawnSync } from "node:child_process";
 import { parseDoc } from "./anchors.js";
 import { loadJournal, effective, appendDecisions } from "./journal.js";
 import { extractAll } from "./facts.js";
-import { evaluate } from "./drift.js";
+import { evaluate, classifySelfCaused } from "./drift.js";
 import { buildProposals } from "./proposals.js";
 import { patchRegion, patchBind } from "./patch.js";
 import { loadConfig, docPathsOf } from "./config.js";
+import { changedFilesSince, changedFactsSince } from "./gitx.js";
 import { ENGINE_VERSION } from "./registry.js";
 
-function collectState(root, config) {
+const inCI = () => process.env.CI === "true" || process.env.CI === "1";
+
+function git(root, args) {
+  const r = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  return r.status === 0 ? r.stdout.trim() : null;
+}
+
+// --self [ref]: scope to drift CAUSED by ref..HEAD (the post-edit nudge's
+// one-keystroke apply). Explicit ref wins; otherwise resolve the base the way
+// a human means it, and fail LOUDLY when nothing resolves - guessing a base
+// would silently mis-scope.
+function resolveSelfBase(root, explicit) {
+  if (explicit) return explicit;
+  for (const ref of ["origin/HEAD", "origin/main", "origin/master"]) {
+    if (git(root, ["rev-parse", "--verify", "--quiet", ref]) !== null) return ref;
+  }
+  throw new Error("--self: no base ref found (tried origin/HEAD, origin/main, origin/master) - pass one: keeldocs sync --self <ref>");
+}
+
+function collectState(root, config, selfScope = null) {
   const { factsById, capabilities, toolError } = extractAll(root, { disable: config.providers.disable });
   if (toolError) throw new Error(`tooling error: ${toolError}`);
   const journal = effective(loadJournal(root), new Date().toISOString());
@@ -35,8 +56,26 @@ function collectState(root, config) {
     regions.push(...parsed.regions);
   }
   const { findings } = evaluate({ anchors, regions, factsById, capabilities, journal });
-  const proposals = buildProposals({ findings, regions, anchors, factsById });
+  let proposals = buildProposals({ findings, regions, anchors, factsById });
+  if (selfScope) {
+    const changedFactIds = changedFactsSince(root, selfScope.base, factsById,
+      { disable: config.providers.disable });
+    classifySelfCaused({ findings, anchors, regions, factsById,
+      changed: selfScope.changed, changedFactIds });
+    const self = new Set(findings.filter((f) => f.selfCaused).map((f) => `${f.id}\x00${f.doc}`));
+    proposals = proposals.filter((p) => self.has(`${p.id}\x00${p.doc}`));
+  }
   return { factsById, findings, proposals, anchors, regions, docTexts };
+}
+
+// Applies are journaled locally as accept-rate signal (ADR-012 self-throttle);
+// CI applies (the rollup) are machine acts, not human decisions - never recorded.
+function journalApplied(root, entries) {
+  if (inCI() || entries.length === 0) return;
+  appendDecisions(root, entries.map((a) => ({
+    at: new Date().toISOString(), actor: actor(), type: "applied",
+    target: a.id, action: a.action,
+  })));
 }
 
 function actor() { return process.env.KEELDOCS_ACTOR || process.env.USER || "unknown"; }
@@ -99,16 +138,28 @@ export function runSync({ root, json, args }) {
     return emit(json, 2, { v: 1, ok: false, code: "CONFIG",
       summary: cfg.error.slice(0, 300), data: {}, next: [] });
   }
+  const flag = (name) => { const i = args.indexOf(name); return i === -1 ? null : (args[i + 1] ?? true); };
+  let selfScope = null;
+  if (args.includes("--self")) {
+    try {
+      const raw = flag("--self");
+      const baseRef = resolveSelfBase(root, typeof raw === "string" && !raw.startsWith("--") ? raw : null);
+      const { changed, base } = changedFilesSince(root, baseRef);
+      selfScope = { changed, base };
+    } catch (err) {
+      return emit(json, 2, { v: 1, ok: false, code: "TOOL_ERROR",
+        summary: String(err.message).slice(0, 300), data: {}, next: [] });
+    }
+  }
   let state;
   try {
-    state = collectState(root, cfg.config);
+    state = collectState(root, cfg.config, selfScope);
   } catch (err) {
     return emit(json, 2, { v: 1, ok: false, code: "TOOL_ERROR",
       summary: String(err.message).slice(0, 300), data: {}, next: [] });
   }
   const { proposals, findings, docTexts } = state;
 
-  const flag = (name) => { const i = args.indexOf(name); return i === -1 ? null : (args[i + 1] ?? true); };
   const applied = [], errors = [];
 
   try {
@@ -145,7 +196,9 @@ export function runSync({ root, json, args }) {
     errors.push(String(err.message));
   }
 
-  const remaining = collectRemaining(root, cfg.config);
+  try { journalApplied(root, applied); } catch { /* stats-only signal; applies already landed */ }
+
+  const remaining = collectRemaining(root, cfg.config, selfScope);
   const code = errors.length ? "TOOL_ERROR"
     : applied.length ? "APPLIED"
     : proposals.length ? "PROPOSALS" : "NOTHING_TO_SYNC";
@@ -179,8 +232,8 @@ export function runSync({ root, json, args }) {
   });
 }
 
-function collectRemaining(root, config) {
-  const { proposals } = collectState(root, config);
+function collectRemaining(root, config, selfScope = null) {
+  const { proposals } = collectState(root, config, selfScope);
   const kinds = {};
   for (const p of proposals) kinds[p.kind] = (kinds[p.kind] ?? 0) + 1;
   return {
@@ -204,7 +257,7 @@ function interactive(root, docTexts, proposals, findings, json) {
       let done = false;
       while (!done) {
         const a = (await ask("  apply/next/snooze/why/quit [y/n/s/w/q]? ")).trim().toLowerCase();
-        if (a === "y") { try { applyOne(root, docTexts, p); applied++; } catch (e) { process.stdout.write(`  error: ${e.message}\n`); } done = true; }
+        if (a === "y") { try { const r = applyOne(root, docTexts, p); journalApplied(root, [r]); applied++; } catch (e) { process.stdout.write(`  error: ${e.message}\n`); } done = true; }
         else if (a === "n") { try { rejectOne(root, p, findings); } catch (e) { process.stdout.write(`  error: ${e.message}\n`); } done = true; }
         else if (a === "s") { appendDecisions(root, [{ at: new Date().toISOString(), actor: actor(), type: "snooze", target: p.id, expires: new Date(Date.now() + 21 * 86400_000).toISOString() }]); done = true; }
         else if (a === "w") { process.stdout.write(`  ${p.evidence}\n`); }

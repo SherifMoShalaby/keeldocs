@@ -28,7 +28,9 @@ if (!COMMANDS.includes(cmd)) {
 
 if (cmd === "check") {
   const { runCheck } = await import("../src/check.js");
-  const exit = runCheck({ root: process.cwd(), json, ci: args.includes("--ci") });
+  const sIdx = args.indexOf("--since");
+  const exit = runCheck({ root: process.cwd(), json, ci: args.includes("--ci"),
+    since: sIdx !== -1 ? args[sIdx + 1] ?? null : null });
   process.exit(exit);
 }
 

@@ -72,3 +72,9 @@ jobs:
         with: { comment: "false" }
       - name: Assert clean
         run: test "${{ steps.kd.outputs.code }}" = "CLEAN"
+      - name: Rollup dry-run smoke (clean repo -> nothing to sync, nothing pushed)
+        id: rollup
+        uses: ./rollup
+        with: { dry-run: "true" }
+      - name: Assert rollup no-op
+        run: test "${{ steps.rollup.outputs.code }}" = "NOTHING_TO_SYNC" -a "${{ steps.rollup.outputs.applied }}" = "0"

@@ -51,6 +51,24 @@ export function loadJournal(repoRoot) {
   return { entries, malformed };
 }
 
+// Accept-rate noise stats (ADR-012's self-throttle). Counts EVENTS in the
+// trailing 30 days (raw entries, not latest-wins) under the policy clock -
+// wall time locally, HEAD commit time in --ci, same rule as snooze expiry.
+// The quiet rule is documented product behavior: when a human has rejected
+// 3+ proposals in the window and rejections outnumber applies 2:1, agents
+// must stop nudging (data.noise.nudgeLevel = "quiet") until the ratio heals.
+export function noiseStats(journal, nowIso) {
+  const windowStart = new Date(new Date(nowIso).getTime() - 30 * 86400_000).toISOString();
+  let applies = 0, rejections = 0;
+  for (const e of journal.entries) {
+    if (String(e.at) <= windowStart || String(e.at) > String(nowIso)) continue;
+    if (e.type === "applied") applies++;
+    else if (e.type === "rejection") rejections++;
+  }
+  const quiet = rejections >= 3 && rejections > 2 * applies;
+  return { applies30d: applies, rejections30d: rejections, nudgeLevel: quiet ? "quiet" : "normal" };
+}
+
 // Effective state per (type, target) after latest-wins + revocations.
 export function effective(journal, nowIso) {
   const latest = new Map(); // key "type\x00target" -> entry

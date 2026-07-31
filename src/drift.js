@@ -198,6 +198,31 @@ export function isCoverageSurface(f) {
   return true;
 }
 
+const SELF_DRIFT_STATES = new Set(["stale", "tampered", "dead"]);
+
+// Self-caused classification (ADR-012, the post-edit nudge's mechanical basis):
+// a drift finding is caused by ref..HEAD when its DOC changed (tampered = doc
+// edit) or any bound fact - resolved OR missing - is in the FACT-LEVEL change
+// set (hash moved, appeared, or disappeared since the base). Fact granularity
+// is the point: a fact merely living in an edited file was not caused by the
+// edit. Dead findings attribute precisely too - the missing id existed at the
+// base, so it is in the change set. Mutates findings (adds selfCaused: bool).
+export function classifySelfCaused({ findings, anchors, regions, factsById, changed, changedFactIds }) {
+  const bindsOf = new Map();
+  for (const a of anchors) bindsOf.set(`anchor\x00${a.id}\x00${a.doc}\x00${a.line}`, a.binds);
+  for (const r of regions) bindsOf.set(`${r.kind}\x00${r.id}\x00${r.doc}\x00${r.line}`, inheritBinds(r, anchors));
+  for (const f of findings) {
+    if (!SELF_DRIFT_STATES.has(f.state)) continue;
+    let self = changed.has(f.doc);
+    if (!self) {
+      const binds = bindsOf.get(`${f.kind}\x00${f.id}\x00${f.doc}\x00${f.line}`) ?? [];
+      const bound = [...resolveBindIds(binds, factsById), ...(f.missing ?? [])];
+      self = bound.some((id) => changedFactIds.has(id));
+    }
+    f.selfCaused = self;
+  }
+}
+
 export function coverage(factsById, documented) {
   const perCap = {};
   for (const [id, f] of factsById) {

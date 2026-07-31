@@ -41,9 +41,26 @@ runs:
       id: check
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
       run: |
+        # PR runs try to split drift into "caused by this PR" vs pre-existing.
+        # Shallow checkouts may lack the base; the split is then skipped rather
+        # than ever failing the check for it.
+        SINCE=""
+        if [ -n "$BASE_SHA" ]; then
+          set +e
+          git fetch --quiet --depth=100 origin "$BASE_SHA" \
+            && git merge-base "$BASE_SHA" HEAD > /dev/null 2>&1 \
+            && SINCE="$BASE_SHA"
+          set -e
+        fi
         set +e
-        node "${{ github.action_path }}/bin/keeldocs.js" check --ci --json > keeldocs-envelope.json
+        if [ -n "$SINCE" ]; then
+          node "${{ github.action_path }}/bin/keeldocs.js" check --ci --json --since "$SINCE" > keeldocs-envelope.json
+        else
+          node "${{ github.action_path }}/bin/keeldocs.js" check --ci --json > keeldocs-envelope.json
+        fi
         rc=$?
         set -e
         echo "exit=$rc" >> "$GITHUB_OUTPUT"
@@ -76,15 +93,24 @@ runs:
           const path = require("path");
           const env = JSON.parse(fs.readFileSync(path.join(process.env.WORKDIR, "keeldocs-envelope.json"), "utf8"));
           const marker = "<!-- keeldocs-sticky -->";
+          const split = env.data.counts.selfCaused !== undefined;
+          const badge = f => split ? (f.selfCaused ? "**this PR**" : "pre-existing") : "-";
           const rows = (env.data.top ?? []).map(f =>
-            `| ${f.state} | \`${f.id}\` | ${f.doc}:${f.line} | ${(f.missing ?? []).join(", ") || "-"} |`).join("\n");
+            `| ${f.state} | \`${f.id}\` | ${f.doc}:${f.line} | ${badge(f)} |`).join("\n");
+          const selfNote = split && env.code === "DRIFT_FOUND"
+            ? (env.data.counts.selfCaused > 0
+               ? `**${env.data.counts.selfCaused} of ${env.data.counts.driftTotal} drift finding(s) are caused by this PR** - fix in-branch with one command: \`keeldocs sync --self --apply-all\`.`
+               : `All ${env.data.counts.driftTotal} drift finding(s) pre-date this PR - nothing here is on you.`)
+            : "";
           const body = [
             marker,
             `### keeldocs - ${env.code}`,
             "",
             env.summary,
             "",
-            rows ? "| state | id | where | missing |\n|---|---|---|---|\n" + rows : "_No drift. Docs match the code._",
+            selfNote,
+            "",
+            rows ? "| state | id | where | cause |\n|---|---|---|---|\n" + rows : "_No drift. Docs match the code._",
             "",
             env.code === "DRIFT_FOUND" ? "Run `keeldocs sync` locally to review section-level proposals." : "",
           ].join("\n");
