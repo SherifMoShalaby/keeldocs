@@ -14,6 +14,7 @@
 
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { toPosix } from "./paths.js";
 import { REGISTRY, REGISTRY_ERROR } from "./registry.js";
 
 const SCHEMA = {
@@ -115,7 +116,7 @@ export function docPathsOf(root, dirs) {
       if (skip.has(name)) continue;
       const p = join(dir, name);
       if (statSync(p).isDirectory()) rec(p);
-      else if (name.endsWith(".md")) out.push(relative(root, p));
+      else if (name.endsWith(".md")) out.push(toPosix(relative(root, p))); // emitted paths are posix on every OS
     }
   };
   for (const d of dirs) if (existsSync(join(root, d))) rec(join(root, d));

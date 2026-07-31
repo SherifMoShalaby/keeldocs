@@ -12,6 +12,7 @@ import { loadJournal, effective, noiseStats } from "./journal.js";
 import { extractAll } from "./facts.js";
 import { evaluate, coverage, classifySelfCaused } from "./drift.js";
 import { loadConfig, docPathsOf } from "./config.js";
+import { toPosix } from "./paths.js";
 import { changedFilesSince, changedFactsSince } from "./gitx.js";
 import { ENGINE_VERSION } from "./registry.js";
 
@@ -74,7 +75,7 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
     v: 1, ok: exit === 0, code, summary,
     data: { counts: c, coverage: report.coverage, noise: report.noise, top },
     truncated: report.findings.length > top.length,
-    full: relative(repoRoot, outPath),
+    full: toPosix(relative(repoRoot, outPath)),
     next: exit === 1 ? ["keeldocs sync"] : [],
   };
   return emit(json, exit, envelope, report);

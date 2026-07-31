@@ -23,6 +23,7 @@ import { patchRegion, patchBind } from "./patch.js";
 import { loadConfig, docPathsOf } from "./config.js";
 import { changedFilesSince, changedFactsSince, extractAtBase, renamesSince } from "./gitx.js";
 import { renameMapFromStatus } from "./reanchor.js";
+import { toPosix } from "./paths.js";
 import { ENGINE_VERSION } from "./registry.js";
 
 const inCI = () => process.env.CI === "true" || process.env.CI === "1";
@@ -251,7 +252,7 @@ export function runSync({ root, json, args }) {
       })),
     },
     truncated: remaining.proposals.length > 10,
-    full: relative(root, outPath),
+    full: toPosix(relative(root, outPath)),
     next: remaining.proposals.length
       ? ["keeldocs sync --apply-all", "keeldocs sync --apply <id> | --reject <id> | --snooze <id>"]
       : ["keeldocs check"],

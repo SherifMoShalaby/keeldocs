@@ -9,12 +9,15 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { jcs } from "./jcs.js";
 import { factHash } from "./hash.js";
+import { toPosix } from "./paths.js";
 import { REGISTRY, REGISTRY_ERROR, ENGINE_VERSION } from "./registry.js";
 
-const ENGINE_ROOT = join(new URL(".", import.meta.url).pathname, "..");
+// fileURLToPath, never URL.pathname (Windows: "/D:/..." breaks join - item 10)
+const ENGINE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".keeldocs", "golden", "coverage"]);
 
 function walk(root, pred, out = [], dir = root) {
@@ -379,7 +382,7 @@ export function extractAll(repoRootIn, { disable = [], live = null } = {}) {
       : reg.id === "tbls-live"
       ? liveTableFacts(run.raw, provenanceBase,
           [...factsById.values()].filter((f) => f.payload.type === "table").map((f) => f.payload.attrs.name))
-      : schemaFacts(run.raw, provenanceBase, relative(repoRoot, d.file ?? ""));
+      : schemaFacts(run.raw, provenanceBase, toPosix(relative(repoRoot, d.file ?? "")));
     for (const f of norm.facts) {
       f.hash = factHash(f.payload);
       factsById.set(f.id, f); // single provider per capability in v0.1 - conflicts land with resolution

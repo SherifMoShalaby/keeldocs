@@ -28,12 +28,14 @@ jobs:
       - name: Engine unit tests + fixture matrix (captured)
         run: |
           set +e
-          { node --test tests/*.test.js && python3 scripts/harness.py; } 2>&1 | tee "$RUNNER_TEMP/harness.log"
+          # `python`, not `python3`: setup-python guarantees the former on all
+          # three OS; Windows runners have no python3 shim in git-bash
+          { node --test tests/*.test.js && python scripts/harness.py; } 2>&1 | tee "$RUNNER_TEMP/harness.log"
           rc=${PIPESTATUS[0]}
           set -e
           {
             echo "### harness (${{ matrix.os }}) rc=$rc"
-            echo "- node $(node --version) / $(python3 --version) / $(git --version)"
+            echo "- node $(node --version) / $(python --version) / $(git --version)"
             echo '```'
             tail -60 "$RUNNER_TEMP/harness.log"
             echo '```'

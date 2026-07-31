@@ -12,6 +12,14 @@ import json, os, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+
+def W(path, text, mode="w"):
+    """Fixture writes pin newline="\\n": Windows text mode would inject CRLF
+    into files the engine then reads byte-wise - LF is the contract on every
+    OS (same reason .gitattributes carries `* -text`)."""
+    with open(path, mode, encoding="utf-8", newline="\n") as f:
+        f.write(text)
+
 MATRIX = [
     {
         # the .scm tier: NO provider code - one query + provider.yaml through
@@ -238,13 +246,13 @@ def main():
         app = os.path.join(dst, "app.js")
         src = open(app).read().replace("app.post('/items', (req, res) => res.status(201).end());",
             "app.post('/items', (req, res) => res.status(201).end());\napp.get('/archive', (req, res) => res.json([]));")
-        open(app, "w").write(src)
+        W(app, src)
         sch = os.path.join(dst, "prisma", "schema.prisma")
         # NB: read fully BEFORE opening for write - open(x,"w").write(open(x).read())
         # truncates before reading (this exact bug ate the schema in an earlier run)
         sch_src = open(sch).read().replace("  status Status @default(ACTIVE)",
             "  status Status @default(ACTIVE)\n  createdAt DateTime @default(now())")
-        open(sch, "w").write(sch_src)
+        W(sch, sch_src)
         r = kd(dst, "check", "--json")
         assert r.returncode == 1 and json.loads(r.stdout)["data"]["counts"]["stale"] == 3, "expected 3 stale after mutation"
         r = kd(dst, "sync", "--json", env=local_env)
@@ -259,13 +267,13 @@ def main():
         # tamper -> restore
         dm = os.path.join(dst, "docs", "architecture", "data-model.md")
         dm_src = open(dm).read().replace("| name | String |  |", "| name | Text |  |")
-        open(dm, "w").write(dm_src)
+        W(dm, dm_src)
         r = kd(dst, "sync", "--apply", "db.item.columns", "--json", env=local_env)
         assert json.loads(r.stdout)["data"]["applied"][0]["action"] == "restore"
         assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
         # tamper again -> reject -> held (human edit stands; check goes quiet, exit 0)
         dm_src = open(dm).read().replace("| name | String |  |", "| name | Text |  |")
-        open(dm, "w").write(dm_src)
+        W(dm, dm_src)
         r = kd(dst, "sync", "--reject", "db.item.columns", "--json", env=local_env)
         assert r.returncode == 0 and json.loads(r.stdout)["code"] == "DECISION_RECORDED"
         r = kd(dst, "check", "--json")
@@ -320,7 +328,7 @@ def main():
         assert r.returncode == 1 and json.loads(r.stdout)["data"]["gate"] == "prose-stability"
         sch = os.path.join(dst, "prisma", "schema.prisma")
         sch_src = open(sch).read().replace("  name   String", "  name   String\n  note   String?")
-        open(sch, "w").write(sch_src)
+        W(sch, sch_src)
         r = kd(dst, "check", "--json")
         states = {t["id"]: t["state"] for t in json.loads(r.stdout)["data"]["top"]}
         assert states.get("db.overview") == "stale", f"filled slot must go stale on fact change: {states}"
@@ -384,7 +392,7 @@ def main():
         # drift loop: add a service -> ONLY the two service-bound regions go stale
         cf = os.path.join(dst, "docker-compose.yml")
         cf_src = open(cf).read().replace("  redis:", "  mailhog:\n    image: mailhog/mailhog\n  redis:")
-        open(cf, "w").write(cf_src)
+        W(cf, cf_src)
         r = kd(dst, "check", "--json")
         top = {t["id"]: t["state"] for t in json.loads(r.stdout)["data"]["top"]}
         assert r.returncode == 1 and top == {"sys.map.diagram": "stale", "sys.map.services": "stale"}, top
@@ -413,10 +421,10 @@ def main():
         auth = os.path.join(dst, "src", "auth.ts")
         a_src = open(auth).read()
         fn = a_src[a_src.index("export function login"):a_src.index("export function parseToken")]
-        open(auth, "w").write(a_src.replace(fn, ""))
+        W(auth, a_src.replace(fn, ""))
         util = os.path.join(dst, "src", "util.ts")
         u_src = open(util).read()
-        open(util, "w").write(u_src + "\n" + fn)
+        W(util, u_src + "\n" + fn)
         moved = "ds symbols-scenario-fixture . src/util.ts/login()."
         r = kd(dst, "check", "--json")
         top = json.loads(r.stdout)["data"]["top"]
@@ -440,16 +448,14 @@ def main():
         dst = os.path.join(tmp, "repo")
         shutil.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), dst,
                         ignore=shutil.ignore_patterns("golden", ".keeldocs"))
-        with open(os.path.join(dst, "keeldocs.toml"), "w") as f:
-            f.write('[providers]\ndisable = ["prisma"]\n')
+        W(os.path.join(dst, "keeldocs.toml"), '[providers]\ndisable = ["prisma"]\n')
         r = kd(dst, "init", "--json")
         env_ = json.loads(r.stdout)
         caps = env_["data"]["card"]["capabilities"]
         assert "db-schema" not in caps, "disabled provider must not even detect"
         assert "docs/architecture/data-model.md" not in env_["data"]["docs"]["planned"]
         # schema-strict config: a typo'd key is a CONFIG error, never a silent no-op
-        with open(os.path.join(dst, "keeldocs.toml"), "w") as f:
-            f.write('[providers]\ndisabel = ["prisma"]\n')
+        W(os.path.join(dst, "keeldocs.toml"), '[providers]\ndisabel = ["prisma"]\n')
         r = kd(dst, "check", "--json")
         env_ = json.loads(r.stdout)
         assert r.returncode == 2 and env_["code"] == "CONFIG" and "disabel" in env_["summary"]
@@ -474,11 +480,10 @@ def main():
             r = subprocess.run(["git", "-C", dst, "-c", "user.name=h", "-c", "user.email=h@x", *a],
                                capture_output=True, text=True, env=e)
             assert r.returncode == 0, r.stderr[-200:]
-        g("init", "-q")
+        g("init", "-q"); g("config", "core.autocrlf", "false")  # hermetic EOLs: ignore machine autocrlf
         g("add", "-A"); g("commit", "-qm", "c1")
         for i, d in enumerate(["2026-07-02T00:00:00Z", "2026-07-03T00:00:00Z"]):
-            with open(os.path.join(dst, "app.js"), "a") as f:
-                f.write(f"\n// churn {i}\n")
+            W(os.path.join(dst, "app.js"), f"\n// churn {i}\n", "a")
             g("add", "-A"); g("commit", "-qm", f"c{i+2}", date=d)
         # dry-run init: every surface undocumented; app.js churn=3 must rank endpoints first
         r = kd(dst, "init", "--json")
@@ -521,9 +526,9 @@ def main():
         rc = kd(dst, "check", "--json")
         assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", "born-clean invariant violated"
         # a new tightening migration must stale ONLY db.policies
-        with open(os.path.join(dst, "supabase", "migrations", "0003_restrict.sql"), "w") as f:
-            f.write("drop policy notes_admin_read on notes;\n"
-                    "create policy notes_admin_read on notes for select to admin using (org_id = 'x');\n")
+        W(os.path.join(dst, "supabase", "migrations", "0003_restrict.sql"),
+          "drop policy notes_admin_read on notes;\n"
+          "create policy notes_admin_read on notes for select to admin using (org_id = 'x');\n")
         r = kd(dst, "check", "--json")
         top = {t["id"]: t["state"] for t in json.loads(r.stdout)["data"]["top"]}
         assert r.returncode == 1 and top == {"db.policies": "stale"}, top
@@ -576,7 +581,7 @@ def main():
         # drift loop: add a route -> endpoints table stale -> sync -> clean
         us = os.path.join(dst, "app", "routers", "users.py")
         u_src = open(us).read()
-        open(us, "w").write(u_src + "\n\n@router.get(\"/users/{uid}\")\ndef get_user(uid: int) -> dict:\n    return {}\n")
+        W(us, u_src + "\n\n@router.get(\"/users/{uid}\")\ndef get_user(uid: int) -> dict:\n    return {}\n")
         r = kd(dst, "check", "--json")
         top = {t_["id"]: t_["state"] for t_ in json.loads(r.stdout)["data"]["top"]}
         assert r.returncode == 1 and top == {"api.inventory.table": "stale"}, top
@@ -601,17 +606,15 @@ def main():
             r = subprocess.run(["git", "-C", dst, "-c", "user.name=h", "-c", "user.email=h@x", *a],
                                capture_output=True, text=True, env=genv)
             assert r.returncode == 0, r.stderr[-200:]
-        g("init", "-q"); g("add", "-A"); g("commit", "-qm", "base")
+        g("init", "-q"); g("config", "core.autocrlf", "false"); g("add", "-A"); g("commit", "-qm", "base")
         assert kd(dst, "init", "--yes", "--json").returncode == 0
         g("add", "-A"); g("commit", "-qm", "docs")
         # PRE-EXISTING drift, committed before the mark: new env read in items.py
-        with open(os.path.join(dst, "app", "routers", "items.py"), "a") as f:
-            f.write('\nimport os\nITEMS_FLAG = os.getenv("ITEMS_FLAG")\n')
+        W(os.path.join(dst, "app", "routers", "items.py"), '\nimport os\nITEMS_FLAG = os.getenv("ITEMS_FLAG")\n', "a")
         g("add", "-A"); g("commit", "-qm", "pre-existing drift")
         g("branch", "mark")
         # SELF-caused drift, uncommitted: a new route in users.py
-        with open(os.path.join(dst, "app", "routers", "users.py"), "a") as f:
-            f.write('\n\n@router.get("/users/{uid}")\ndef get_user(uid: int) -> dict:\n    return {}\n')
+        W(os.path.join(dst, "app", "routers", "users.py"), '\n\n@router.get("/users/{uid}")\ndef get_user(uid: int) -> dict:\n    return {}\n', "a")
         r = kd(dst, "check", "--json", "--since", "mark")
         env_ = json.loads(r.stdout)
         c = env_["data"]["counts"]
@@ -660,7 +663,7 @@ def main():
                 r = subprocess.run(["git", "-C", dst, "-c", "user.name=h", "-c", "user.email=h@x", *a],
                                    capture_output=True, text=True, env=genv)
                 assert r.returncode == 0, r.stderr[-200:]
-            g("init", "-q"); g("add", "-A"); g("commit", "-qm", "base")
+            g("init", "-q"); g("config", "core.autocrlf", "false"); g("add", "-A"); g("commit", "-qm", "base")
             return tmp, dst, g
         # CASE 1 - file move: S1 rename + S2 exact + unique => AUTO-rebind in --apply-all
         tmp, dst, g = mk_repo()
@@ -683,7 +686,7 @@ def main():
         tmp, dst, g = mk_repo()
         a = os.path.join(dst, "src", "auth.ts")
         src_a = open(a).read().replace("export function login(", "export function signIn(")
-        open(a, "w").write(src_a)
+        W(a, src_a)
         r = kd(dst, "sync", "--json", env=local_env)
         props = json.loads(r.stdout)["data"]["proposals"]
         assert props and props[0]["kind"] == "rebind", props
@@ -756,7 +759,7 @@ def main():
         sch = os.path.join(dst, "prisma", "schema.prisma")
         sch_src = open(sch).read().replace("  status Status @default(ACTIVE)",
             '  status Status @default(ACTIVE)\n  api_key String @default("AKIAABCDEFGHIJKLMNOP")')
-        open(sch, "w").write(sch_src)
+        W(sch, sch_src)
         r = subprocess.run(["node", KD, "init", "--yes", "--json"], cwd=dst,
                            capture_output=True, text=True, timeout=180)
         env_ = json.loads(r.stdout)

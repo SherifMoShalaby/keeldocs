@@ -15,6 +15,7 @@ import { parseDoc } from "./anchors.js";
 import { evaluate, coverage, isCoverageSurface } from "./drift.js";
 import { loadJournal, effective } from "./journal.js";
 import { loadConfig, docPathsOf } from "./config.js";
+import { toPosix } from "./paths.js";
 import { ENGINE_VERSION } from "./registry.js";
 
 function gitHead(root) {
@@ -83,7 +84,7 @@ export function runInit({ root, json, yes, live = false }) {
       plan: report.plan.slice(0, 10),
     },
     truncated: l.findings.length > 10 || report.plan.length > 10,
-    full: relative(root, outPath),
+    full: toPosix(relative(root, outPath)),
     next: applied ? ["keeldocs check", "commit the generated docs"] : ["keeldocs init --yes"],
   };
 

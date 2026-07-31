@@ -40,7 +40,7 @@ def main(root):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP)
         for fn in sorted(filenames):
-            rel = os.path.relpath(os.path.join(dirpath, fn), root)
+            rel = os.path.relpath(os.path.join(dirpath, fn), root).replace(os.sep, "/")
             if EXAMPLE.match(fn):
                 for i, raw in enumerate(open(os.path.join(dirpath, fn), encoding="utf-8", errors="replace")):
                     m = DECL.match(raw.strip())

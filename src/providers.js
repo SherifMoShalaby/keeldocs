@@ -11,9 +11,13 @@
 // python runtime re-reads the SAME file with a full YAML parser.
 
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { toPosix } from "./paths.js";
 
-const ENGINE_ROOT = join(new URL(".", import.meta.url).pathname, "..");
+// fileURLToPath, never URL.pathname: pathname on Windows is "/D:/..." and
+// join() then fabricates a "D:\D:\..." ghost root (the ci-debug-win-27 ENOENT)
+const ENGINE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const QUERY_RUNTIME = "providers/_runtime/tsq.py";
 
 const KNOWN_KEYS = new Set([
@@ -167,9 +171,11 @@ export function loadProviders(root = ENGINE_ROOT) {
         ...(y.confidence ? { confidence: y.confidence } : {}),
         detect: y.detect,
         argMode: y.argMode ?? (y.runtime === "query" ? "providerDir" : "root"),
+        // dir is emitted posix-slash (registry entries are contract data, and
+        // the python runtime accepts D:/-style paths); fs joins above stay native
         ...(y.runtime === "query"
-          ? { runtime: "query", entry: QUERY_RUNTIME, dir }
-          : { entry: `providers/${cap}/${id}/${y.entry.replace(/^\.\//, "")}`, dir }),
+          ? { runtime: "query", entry: QUERY_RUNTIME, dir: toPosix(dir) }
+          : { entry: `providers/${cap}/${id}/${y.entry.replace(/^\.\//, "")}`, dir: toPosix(dir) }),
         factInputs,
         ...(y.live === true ? { live: true } : {}),
         timeoutClass: y.timeout_class ?? "D",

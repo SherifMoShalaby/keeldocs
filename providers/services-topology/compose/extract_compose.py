@@ -44,7 +44,7 @@ def main(root):
             "ports": sorted(port_str(p) for p in (spec.get("ports") or [])),
             "depends_on": sorted(dep),
         })
-    print(json.dumps({"services": out, "file": os.path.relpath(path, root)}, indent=1))
+    print(json.dumps({"services": out, "file": os.path.relpath(path, root).replace(os.sep, "/")}, indent=1))
 
 if __name__ == "__main__":
     main(sys.argv[1])

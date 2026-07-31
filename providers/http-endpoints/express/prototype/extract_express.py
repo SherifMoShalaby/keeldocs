@@ -71,7 +71,7 @@ class FileScan:
     def __init__(self, abspath, root):
         global anon_ct
         self.f = abspath
-        self.rel = os.path.relpath(abspath, root)
+        self.rel = os.path.relpath(abspath, root).replace(os.sep, "/")  # emitted paths are posix on every OS
         self.vars = {}       # local var -> nodeid
         self.imports = {}    # local name -> absfile
         self.default = None  # nodeid or ("file", absfile) alias
