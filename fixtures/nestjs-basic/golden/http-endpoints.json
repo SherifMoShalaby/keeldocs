@@ -2,13 +2,13 @@
  "endpoints": [
   {
    "file": "src/admin.controller.ts",
-   "method": "GET",
-   "path": "/admin/stats"
+   "method": "DELETE",
+   "path": "/admin/cache"
   },
   {
    "file": "src/admin.controller.ts",
-   "method": "DELETE",
-   "path": "/admin/cache"
+   "method": "GET",
+   "path": "/admin/stats"
   },
   {
    "file": "src/cats.controller.ts",

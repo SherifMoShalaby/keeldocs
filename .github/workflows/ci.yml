@@ -15,7 +15,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
-    permissions: { contents: write } # debug-branch publishing on failure, below
+    permissions: { contents: read }
     defaults: { run: { shell: bash } }
     steps:
       - uses: actions/checkout@v4
@@ -41,21 +41,6 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit $rc
-      - name: Publish failure log to a debug branch
-        if: failure()
-        run: |
-          d="$RUNNER_TEMP/kd-debug" && rm -rf "$d" && mkdir -p "$d"
-          python3 providers/http-endpoints/express/prototype/extract_express.py fixtures/express-mounts > "$d/express-out.json" 2> "$d/express-err.txt" || true
-          ( cd fixtures/express-mounts && find . -type f ! -path "./.keeldocs/*" -exec sha256sum {} \; | sort ) > "$d/fixture-hashes.txt"
-          python3 -c "import tree_sitter, tree_sitter_javascript as j, tree_sitter_typescript as t; print(tree_sitter.__file__); print(j.__file__); print(t.__file__)" > "$d/modpaths.txt" 2>&1 || true
-          cd "$d"
-          cp /tmp/harness.log harness.log || echo "(no log captured)" > harness.log
-          { node --version; python3 --version; git --version; pip freeze | grep -Ei "tree|yaml" ; } > toolchain.txt 2>&1
-          git init -q
-          git checkout -qb "ci-debug-${{ github.run_number }}-${{ matrix.os }}"
-          git add -A
-          git -c user.name=keeldocs-ci -c user.email=ci@invalid commit -qm "harness failure log (${{ matrix.os }})"
-          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD
 
   # npm packaging must stay publish-ready: pack the tarball, install it into a
   # clean consumer, run the bin. Publishing itself happens in release.yml.

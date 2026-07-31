@@ -230,8 +230,10 @@ def resolve_ref(ref, seen=None):
 
 def main(root):
     for dirpath, dirnames, fnames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        for f in fnames:
+        # sorted traversal: raw readdir order is filesystem-dependent, which
+        # made emission order differ across checkouts (caught by CI matrix)
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        for f in sorted(fnames):
             if f.endswith((".ts", ".js")) and not f.endswith((".d.ts", ".spec.ts", ".test.ts", ".test.js", ".min.js")):
                 FileScan(os.path.join(dirpath, f), root)
 
@@ -267,6 +269,9 @@ def main(root):
         for pre in sorted(prefixes.get(t, {""})):
             full = (pre.rstrip("/") + "/" + path.lstrip("/")).rstrip("/") or "/"
             out.append({"file": rel, "method": meth, "path": full, "line": line})
+    # emission order is CONTRACT, not traversal accident (golden-compared)
+    out.sort(key=lambda e: (e["file"], e["line"], e["method"], e["path"]))
+    unresolved.sort(key=lambda w: (w.get("file") or "", w.get("reason") or ""))
     print(json.dumps({"endpoints": out, "warnings": unresolved}, indent=1))
 
 

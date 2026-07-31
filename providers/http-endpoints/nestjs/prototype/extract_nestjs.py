@@ -111,12 +111,14 @@ def extract_file(path, repo_root):
 def main(repo_root):
     endpoints, warns = [], []
     for dirpath, dirnames, filenames in os.walk(repo_root):
-        dirnames[:] = [d for d in dirnames if d not in ("node_modules", "dist", ".git", "test", "coverage")]
-        for f in filenames:
+        dirnames[:] = sorted(d for d in dirnames if d not in ("node_modules", "dist", ".git", "test", "coverage"))
+        for f in sorted(filenames):
             if f.endswith(".ts") and not f.endswith((".spec.ts", ".d.ts", ".e2e-spec.ts")):
                 e, w = extract_file(os.path.join(dirpath, f), repo_root)
                 endpoints += e
                 warns += w
+    endpoints.sort(key=lambda e: (e["file"], e.get("line") or 0, e["method"], e["path"]))
+    warns.sort(key=lambda w: (w.get("file") or "", w.get("reason") or ""))
     print(json.dumps({"endpoints": endpoints, "warnings": warns}, indent=1))
 
 
