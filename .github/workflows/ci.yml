@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - name: Install extractor runtime (pinned)
-        run: pip install "tree-sitter==0.26.0" "tree-sitter-typescript==0.23.2" tree-sitter-javascript
+        run: pip install "tree-sitter==0.26.0" "tree-sitter-typescript==0.23.2" tree-sitter-javascript pyyaml
       - name: Engine unit tests
         run: node --test tests/*.test.js
       - name: Fixture matrix + check integration + determinism double-runs

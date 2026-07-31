@@ -1,14 +1,14 @@
 // keeldocs new <type> - generate one doc from a recipe on demand.
-// erd / endpoint-inventory: deterministic render from current facts (never
-// overwrites - an existing file is human-owned). adr: interview-driven capture,
-// human-authored by definition; the tool numbers, slugs, and links it.
-// system-map / config-reference: honestly NOT_AVAILABLE until their providers
-// land (v0.1 stubs) - a wrong doc is worse than no doc.
+// erd / endpoint-inventory / config-reference / system-map: deterministic
+// render from current facts (never overwrites - an existing file is
+// human-owned). adr: interview-driven capture, human-authored by definition;
+// the tool numbers, slugs, and links it. Any recipe whose facts don't exist
+// in this repo answers NOT_AVAILABLE - a wrong doc is worse than no doc.
 
 import { mkdirSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { extractAll } from "./facts.js";
-import { renderEndpointsDoc, renderDataModelDoc, renderConfigDoc } from "./render.js";
+import { renderEndpointsDoc, renderDataModelDoc, renderConfigDoc, renderSystemMapDoc } from "./render.js";
 import { redact } from "./redact.js";
 
 const TYPES = ["erd", "endpoint-inventory", "adr", "system-map", "config-reference"];
@@ -27,13 +27,6 @@ export function runNew({ root, json, args }) {
   }
 
   try {
-    if (type === "system-map") {
-      const need = "services-topology";
-      return emit(json, 2, { v: 1, ok: false, code: "NOT_AVAILABLE",
-        summary: `${type} needs the ${need} capability, whose provider is a v0.1 stub - shipping a guessed ${type} would violate the never-fabricate rule. Tracked in docs/design/07-scope-roadmap.md.`,
-        data: { requires: need }, next: [] });
-    }
-
     if (type === "adr") {
       const tIdx = args.indexOf("--title");
       const title = tIdx !== -1 ? args[tIdx + 1] : null;
@@ -74,7 +67,8 @@ export function runNew({ root, json, args }) {
         data: { path: rel, number: next }, next: [] });
     }
 
-    // erd / endpoint-inventory: deterministic render from current facts
+    // erd / endpoint-inventory / config-reference / system-map:
+    // deterministic render from current facts
     const { factsById, toolError } = extractAll(root);
     if (toolError) {
       return emit(json, 2, { v: 1, ok: false, code: "TOOL_ERROR", summary: `tooling error: ${toolError}`, data: {}, next: [] });
@@ -82,11 +76,15 @@ export function runNew({ root, json, args }) {
     const sink = [];
     const rendered = type === "erd" ? renderDataModelDoc(factsById, sink)
       : type === "config-reference" ? renderConfigDoc(factsById, sink)
+      : type === "system-map" ? renderSystemMapDoc(factsById, sink)
       : renderEndpointsDoc(factsById, sink);
     if (!rendered) {
+      const why = type === "erd" ? "no db-schema facts extracted from this repo"
+        : type === "config-reference" ? "no config-surface facts extracted from this repo"
+        : type === "system-map" ? "no owned services (compose) and no multi-package workspace found - a one-node map would be noise"
+        : "no http-endpoints facts extracted from this repo";
       return emit(json, 2, { v: 1, ok: false, code: "NOT_AVAILABLE",
-        summary: `no ${type === "erd" ? "db-schema" : type === "config-reference" ? "config-surface" : "http-endpoints"} facts extracted from this repo - nothing true to render`,
-        data: {}, next: [] });
+        summary: `${why} - nothing true to render`, data: {}, next: [] });
     }
     if (existsSync(join(root, rendered.path))) {
       return emit(json, 0, { v: 1, ok: true, code: "EXISTS",

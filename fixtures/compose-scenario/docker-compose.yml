@@ -1,0 +1,26 @@
+# Fixture: two OWNED services (build:) + two EXTERNAL deps (image-only).
+# ${PG_TAG} is deliberately unresolvable - keeldocs must preserve it verbatim,
+# never guess. The worker uses long-syntax build/ports to lock both forms.
+services:
+  api:
+    build: ./packages/api
+    image: compose-scenario/api
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+  worker:
+    build:
+      context: ./packages/worker
+    ports:
+      - target: 9090
+        published: 9091
+    depends_on:
+      - postgres
+  postgres:
+    image: "postgres:${PG_TAG}"
+    ports:
+      - "5432:5432"
+  redis:
+    image: redis:7-alpine

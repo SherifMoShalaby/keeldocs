@@ -12,7 +12,7 @@ import { extractAll } from "./facts.js";
 import { renderAll } from "./render.js";
 import { detectLies } from "./lies.js";
 import { parseDoc } from "./anchors.js";
-import { evaluate, coverage } from "./drift.js";
+import { evaluate, coverage, isCoverageSurface } from "./drift.js";
 import { loadJournal, effective } from "./journal.js";
 import { ENGINE_VERSION } from "./registry.js";
 
@@ -150,9 +150,10 @@ function doInit(root, yes) {
   const before = covOf(preDocs);
   const after = yes ? covOf(existingDocs(root)) : before;
 
-  // Plan = undocumented concrete surfaces (the honest v0.1 hotspot proxy).
-  const plan = [...factsById.keys()].filter((id) => !after.documented.has(id)).sort()
-    .map((id) => ({ surface: id, action: "document" }));
+  // Plan = undocumented CONCRETE surfaces (the honest v0.1 hotspot proxy) -
+  // same whitelist as coverage: packages and external services are not owed docs.
+  const plan = [...factsById.values()].filter((f) => isCoverageSurface(f) && !after.documented.has(f.id))
+    .map((f) => f.id).sort().map((id) => ({ surface: id, action: "document" }));
 
   return {
     applied: !!yes,

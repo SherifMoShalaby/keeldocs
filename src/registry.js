@@ -31,4 +31,20 @@ export const REGISTRY = [
     entry: "providers/config-surface/env-readers/extract_env.py",
     argMode: "root",
   },
+  {
+    // Full-parse of workspace manifests (yaml/json libs, not regex) - PARSED
+    // despite the declarative tier, hence the explicit confidence override.
+    id: "workspace-auto", semver: "0.1.0", capability: "workspace-layout", tier: "declarative",
+    confidence: "PARSED",
+    detect: { always: true }, // every repo has a layout; single-package = one fact
+    entry: "providers/workspace-layout/auto/extract_workspace.py",
+    argMode: "root",
+  },
+  {
+    id: "compose", semver: "0.1.0", capability: "services-topology", tier: "declarative",
+    confidence: "PARSED",
+    detect: { files: ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"] },
+    entry: "providers/services-topology/compose/extract_compose.py",
+    argMode: "root",
+  },
 ];

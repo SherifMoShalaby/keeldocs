@@ -93,6 +93,55 @@ export function enumsBody(factsById) {
   return enumFacts(factsById).map((e) => `- \`${e.payload.attrs.name}\`: ${e.payload.attrs.values.join(", ")}`).join("\n");
 }
 
+function serviceFactsOf(factsById) {
+  return [...factsById.values()].filter((f) => f.payload.type === "service")
+    .sort((a, b) => a.payload.attrs.name.localeCompare(b.payload.attrs.name));
+}
+
+function packageFactsOf(factsById) {
+  return [...factsById.values()].filter((f) => f.payload.type === "package")
+    .sort((a, b) => a.payload.attrs.path.localeCompare(b.payload.attrs.path));
+}
+
+// Mermaid node ids must be identifier-safe; labels keep the real name.
+const mermaidId = (n) => n.replace(/[^A-Za-z0-9_]/g, "_");
+
+export function servicesDiagramBody(factsById) {
+  const svcs = serviceFactsOf(factsById);
+  const lines = ["```mermaid", "flowchart LR"];
+  for (const s of svcs) {
+    const a = s.payload.attrs;
+    // owned = rectangle (your architecture); external = cylinder (a dependency)
+    lines.push(a.kind === "owned" ? `  ${mermaidId(a.name)}["${a.name}"]`
+                                  : `  ${mermaidId(a.name)}[("${a.name}")]`);
+  }
+  const edges = [];
+  for (const s of svcs) {
+    for (const d of s.payload.attrs.depends_on) {
+      edges.push(`  ${mermaidId(s.payload.attrs.name)} --> ${mermaidId(d)}`);
+    }
+  }
+  lines.push(...edges.sort());
+  lines.push("```");
+  return lines.join("\n");
+}
+
+export function servicesTableBody(factsById) {
+  const rows = serviceFactsOf(factsById).map((f) => {
+    const a = f.payload.attrs;
+    return `| \`${a.name}\` | ${a.kind} | ${a.image ? `\`${a.image}\`` : "-"} | ${a.build ? `\`${a.build}\`` : "-"} | ${a.ports.length ? a.ports.join(", ") : "-"} | ${a.depends_on.length ? a.depends_on.join(", ") : "-"} |`;
+  });
+  return ["| service | kind | image | build | ports | depends on |", "|---|---|---|---|---|---|", ...rows].join("\n");
+}
+
+export function packagesTableBody(factsById) {
+  const rows = packageFactsOf(factsById).map((f) => {
+    const a = f.payload.attrs;
+    return `| \`${a.name}\` | \`${a.path}\` | ${a.manager} |`;
+  });
+  return ["| package | path | manager |", "|---|---|---|", ...rows].join("\n");
+}
+
 // Registry: region id -> how to regenerate its body from CURRENT facts.
 // Returns null for hand-authored region ids the engine cannot regenerate.
 export function renderRegionBody(regionId, boundIds, factsById) {
@@ -100,6 +149,9 @@ export function renderRegionBody(regionId, boundIds, factsById) {
   if (regionId === "db.root.diagram") return diagramBody(factsById);
   if (regionId === "db.enums") return enumsBody(factsById);
   if (regionId === "config.reference.table") return envTableBody(factsById);
+  if (regionId === "sys.map.diagram") return servicesDiagramBody(factsById);
+  if (regionId === "sys.map.services") return servicesTableBody(factsById);
+  if (regionId === "sys.map.packages") return packagesTableBody(factsById);
   const m = regionId.match(/^db\..+\.columns$/);
   if (m) {
     const tableId = boundIds.find((id) => id.startsWith("fact:db-schema/") && !id.includes("/enum."));
@@ -188,6 +240,45 @@ export function renderConfigDoc(factsById, sink) {
   return { path: "docs/reference/configuration.md", content };
 }
 
+export function renderSystemMapDoc(factsById, sink) {
+  const svcs = serviceFactsOf(factsById);
+  const pkgs = packageFactsOf(factsById);
+  const owned = svcs.filter((f) => f.payload.attrs.kind === "owned");
+  // Render only when there is real topology to state: an owned service or a
+  // multi-package workspace. A single-package repo with no compose file gets
+  // nothing - a one-node "map" would be noise wearing a diagram's clothes.
+  if (owned.length === 0 && pkgs.length <= 1) return null;
+  const svcIds = svcs.map((f) => f.id).sort();
+  const pkgIds = pkgs.map((f) => f.id).sort();
+  const parts = [
+    "# System map",
+    "<!-- keeldocs: id=sys.map recipe=system-map@1 binds=fact:services-topology/*,fact:workspace-layout/* hash-kind=fact -->",
+    "",
+    "<!-- keeldocs:slot id=sys.overview binds=fact:services-topology/*,fact:workspace-layout/* max-words=120 -->",
+    "<!-- /keeldocs:slot -->",
+    "",
+  ];
+  if (svcs.length) {
+    parts.push(
+      "## Services",
+      genBlock("sys.map.diagram", "fact:services-topology/*", svcIds, factsById, servicesDiagramBody(factsById), sink),
+      "",
+      genBlock("sys.map.services", "fact:services-topology/*", svcIds, factsById, servicesTableBody(factsById), sink),
+      "",
+    );
+  }
+  if (pkgs.length > 1) {
+    parts.push(
+      "## Packages",
+      genBlock("sys.map.packages", "fact:workspace-layout/*", pkgIds, factsById, packagesTableBody(factsById), sink),
+      "",
+    );
+  }
+  parts.push("<!-- Human notes below this line are never touched by keeldocs. -->", "");
+  return { path: "docs/architecture/system-map.md", content: parts.join("\n") };
+}
+
 export function renderAll(factsById, sink) {
-  return [renderEndpointsDoc(factsById, sink), renderDataModelDoc(factsById, sink), renderConfigDoc(factsById, sink)].filter(Boolean);
+  return [renderEndpointsDoc(factsById, sink), renderDataModelDoc(factsById, sink),
+          renderConfigDoc(factsById, sink), renderSystemMapDoc(factsById, sink)].filter(Boolean);
 }

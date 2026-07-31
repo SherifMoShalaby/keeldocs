@@ -173,9 +173,20 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
   return { findings, documented };
 }
 
+// Coverage denominator = CONCRETE surfaces only (owner decision 2026-07-30):
+// endpoints, tables, env vars, owned services. Packages are containers, not
+// surfaces; external services (postgres:16) are someone else's architecture.
+export function isCoverageSurface(f) {
+  const t = f.payload.type;
+  if (t === "package") return false;
+  if (t === "service" && f.payload.attrs.kind === "external") return false;
+  return true;
+}
+
 export function coverage(factsById, documented) {
   const perCap = {};
-  for (const id of factsById.keys()) {
+  for (const [id, f] of factsById) {
+    if (!isCoverageSurface(f)) continue;
     const cap = id.slice(5, id.indexOf("/"));
     const c = (perCap[cap] ??= { total: 0, documented: 0 });
     c.total++;

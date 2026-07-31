@@ -1,0 +1,48 @@
+{
+ "services": [
+  {
+   "name": "api",
+   "kind": "owned",
+   "image": "compose-scenario/api",
+   "build": "./packages/api",
+   "ports": [
+    "8080:8080"
+   ],
+   "depends_on": [
+    "postgres",
+    "redis"
+   ]
+  },
+  {
+   "name": "postgres",
+   "kind": "external",
+   "image": "postgres:${PG_TAG}",
+   "build": null,
+   "ports": [
+    "5432:5432"
+   ],
+   "depends_on": []
+  },
+  {
+   "name": "redis",
+   "kind": "external",
+   "image": "redis:7-alpine",
+   "build": null,
+   "ports": [],
+   "depends_on": []
+  },
+  {
+   "name": "worker",
+   "kind": "owned",
+   "image": null,
+   "build": "./packages/worker",
+   "ports": [
+    "9091:9090"
+   ],
+   "depends_on": [
+    "postgres"
+   ]
+  }
+ ],
+ "file": "docker-compose.yml"
+}

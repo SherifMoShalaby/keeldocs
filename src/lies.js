@@ -7,7 +7,7 @@
 
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { candidatesFor } from "./drift.js";
 
 const CODE_EXT = /\.(m?js|ts|tsx|py|rb|go|java|prisma|ya?ml|toml|json)$/;
@@ -30,10 +30,17 @@ const IMPERATIVE = /\b(create|touch|mkdir|add|save|write|generate|output|will (b
 const TREE_CHARS = /[│├└┬─]{1,}|^\s*[|`]--/;
 const SCRIPT_BUILTINS = new Set(["install", "ci", "i", "add", "remove", "init", "create", "publish",
   "audit", "link", "exec", "dlx", "upgrade", "why", "version", "login", "config"]);
+// Bare `npm <word>` in prose ("a two-package npm workspace") is English, not a
+// script invocation. A claim needs command shape: an explicit `run`, a script
+// name that implies run (npm test), or code context (inside backticks).
+const IMPLIED_RUN = new Set(["test", "start", "stop", "restart", "dev", "build",
+  "lint", "format", "typecheck", "watch", "e2e"]);
+const insideCode = (lineText, idx) =>
+  (lineText.slice(0, idx).match(/`/g) ?? []).length % 2 === 1;
 const ENV_STOPLIST = new Set(["NODE_ENV", "CI", "PATH", "HOME", "PWD", "TZ", "LANG", "DEBUG",
   "NODE_OPTIONS", "NPM_TOKEN", "GITHUB_TOKEN"]);
 
-function gitDeletionReceipt(root, relPath) {
+function gitDeletionRecord(root, relPath) {
   const r = spawnSync("git", ["log", "--diff-filter=D", "--format=%h %cs", "--follow", "--", relPath],
     { cwd: root, encoding: "utf8" });
   const first = r.status === 0 ? r.stdout.trim().split("\n")[0] : "";
@@ -41,7 +48,24 @@ function gitDeletionReceipt(root, relPath) {
     const [sha, date] = first.split(" ");
     return `deleted in ${sha} (${date})`;
   }
+  return null;
+}
+
+function missingReceipt(root, candidates) {
+  for (const c of candidates) {
+    const rec = gitDeletionRecord(root, c);
+    if (rec) return rec;
+  }
   return "not found in the repo; no deletion record in reachable history";
+}
+
+// Markdown resolves relative targets against the CONTAINING doc; READMEs also
+// conventionally write repo-root paths. Precision-first: a claim is a lie only
+// if it misses under BOTH resolutions (found by dogfooding on this very repo -
+// docs/design/00-INDEX.md's neighbor links were flagged as missing).
+function resolutions(doc, target) {
+  const rel = target.replace(/^\.\//, "");
+  return [...new Set([join(dirname(doc), rel), rel])];
 }
 
 export function detectLies({ root, docPaths, factsById, pkg }) {
@@ -81,19 +105,23 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
       for (const m of lineText.matchAll(/`([^`\s]{2,120})`/g)) {
         const tok = m[1];
         const pathLike = tok.includes("/") || /^[\w.-]+\.(js|ts|mjs|json|md|ya?ml|sh|py|sql|prisma|env|toml)$/.test(tok);
-        if (!pathLike || /^https?:/.test(tok) || tok.includes("=") || tok.startsWith("-")) continue;
+        // ":" never appears in repo paths but does in slash-commands (/docs:ask),
+        // key:value snippets, and URLs - not file claims
+        if (!pathLike || /^https?:/.test(tok) || tok.includes("=") || tok.includes(":") || tok.startsWith("-")) continue;
         if (PLACEHOLDER.test(tok) || CONVENTIONAL.test(tok) || imperative) { suppressed++; continue; }
         if (!tok.includes("/") && tok in deps) { suppressed++; continue; } // dep names like chart.js
-        const rel = tok.replace(/^\.\//, "");
-        if (!existsSync(join(root, rel))) {
-          add("file-claim", tok, doc, line, gitDeletionReceipt(root, rel));
+        const cands = resolutions(doc, tok);
+        if (!cands.some((c) => existsSync(join(root, c)))) {
+          add("file-claim", tok, doc, line, missingReceipt(root, cands));
         }
       }
 
       // B. npm script claims
-      for (const m of lineText.matchAll(/\b(?:npm run|yarn|pnpm run|pnpm|npm)\s+([a-z][a-z0-9:_-]{1,40})\b/g)) {
-        const name = m[1];
+      for (const m of lineText.matchAll(/\b((?:npm run|yarn run|pnpm run|yarn|pnpm|npm)\s+)([a-z][a-z0-9:_-]{1,40})\b/g)) {
+        const name = m[2];
         if (SCRIPT_BUILTINS.has(name) || name === "run") continue;
+        const commandShaped = /\brun\s*$/.test(m[1]) || IMPLIED_RUN.has(name) || insideCode(lineText, m.index);
+        if (!commandShaped) { suppressed++; continue; } // prose, not an invocation
         if (!(name in scripts)) {
           add("script-claim", `npm run ${name}`, doc, line,
             `no "${name}" in package.json scripts (${Object.keys(scripts).sort().join(", ") || "none"})`);
@@ -114,10 +142,10 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
 
       // D. internal markdown links
       for (const m of lineText.matchAll(/\]\((?!https?:|#|mailto:)([^)\s]+?)(?:#[^)]*)?\)/g)) {
-        const rel = m[1].replace(/^\.\//, "");
-        if (PLACEHOLDER.test(rel)) { suppressed++; continue; }
-        if (!existsSync(join(root, rel))) {
-          add("link-claim", m[1], doc, line, gitDeletionReceipt(root, rel));
+        if (PLACEHOLDER.test(m[1])) { suppressed++; continue; }
+        const cands = resolutions(doc, m[1]);
+        if (!cands.some((c) => existsSync(join(root, c)))) {
+          add("link-claim", m[1], doc, line, missingReceipt(root, cands));
         }
       }
 

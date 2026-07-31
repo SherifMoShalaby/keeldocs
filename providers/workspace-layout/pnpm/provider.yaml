@@ -1,9 +1,0 @@
-id: pnpm
-capability: workspace-layout
-semver: 0.0.1
-tier: declarative
-status: stub          # detect contract defined; extractor lands per docs/design/07-scope-roadmap.md
-detect: { any: [ { file: "pnpm-workspace.yaml" } ] }
-inputs: ["pnpm-workspace.yaml", "**/package.json"]
-requires: []
-timeout_class: D

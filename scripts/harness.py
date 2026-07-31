@@ -37,6 +37,18 @@ MATRIX = [
                 "fixtures/prisma-basic/prisma/schema.prisma"],
         "golden": "fixtures/prisma-basic/golden/db-schema.json",
     },
+    {
+        "name": "compose-scenario / workspace-layout",
+        "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
+                "fixtures/compose-scenario"],
+        "golden": "fixtures/compose-scenario/golden/workspace-layout.json",
+    },
+    {
+        "name": "compose-scenario / services-topology",
+        "cmd": [sys.executable, "providers/services-topology/compose/extract_compose.py",
+                "fixtures/compose-scenario"],
+        "golden": "fixtures/compose-scenario/golden/services-topology.json",
+    },
 ]
 
 
@@ -284,6 +296,51 @@ def main():
     except Exception as e:
         failures.append(f"new/slot-write integration: {e}")
 
+    # ---- system-map integration: workspace+compose -> owned/external topology ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-sysmap-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "compose-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        r = kd(dst, "init", "--yes", "--json")
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and env_["code"] == "INITIALIZED", r.stdout[:200]
+        # exactly one starter doc: the system map (no endpoints/db/config facts here)
+        assert env_["data"]["docs"]["written"] == ["docs/architecture/system-map.md"]
+        # coverage counts OWNED services only (2/2): packages + external images excluded
+        cov = env_["data"]["coverage"]["after"]
+        assert cov["total"] == 2 and cov["pct"] == 100, cov
+        assert env_["data"]["lies"] == [] and env_["data"]["liesSuppressed"] >= 1  # prose "npm workspace" suppressed
+        got = open(os.path.join(dst, "docs", "architecture", "system-map.md")).read()
+        want = open(os.path.join(ROOT, "fixtures", "compose-scenario", "golden", "docs", "system-map.md")).read()
+        assert got == want, "system-map.md differs from golden"
+        assert "${PG_TAG}" in got, "unresolvable compose interpolation must be preserved verbatim"
+        rep = json.load(open(os.path.join(dst, ".keeldocs", "out", "init-nogit.json")))
+        rep["meta"]["head"] = None
+        gold = json.load(open(os.path.join(ROOT, "fixtures", "compose-scenario", "golden", "init-report.json")))
+        assert canonical(json.dumps(rep)) == canonical(json.dumps(gold)), "init report != golden"
+        # born clean
+        rc = kd(dst, "check", "--json")
+        assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", "born-clean invariant violated"
+        # drift loop: add a service -> ONLY the two service-bound regions go stale
+        cf = os.path.join(dst, "docker-compose.yml")
+        cf_src = open(cf).read().replace("  redis:", "  mailhog:\n    image: mailhog/mailhog\n  redis:")
+        open(cf, "w").write(cf_src)
+        r = kd(dst, "check", "--json")
+        top = {t["id"]: t["state"] for t in json.loads(r.stdout)["data"]["top"]}
+        assert r.returncode == 1 and top == {"sys.map.diagram": "stale", "sys.map.services": "stale"}, top
+        assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
+        assert "mailhog" in open(os.path.join(dst, "docs", "architecture", "system-map.md")).read()
+        # new: EXISTS on the initialized repo; erd honestly NOT_AVAILABLE (no db facts)
+        assert json.loads(kd(dst, "new", "system-map", "--json").stdout)["code"] == "EXISTS"
+        assert json.loads(kd(dst, "new", "erd", "--json").stdout)["code"] == "NOT_AVAILABLE"
+        shutil.rmtree(tmp)
+        print("  PASS  system-map integration: owned/external topology, born-clean, drift loop, verbatim ${VAR}")
+    except Exception as e:
+        failures.append(f"system-map integration: {e}")
+
     # ---- redaction barrier: secret in facts -> [REDACTED] in docs, still born clean ----
     try:
         import shutil, tempfile
@@ -326,7 +383,7 @@ def main():
         for f in failures:
             print(f"  FAIL  {f}")
         sys.exit(1)
-    print(f"\nAll green: {len(MATRIX)} extractor + 2 check + init + sync + honesty-loop integrations + envelope smoke.")
+    print(f"\nAll green: {len(MATRIX)} extractor + 2 check + init + sync + honesty-loop + system-map integrations + envelope smoke.")
 
 
 if __name__ == "__main__":

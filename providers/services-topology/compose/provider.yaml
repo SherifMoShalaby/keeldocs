@@ -1,9 +1,11 @@
 id: compose
 capability: services-topology
-semver: 0.0.1
-tier: declarative
-status: stub          # detect contract defined; extractor lands per docs/design/07-scope-roadmap.md
-detect: { any: [ { file: "docker-compose*.yml" } ] }
-inputs: ["docker-compose*.yml", "compose*.yml"]
-requires: []
+semver: 0.1.0
+tier: declarative     # static YAML parse; never executes compose, never resolves env
+confidence: PARSED    # full yaml parse - overrides the tier default
+entry: ./extract_compose.py
+detect: { files: ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"] }
+inputs: ["docker-compose*.{yml,yaml}", "compose*.{yml,yaml}"]
+requires: ["pyyaml"]
 timeout_class: D
+emits: [service]

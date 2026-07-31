@@ -60,6 +60,33 @@ test("lie-detector: each class fires; suppressions hold", (t) => {
   assert.ok(findings.every((f) => f.receipt && f.receipt.length > 10), "every finding carries a receipt");
 });
 
+test("lie-detector precision: doc-relative links, prose npm phrases, colon tokens", (t) => {
+  const root = tmpRepo({
+    "package.json": JSON.stringify({ name: "x", scripts: {} }),
+    "docs/design/00-INDEX.md": [
+      "[transcript](01-panel-transcript.md)",   // doc-relative neighbor - NOT a lie
+      "[root doc](docs/design/02-arch.md)",     // root-relative form - NOT a lie
+      "[gone](03-missing.md)",                  // missing under BOTH resolutions - lie
+      "See `01-panel-transcript.md` for details.", // backticked doc-relative file - NOT a lie
+      "Use the `/docs:ask` command.",           // colon token = slash-command, not a path
+      "A two-package npm workspace layout.",    // prose npm phrase - NOT a script claim
+      "Run `npm run ship` before tagging.",     // run-form, missing script - lie
+      "Then `pnpm typecheck` must pass.",       // backticked implied-run, missing - lie
+    ].join("\n"),
+    "docs/design/01-panel-transcript.md": "# t",
+    "docs/design/02-arch.md": "# a",
+  });
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const { findings } = detectLies({ root, docPaths: ["docs/design/00-INDEX.md"],
+    factsById: new Map(), pkg: { name: "x", scripts: {} } });
+  const claims = findings.map((f) => `${f.class}:${f.claim}`).sort();
+  assert.deepEqual(claims, [
+    "link-claim:03-missing.md",
+    "script-claim:npm run ship",
+    "script-claim:npm run typecheck",
+  ], JSON.stringify(findings, null, 1));
+});
+
 // CommonJS require shim for the one readFileSync above
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);

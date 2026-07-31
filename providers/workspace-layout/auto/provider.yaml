@@ -1,0 +1,11 @@
+id: workspace-auto
+capability: workspace-layout
+semver: 0.1.0
+tier: declarative     # manifest parsing only (pnpm-workspace.yaml, package.json workspaces)
+confidence: PARSED    # full yaml/json parse, not regex patterns - overrides the tier default
+entry: ./extract_workspace.py
+detect: { always: true }   # every repo has a layout; single-package = one fact
+inputs: ["pnpm-workspace.yaml", "package.json", "*/package.json", "**/package.json"]
+requires: ["pyyaml"]
+timeout_class: D
+emits: [package]

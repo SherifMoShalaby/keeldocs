@@ -3,7 +3,7 @@
  "meta": {
   "engine": "keeldocs@0.1.0-dev.0",
   "head": null,
-  "providerSetHash": "3fa41b7fbea099bb",
+  "providerSetHash": "0184c930db703ead",
   "mode": "apply"
  },
  "card": {
@@ -26,9 +26,19 @@
     "providers": [
      "env-readers@0.1.0"
     ]
+   },
+   "workspace-layout": {
+    "status": "ok",
+    "providers": [
+     "workspace-auto@0.1.0"
+    ]
+   },
+   "services-topology": {
+    "status": "absent",
+    "providers": []
    }
   },
-  "facts": 7
+  "facts": 8
  },
  "lies": {
   "findings": [

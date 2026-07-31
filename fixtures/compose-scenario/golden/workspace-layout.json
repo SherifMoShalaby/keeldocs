@@ -1,0 +1,14 @@
+{
+ "manager": "npm-yarn",
+ "file": "package.json",
+ "packages": [
+  {
+   "name": "@compose/api",
+   "path": "packages/api"
+  },
+  {
+   "name": "@compose/worker",
+   "path": "packages/worker"
+  }
+ ]
+}

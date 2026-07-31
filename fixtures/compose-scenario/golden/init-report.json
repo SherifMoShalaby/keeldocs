@@ -1,0 +1,83 @@
+{
+ "v": 1,
+ "meta": {
+  "engine": "keeldocs@0.1.0-dev.0",
+  "head": null,
+  "providerSetHash": "0184c930db703ead",
+  "mode": "apply"
+ },
+ "card": {
+  "package": "compose-scenario-fixture",
+  "capabilities": {
+   "http-endpoints": {
+    "status": "absent",
+    "providers": []
+   },
+   "db-schema": {
+    "status": "absent",
+    "providers": []
+   },
+   "config-surface": {
+    "status": "ok",
+    "providers": [
+     "env-readers@0.1.0"
+    ]
+   },
+   "workspace-layout": {
+    "status": "ok",
+    "providers": [
+     "workspace-auto@0.1.0"
+    ]
+   },
+   "services-topology": {
+    "status": "ok",
+    "providers": [
+     "compose@0.1.0"
+    ]
+   }
+  },
+  "facts": 6
+ },
+ "lies": {
+  "findings": [],
+  "suppressed": 1,
+  "scannedCodeFiles": 4,
+  "notes": []
+ },
+ "toolError": null,
+ "redactions": [],
+ "docs": {
+  "written": [
+   "docs/architecture/system-map.md"
+  ],
+  "skipped": [],
+  "planned": [
+   "docs/architecture/system-map.md"
+  ]
+ },
+ "coverage": {
+  "before": {
+   "perCapability": {
+    "services-topology": {
+     "total": 2,
+     "documented": 0
+    }
+   },
+   "total": 2,
+   "documented": 0,
+   "pct": 0
+  },
+  "after": {
+   "perCapability": {
+    "services-topology": {
+     "total": 2,
+     "documented": 2
+    }
+   },
+   "total": 2,
+   "documented": 2,
+   "pct": 100
+  }
+ },
+ "plan": []
+}

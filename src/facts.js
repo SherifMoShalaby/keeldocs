@@ -84,6 +84,37 @@ function envFacts(raw, provenanceBase) {
   return { facts, gaps: [] };
 }
 
+function packageFacts(raw, provenanceBase) {
+  const facts = [];
+  for (const p of raw.packages ?? []) {
+    facts.push({
+      id: `fact:workspace-layout/${p.name}`,
+      // manager lives in the hashed payload deliberately: migrating pnpm->npm
+      // IS a documented-architecture change, not provider noise.
+      payload: { schema_version: 1, type: "package",
+        attrs: { name: p.name, path: p.path, manager: raw.manager } },
+      provenance: { ...provenanceBase, source: raw.file ? [{ file: raw.file }] : [] },
+    });
+  }
+  return { facts, gaps: [] };
+}
+
+function serviceFacts(raw, provenanceBase) {
+  const facts = [];
+  for (const s of raw.services ?? []) {
+    facts.push({
+      id: `fact:services-topology/${s.name}`,
+      // kind is the design's owned-vs-external split: build: = yours (owned),
+      // image-only = someone else's software you depend on (external).
+      payload: { schema_version: 1, type: "service",
+        attrs: { name: s.name, kind: s.kind, image: s.image ?? null, build: s.build ?? null,
+                 ports: s.ports ?? [], depends_on: s.depends_on ?? [] } },
+      provenance: { ...provenanceBase, source: raw.file ? [{ file: raw.file }] : [] },
+    });
+  }
+  return { facts, gaps: [] };
+}
+
 function endpointFacts(raw, provenanceBase, repoRoot) {
   const facts = [];
   for (const e of raw.endpoints ?? []) {
@@ -151,11 +182,16 @@ export function extractAll(repoRootIn) {
       continue;
     }
     if (run.status !== "ok") continue;
-    const provenanceBase = { provider: `${reg.id}@${reg.semver}`, confidence: reg.tier === "declarative" ? "PATTERN" : "PARSED" };
+    const provenanceBase = { provider: `${reg.id}@${reg.semver}`,
+      confidence: reg.confidence ?? (reg.tier === "declarative" ? "PATTERN" : "PARSED") };
     const norm = reg.capability === "http-endpoints"
       ? endpointFacts(run.raw, provenanceBase, repoRoot)
       : reg.capability === "config-surface"
       ? envFacts(run.raw, provenanceBase)
+      : reg.capability === "workspace-layout"
+      ? packageFacts(run.raw, provenanceBase)
+      : reg.capability === "services-topology"
+      ? serviceFacts(run.raw, provenanceBase)
       : schemaFacts(run.raw, provenanceBase, relative(repoRoot, d.file ?? ""));
     for (const f of norm.facts) {
       f.hash = factHash(f.payload);
