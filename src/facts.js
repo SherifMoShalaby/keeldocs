@@ -12,7 +12,7 @@ import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync
 import { join, relative, resolve } from "node:path";
 import { jcs } from "./jcs.js";
 import { factHash } from "./hash.js";
-import { REGISTRY, ENGINE_VERSION } from "./registry.js";
+import { REGISTRY, REGISTRY_ERROR, ENGINE_VERSION } from "./registry.js";
 
 const ENGINE_ROOT = join(new URL(".", import.meta.url).pathname, "..");
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".keeldocs", "golden", "coverage"]);
@@ -46,13 +46,15 @@ function detect(reg, repoRoot) {
 }
 
 function runProvider(reg, repoRoot, detectInfo) {
-  let arg = repoRoot;
+  let args = [repoRoot];
   if (reg.argMode === "schemaFile") {
     const schema = detectInfo.file ?? walk(repoRoot, (n) => n === "schema.prisma")[0];
     if (!schema) return { status: "not_applicable" };
-    arg = schema;
+    args = [schema];
+  } else if (reg.argMode === "providerDir") {
+    args = [reg.dir, repoRoot]; // generic .scm runtime: which provider + which repo
   }
-  const spawnPy = (bin) => spawnSync(bin, [join(ENGINE_ROOT, reg.entry), arg], {
+  const spawnPy = (bin) => spawnSync(bin, [join(ENGINE_ROOT, reg.entry), ...args], {
     cwd: repoRoot, timeout: 60_000, maxBuffer: 16 * 1024 * 1024, encoding: "utf8",
   });
   let r = spawnPy("python3");
@@ -246,6 +248,11 @@ function schemaFacts(raw, provenanceBase, schemaFile) {
 
 export function extractAll(repoRootIn, { disable = [] } = {}) {
   const repoRoot = resolve(repoRootIn); // subprocess cwd = repoRoot; args must be absolute
+  if (REGISTRY_ERROR) {
+    // fail closed and loudly - a half-loaded registry would masquerade as "no drift"
+    return { factsById: new Map(), capabilities: {}, gaps: [], providerSetHash: null,
+             toolError: `provider registry: ${REGISTRY_ERROR}` };
+  }
   const disabled = new Set(disable);
   const active = REGISTRY.filter((r) => !disabled.has(r.id));
   const capabilities = {};

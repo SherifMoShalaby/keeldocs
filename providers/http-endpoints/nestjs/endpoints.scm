@@ -1,18 +1,31 @@
-;; NestJS endpoint query - decorator-shaped extraction (T0).
-;; VALIDATED FINDING (E1, 2026-07-30): in the tree-sitter TS grammar, decorators on
-;; EXPORTED classes attach to the export_statement node, not class_declaration -
-;; the query must match both forms. @Controller also takes an object form
-;; ({path, version}), used by 8/9 controllers in one fixture-corpus repo.
-;; The working reference implementation is prototype/extract_nestjs.py (100% R / 100% P
-;; on the E1 corpus, n=45). This .scm is the contribution-format target; keep it in
-;; lockstep with the prototype until the engine's query runtime lands.
+; NestJS endpoint shapes - the ENTIRE framework-specific knowledge of this
+; provider. The shared runtime (providers/_runtime/tsq.py) owns the
+; language-agnostic association + composition semantics via the named-capture
+; contract: @scope, @prefix.args, @verb, @verb.args.
+;
+; E1 finding (2026-07-30), now load-bearing: decorators on EXPORTED classes
+; attach to export_statement, and MEMBER decorators are SIBLINGS of
+; method_definition inside class_body (not children) - so the query captures
+; scopes and verb decorators separately, and the runtime associates each
+; decorator run to the method it precedes, resetting on any other member.
+
+; exported controller class
+(export_statement
+  (decorator (call_expression
+    function: (identifier) @ctrl (#eq? @ctrl "Controller")
+    arguments: (arguments) @prefix.args))
+  declaration: (class_declaration body: (class_body) @scope))
+
+; bare (non-exported) controller class
 (class_declaration
   (decorator (call_expression
-    function: (identifier) @_ctrl (#eq? @_ctrl "Controller")
-    arguments: (arguments (string (string_fragment) @prefix)?)))
-  body: (class_body
-    (method_definition
-      (decorator (call_expression
-        function: (identifier) @verb (#any-of? @verb "Get" "Post" "Put" "Patch" "Delete")
-        arguments: (arguments (string (string_fragment) @route)?)))
-      name: (property_identifier) @handler) @method))
+    function: (identifier) @ctrl2 (#eq? @ctrl2 "Controller")
+    arguments: (arguments) @prefix.args))
+  body: (class_body) @scope)
+
+; HTTP verb decorators; names map to methods via provider.yaml `verbs:`
+(decorator
+  (call_expression
+    function: (identifier) @verb
+      (#any-of? @verb "Get" "Post" "Put" "Patch" "Delete" "All" "Head" "Options")
+    arguments: (arguments) @verb.args))

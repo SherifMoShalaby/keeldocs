@@ -1,6 +1,6 @@
 {
   "name": "keeldocs",
-  "version": "0.1.0-rc.1",
+  "version": "0.2.0-dev.0",
   "description": "keeldocs - test coverage for your docs: anchors doc sections to the code they describe, deterministically flags drift with receipts, proposes reviewable patches. Any stack, any agent, no SaaS.",
   "keywords": ["documentation", "docs", "drift", "living-documentation", "ci", "agent-skills", "deterministic"],
   "license": "Apache-2.0",

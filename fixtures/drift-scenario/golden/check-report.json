@@ -1,23 +1,17 @@
 {
  "v": 1,
  "meta": {
-  "engine": "keeldocs@0.1.0-rc.1",
+  "engine": "keeldocs@0.2.0-dev.0",
   "head": null,
-  "providerSetHash": "e95f4861ed192b2b",
+  "providerSetHash": "d432c430c09ffeae",
   "docsScanned": 2,
   "mode": "local"
  },
  "capabilities": {
-  "http-endpoints": {
+  "config-surface": {
    "status": "ok",
    "providers": [
-    "express@0.1.0"
-   ]
-  },
-  "db-schema": {
-   "status": "ok",
-   "providers": [
-    "prisma@0.1.0"
+    "env-readers@0.1.0"
    ]
   },
   "db-policies": {
@@ -26,11 +20,27 @@
     "sql-policies@0.1.0"
    ]
   },
-  "config-surface": {
+  "db-schema": {
    "status": "ok",
    "providers": [
-    "env-readers@0.1.0"
+    "prisma@0.1.0"
    ]
+  },
+  "decision-history": {
+   "status": "ok",
+   "providers": [
+    "git-log@0.1.0"
+   ]
+  },
+  "http-endpoints": {
+   "status": "ok",
+   "providers": [
+    "express@0.1.0"
+   ]
+  },
+  "services-topology": {
+   "status": "absent",
+   "providers": []
   },
   "workspace-layout": {
    "status": "ok",
@@ -38,20 +48,10 @@
     "workspace-auto@0.1.0"
    ]
   },
-  "services-topology": {
-   "status": "absent",
-   "providers": []
-  },
   "module-graph": {
    "status": "ok",
    "providers": [
     "ts-imports@0.1.0"
-   ]
-  },
-  "decision-history": {
-   "status": "ok",
-   "providers": [
-    "git-log@0.1.0"
    ]
   }
  },
@@ -128,17 +128,17 @@
  ],
  "coverage": {
   "perCapability": {
-   "http-endpoints": {
-    "total": 4,
-    "documented": 3
+   "config-surface": {
+    "total": 1,
+    "documented": 0
    },
    "db-schema": {
     "total": 3,
     "documented": 1
    },
-   "config-surface": {
-    "total": 1,
-    "documented": 0
+   "http-endpoints": {
+    "total": 4,
+    "documented": 3
    }
   },
   "total": 8,

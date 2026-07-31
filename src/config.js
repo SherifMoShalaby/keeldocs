@@ -14,7 +14,7 @@
 
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { REGISTRY } from "./registry.js";
+import { REGISTRY, REGISTRY_ERROR } from "./registry.js";
 
 const SCHEMA = {
   providers: { disable: "string[]" },
@@ -89,10 +89,12 @@ export function loadConfig(root) {
   for (const [sec, keys] of Object.entries(parsed)) {
     for (const [k, v] of Object.entries(keys)) cfg[sec][k] = v;
   }
-  const ids = new Set(REGISTRY.map((r) => r.id));
-  for (const id of cfg.providers.disable) {
-    if (!ids.has(id)) {
-      return { ok: false, error: `keeldocs.toml: [providers] disable names unknown provider \`${id}\` (known: ${[...ids].sort().join(", ")})` };
+  if (!REGISTRY_ERROR) { // a broken registry is extractAll's loud failure, not config's
+    const ids = new Set(REGISTRY.map((r) => r.id));
+    for (const id of cfg.providers.disable) {
+      if (!ids.has(id)) {
+        return { ok: false, error: `keeldocs.toml: [providers] disable names unknown provider \`${id}\` (known: ${[...ids].sort().join(", ")})` };
+      }
     }
   }
   if (cfg.docs.dirs.some((d) => d.startsWith("/") || d.includes(".."))) {

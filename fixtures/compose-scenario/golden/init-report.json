@@ -1,21 +1,19 @@
 {
  "v": 1,
  "meta": {
-  "engine": "keeldocs@0.1.0-rc.1",
+  "engine": "keeldocs@0.2.0-dev.0",
   "head": null,
-  "providerSetHash": "e95f4861ed192b2b",
+  "providerSetHash": "d432c430c09ffeae",
   "mode": "apply"
  },
  "card": {
   "package": "compose-scenario-fixture",
   "capabilities": {
-   "http-endpoints": {
-    "status": "absent",
-    "providers": []
-   },
-   "db-schema": {
-    "status": "absent",
-    "providers": []
+   "config-surface": {
+    "status": "ok",
+    "providers": [
+     "env-readers@0.1.0"
+    ]
    },
    "db-policies": {
     "status": "ok",
@@ -23,10 +21,24 @@
      "sql-policies@0.1.0"
     ]
    },
-   "config-surface": {
+   "db-schema": {
+    "status": "absent",
+    "providers": []
+   },
+   "decision-history": {
     "status": "ok",
     "providers": [
-     "env-readers@0.1.0"
+     "git-log@0.1.0"
+    ]
+   },
+   "http-endpoints": {
+    "status": "absent",
+    "providers": []
+   },
+   "services-topology": {
+    "status": "ok",
+    "providers": [
+     "compose@0.1.0"
     ]
    },
    "workspace-layout": {
@@ -35,22 +47,10 @@
      "workspace-auto@0.1.0"
     ]
    },
-   "services-topology": {
-    "status": "ok",
-    "providers": [
-     "compose@0.1.0"
-    ]
-   },
    "module-graph": {
     "status": "ok",
     "providers": [
      "ts-imports@0.1.0"
-    ]
-   },
-   "decision-history": {
-    "status": "ok",
-    "providers": [
-     "git-log@0.1.0"
     ]
    }
   },

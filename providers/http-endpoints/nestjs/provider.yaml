@@ -1,11 +1,13 @@
 id: nestjs
 capability: http-endpoints
-semver: 0.1.0
-tier: declarative
-detect:
-  any:
-    - dependency: "@nestjs/core"
-inputs: ["src/**/*.ts", "libs/**/*.ts", "apps/**/*.ts"]
-requires: []
-timeout_class: D
+semver: 0.2.0
+tier: declarative     # the T0 promise made real: one .scm + this manifest, zero code
+runtime: query        # executed by providers/_runtime/tsq.py
+language: typescript
+query: endpoints.scm
+detect: { deps: ["@nestjs/core"] }
+files: [".ts"]
+skip-files: [".spec.ts", ".d.ts", ".e2e-spec.ts"]
+verbs: { Get: GET, Post: POST, Put: PUT, Patch: PATCH, Delete: DELETE, All: ALL, Head: HEAD, Options: OPTIONS }
 emits: [endpoint]
+timeout_class: D

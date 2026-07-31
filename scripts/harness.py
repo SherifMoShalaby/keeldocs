@@ -14,9 +14,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 MATRIX = [
     {
-        "name": "nestjs-basic / http-endpoints",
-        "cmd": [sys.executable, "providers/http-endpoints/nestjs/prototype/extract_nestjs.py",
-                "fixtures/nestjs-basic"],
+        # the .scm tier: NO provider code - one query + provider.yaml through
+        # the shared runtime, proven output-equivalent to the retired prototype
+        "name": "nestjs-basic / http-endpoints (.scm via tsq runtime)",
+        "cmd": [sys.executable, "providers/_runtime/tsq.py",
+                "providers/http-endpoints/nestjs", "fixtures/nestjs-basic"],
         "golden": "fixtures/nestjs-basic/golden/http-endpoints.json",
     },
     {

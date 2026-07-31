@@ -81,7 +81,7 @@ experiments/    E1/E2/E4 validation prototypes + results (they passed; receipts 
 
 ## Contributing
 
-Pattern providers are the funnel: one tree-sitter query + one mapping YAML + one fixture, target ≤2 hours (see `CONTRIBUTING.md`). Run `python3 scripts/harness.py` — no agent required. CI runs the same harness on Linux, macOS, and Windows (reduced-trust tier). Apache-2.0, DCO, no CLA.
+Pattern providers are the funnel, and it is real: one `.scm` tree-sitter query + a `provider.yaml` manifest + one fixture — zero code (`providers/http-endpoints/nestjs/` is the worked example; the shared runtime is `providers/_runtime/tsq.py`). `provider.yaml` is the machine-read registry: drop a provider in, it runs. Run `python3 scripts/harness.py` — no agent required. CI runs the same harness on Linux, macOS, and Windows (reduced-trust tier). Apache-2.0, DCO, no CLA.
 
 ## Design principles (non-negotiable)
 

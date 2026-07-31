@@ -4,7 +4,8 @@ semver: 0.1.0
 tier: code            # schema.prisma is declarative but needs a real parser (attributes,
                       # relations, comments-inside-strings - see E1 finding on // in URLs)
 entry: ./prototype/extract_prisma.py
-detect: { any: [ { dependency: "prisma" }, { file: "**/schema.prisma" } ] }
+detect: { deps: ["prisma", "@prisma/client"], files: ["schema.prisma"] }
+argMode: schemaFile
 inputs: ["**/schema.prisma"]
 requires: []
 timeout_class: D

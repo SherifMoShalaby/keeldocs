@@ -1,7 +1,0 @@
-fact_type: endpoint
-fact_id: "fact:http-endpoints/{attrs.method} {attrs.path}"
-captures:
-  attrs.method: {from: "@verb", transform: uppercase}
-  attrs.path:   {join: ["@prefix", "@route"], with: "/", normalize: url-path, empty: "/"}
-  attrs.handler: {from: "@handler", as: symbol-id}
-  provenance.source: {from: "@method", as: span}

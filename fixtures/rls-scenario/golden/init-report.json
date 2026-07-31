@@ -1,22 +1,18 @@
 {
  "v": 1,
  "meta": {
-  "engine": "keeldocs@0.1.0-rc.1",
+  "engine": "keeldocs@0.2.0-dev.0",
   "head": null,
-  "providerSetHash": "e95f4861ed192b2b",
+  "providerSetHash": "d432c430c09ffeae",
   "mode": "apply"
  },
  "card": {
   "package": "rls-scenario-fixture",
   "capabilities": {
-   "http-endpoints": {
-    "status": "absent",
-    "providers": []
-   },
-   "db-schema": {
+   "config-surface": {
     "status": "ok",
     "providers": [
-     "prisma@0.1.0"
+     "env-readers@0.1.0"
     ]
    },
    "db-policies": {
@@ -25,11 +21,25 @@
      "sql-policies@0.1.0"
     ]
    },
-   "config-surface": {
+   "db-schema": {
     "status": "ok",
     "providers": [
-     "env-readers@0.1.0"
+     "prisma@0.1.0"
     ]
+   },
+   "decision-history": {
+    "status": "ok",
+    "providers": [
+     "git-log@0.1.0"
+    ]
+   },
+   "http-endpoints": {
+    "status": "absent",
+    "providers": []
+   },
+   "services-topology": {
+    "status": "absent",
+    "providers": []
    },
    "workspace-layout": {
     "status": "ok",
@@ -37,20 +47,10 @@
      "workspace-auto@0.1.0"
     ]
    },
-   "services-topology": {
-    "status": "absent",
-    "providers": []
-   },
    "module-graph": {
     "status": "ok",
     "providers": [
      "ts-imports@0.1.0"
-    ]
-   },
-   "decision-history": {
-    "status": "ok",
-    "providers": [
-     "git-log@0.1.0"
     ]
    }
   },
@@ -78,16 +78,16 @@
  "coverage": {
   "before": {
    "perCapability": {
-    "db-schema": {
-     "total": 2,
+    "config-surface": {
+     "total": 1,
      "documented": 0
     },
     "db-policies": {
      "total": 3,
      "documented": 0
     },
-    "config-surface": {
-     "total": 1,
+    "db-schema": {
+     "total": 2,
      "documented": 0
     }
    },
@@ -97,17 +97,17 @@
   },
   "after": {
    "perCapability": {
-    "db-schema": {
-     "total": 2,
-     "documented": 2
+    "config-surface": {
+     "total": 1,
+     "documented": 1
     },
     "db-policies": {
      "total": 3,
      "documented": 3
     },
-    "config-surface": {
-     "total": 1,
-     "documented": 1
+    "db-schema": {
+     "total": 2,
+     "documented": 2
     }
    },
    "total": 6,
