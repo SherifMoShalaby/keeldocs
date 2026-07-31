@@ -25,12 +25,10 @@ jobs:
         with: { python-version: "3.12" }
       - name: Install extractor runtime (pinned)
         run: pip install -r providers/requirements.txt
-      - name: Engine unit tests
-        run: node --test tests/*.test.js
-      - name: Fixture matrix + integrations + determinism double-runs
+      - name: Engine unit tests + fixture matrix (captured)
         run: |
           set +e
-          python3 scripts/harness.py 2>&1 | tee "$RUNNER_TEMP/harness.log"
+          { node --test tests/*.test.js && python3 scripts/harness.py; } 2>&1 | tee "$RUNNER_TEMP/harness.log"
           rc=${PIPESTATUS[0]}
           set -e
           {
