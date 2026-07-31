@@ -11,5 +11,5 @@
     "test": "node --test tests/*.test.js && python3 scripts/harness.py",
     "smoke": "node bin/keeldocs.js sync --json; test $? -eq 2"
   },
-  "repository": { "type": "git", "url": "https://github.com/keeldocs/keeldocs" }
+  "repository": { "type": "git", "url": "https://github.com/SherifMoShalaby/keeldocs" }
 }
