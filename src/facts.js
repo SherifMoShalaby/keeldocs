@@ -29,6 +29,7 @@ function walk(root, pred, out = [], dir = root) {
 }
 
 function detect(reg, repoRoot) {
+  if (reg.detect.always) return { applicable: true, via: "always" };
   const pkgPath = join(repoRoot, "package.json");
   if (reg.detect.deps && existsSync(pkgPath)) {
     try {
@@ -63,6 +64,24 @@ function runProvider(reg, repoRoot, detectInfo) {
   } catch {
     return { status: "failed", reason: "bad-json-output" };
   }
+}
+
+function envFacts(raw, provenanceBase) {
+  const facts = [];
+  for (const v of raw.vars ?? []) {
+    facts.push({
+      id: `fact:config-surface/${v.name}`,
+      // Low-noise drift semantics: the hashed payload carries the var's STATUS
+      // (read anywhere? declared anywhere?), not every read site - adding a
+      // second read of DATABASE_URL is not documentation drift. Sites live in
+      // provenance. Values do not exist in this schema, structurally (ADR-013).
+      payload: { schema_version: 1, type: "env-var",
+        attrs: { name: v.name, read_in_code: !!v.read_in_code, declared_in_example: !!v.declared_in_example } },
+      provenance: { ...provenanceBase,
+        source: (v.sources ?? []).slice(0, 20).map((s) => ({ file: s.file, line: s.line, kind: s.kind })) },
+    });
+  }
+  return { facts, gaps: [] };
 }
 
 function endpointFacts(raw, provenanceBase, repoRoot) {
@@ -135,6 +154,8 @@ export function extractAll(repoRootIn) {
     const provenanceBase = { provider: `${reg.id}@${reg.semver}`, confidence: reg.tier === "declarative" ? "PATTERN" : "PARSED" };
     const norm = reg.capability === "http-endpoints"
       ? endpointFacts(run.raw, provenanceBase, repoRoot)
+      : reg.capability === "config-surface"
+      ? envFacts(run.raw, provenanceBase)
       : schemaFacts(run.raw, provenanceBase, relative(repoRoot, d.file ?? ""));
     for (const f of norm.facts) {
       f.hash = factHash(f.payload);

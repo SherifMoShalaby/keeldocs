@@ -26,6 +26,12 @@ MATRIX = [
         "golden": "fixtures/express-mounts/golden/http-endpoints.json",
     },
     {
+        "name": "init-scenario / config-surface",
+        "cmd": [sys.executable, "providers/config-surface/env-readers/extract_env.py",
+                "fixtures/init-scenario"],
+        "golden": "fixtures/init-scenario/golden/env-readers.json",
+    },
+    {
         "name": "prisma-basic / db-schema",
         "cmd": [sys.executable, "providers/db-schema/prisma/prototype/extract_prisma.py",
                 "fixtures/prisma-basic/prisma/schema.prisma"],
@@ -112,7 +118,8 @@ def main():
         assert r1.returncode == 0 and env["code"] == "INITIALIZED", f"rc={r1.returncode} code={env.get('code')}"
         # generated docs match goldens byte-for-byte
         for rel, golden in [("docs/reference/endpoints.md", "golden/docs/endpoints.md"),
-                            ("docs/architecture/data-model.md", "golden/docs/data-model.md")]:
+                            ("docs/architecture/data-model.md", "golden/docs/data-model.md"),
+                            ("docs/reference/configuration.md", "golden/docs/configuration.md")]:
             got = open(os.path.join(dst1, rel)).read()
             want = open(os.path.join(ROOT, "fixtures", "init-scenario", golden)).read()
             assert got == want, f"{rel} differs from {golden}"
@@ -131,10 +138,10 @@ def main():
         r1b = subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js"), "init", "--yes", "--json"],
                              cwd=dst1, capture_output=True, text=True, timeout=180)
         env1b = json.loads(r1b.stdout)
-        assert env1b["data"]["docs"]["written"] == [] and len(env1b["data"]["docs"]["skipped"]) == 2
+        assert env1b["data"]["docs"]["written"] == [] and len(env1b["data"]["docs"]["skipped"]) == 3
         # determinism: a second fresh copy produces byte-identical docs
         tmp2, dst2, _ = run_init_copy()
-        for rel in ["docs/reference/endpoints.md", "docs/architecture/data-model.md"]:
+        for rel in ["docs/reference/endpoints.md", "docs/architecture/data-model.md", "docs/reference/configuration.md"]:
             assert open(os.path.join(dst1, rel)).read() == open(os.path.join(dst2, rel)).read(), \
                 f"NONDETERMINISTIC init output: {rel}"
         shutil.rmtree(tmp1); shutil.rmtree(tmp2)
@@ -271,6 +278,7 @@ def main():
         assert json.loads(r.stdout)["data"]["number"] == "0002"
         assert json.loads(kd(dst, "new", "system-map", "--json").stdout)["code"] == "NOT_AVAILABLE"
         assert json.loads(kd(dst, "new", "erd", "--json").stdout)["code"] == "EXISTS"
+        assert json.loads(kd(dst, "new", "config-reference", "--json").stdout)["code"] == "EXISTS"
         shutil.rmtree(tmp)
         print("  PASS  new/slot-write/approve integration: honesty loop (gates, stability, stale->reprose->attest->clean, CI guard)")
     except Exception as e:

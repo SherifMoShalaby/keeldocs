@@ -74,6 +74,21 @@ export function tableColumnsBody(tableFact) {
   return ["| column | type | attributes |", "|---|---|---|", ...rows].join("\n");
 }
 
+function envVarFacts(factsById) {
+  return [...factsById.values()].filter((f) => f.payload.type === "env-var")
+    .sort((a, b) => a.payload.attrs.name.localeCompare(b.payload.attrs.name));
+}
+
+export function envTableBody(factsById) {
+  const rows = envVarFacts(factsById).map((f) => {
+    const a = f.payload.attrs;
+    const where = f.provenance?.source?.filter((s) => s.kind === "code").slice(0, 3)
+      .map((s) => `${s.file}:${s.line}`).join(", ") || "-";
+    return `| \`${a.name}\` | ${a.read_in_code ? "yes" : "no"} | ${a.declared_in_example ? "yes" : "no"} | ${where} |`;
+  });
+  return ["| variable | read in code | in .env.example | read sites |", "|---|---|---|---|", ...rows].join("\n");
+}
+
 export function enumsBody(factsById) {
   return enumFacts(factsById).map((e) => `- \`${e.payload.attrs.name}\`: ${e.payload.attrs.values.join(", ")}`).join("\n");
 }
@@ -84,6 +99,7 @@ export function renderRegionBody(regionId, boundIds, factsById) {
   if (regionId === "api.inventory.table") return endpointsTableBody(factsById);
   if (regionId === "db.root.diagram") return diagramBody(factsById);
   if (regionId === "db.enums") return enumsBody(factsById);
+  if (regionId === "config.reference.table") return envTableBody(factsById);
   const m = regionId.match(/^db\..+\.columns$/);
   if (m) {
     const tableId = boundIds.find((id) => id.startsWith("fact:db-schema/") && !id.includes("/enum."));
@@ -153,6 +169,25 @@ export function renderDataModelDoc(factsById, sink) {
   return { path: "docs/architecture/data-model.md", content: parts.join("\n") };
 }
 
+export function renderConfigDoc(factsById, sink) {
+  const vars = envVarFacts(factsById);
+  if (vars.length === 0) return null;
+  const content = [
+    "# Configuration",
+    "<!-- keeldocs: id=config.reference recipe=config-reference@1 binds=fact:config-surface/* hash-kind=fact -->",
+    "",
+    "<!-- keeldocs:slot id=config.overview binds=fact:config-surface/* max-words=120 -->",
+    "<!-- /keeldocs:slot -->",
+    "",
+    genBlock("config.reference.table", null, vars.map((f) => f.id), factsById, envTableBody(factsById), sink),
+    "",
+    "<!-- Values are never read or rendered by keeldocs - names and read-status only (ADR-013). -->",
+    "<!-- Human notes below this line are never touched by keeldocs. -->",
+    "",
+  ].join("\n");
+  return { path: "docs/reference/configuration.md", content };
+}
+
 export function renderAll(factsById, sink) {
-  return [renderEndpointsDoc(factsById, sink), renderDataModelDoc(factsById, sink)].filter(Boolean);
+  return [renderEndpointsDoc(factsById, sink), renderDataModelDoc(factsById, sink), renderConfigDoc(factsById, sink)].filter(Boolean);
 }

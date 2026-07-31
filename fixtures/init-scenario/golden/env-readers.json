@@ -1,0 +1,28 @@
+{
+ "vars": [
+  {
+   "name": "APP_PORT",
+   "read_in_code": true,
+   "declared_in_example": false,
+   "sources": [
+    {
+     "file": "app.js",
+     "line": 8,
+     "kind": "code"
+    }
+   ]
+  },
+  {
+   "name": "DATABASE_URL",
+   "read_in_code": true,
+   "declared_in_example": false,
+   "sources": [
+    {
+     "file": "prisma/schema.prisma",
+     "line": 3,
+     "kind": "code"
+    }
+   ]
+  }
+ ]
+}

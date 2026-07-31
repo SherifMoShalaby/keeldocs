@@ -1,9 +1,10 @@
 id: env-readers
 capability: config-surface
-semver: 0.0.1
-tier: code
-status: stub          # detect contract defined; extractor lands per docs/design/07-scope-roadmap.md
-detect: { any: [ { always: true } ] }
-inputs: ["src/**/*.{ts,js}", ".env.example", ".env.schema"]
+semver: 0.1.0
+tier: code            # value-blind by construction: the output schema has no value
+entry: ./extract_env.py
+detect: { always: true }
+inputs: ["**/*.{js,mjs,cjs,ts,tsx,jsx,prisma}", ".env.example", ".env.schema", ".env.sample"]
 requires: []
 timeout_class: D
+emits: [env-var]

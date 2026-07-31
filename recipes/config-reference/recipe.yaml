@@ -1,3 +1,19 @@
 schema_version: 1
 id: config-reference
-status: stub    # full spec: docs/design/05-recipe-schema.md (taxonomy + v0.1 set)
+title: "Configuration"
+requires:
+  - capability: config-surface
+    min_confidence: PARSED
+output:
+  path: "docs/reference/configuration.md"
+binding:
+  section_unit: document
+  anchor_symbols: ["fact:config-surface/*"]
+  hash_kind: fact
+consumes:
+  fields: [name, read_in_code, declared_in_example]
+  not:    [values]        # structurally absent from the provider schema (ADR-013)
+slots:
+  - {id: "config.overview", kind: llm-prose, max_words: 120,
+     charter: "how configuration reaches this app, for a new engineer",
+     facts: ["fact:config-surface/*"], regenerate_on: fact_hash}

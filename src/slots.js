@@ -34,6 +34,7 @@ function knownEntities(factsById) {
       for (const c of a.columns) { known.add(c.name); known.add(`${a.name}.${c.name}`); known.add(c.type); }
     }
     if (f.payload.type === "enum") { known.add(a.name); for (const v of a.values) known.add(v); }
+    if (f.payload.type === "env-var") known.add(a.name);
   }
   return known;
 }

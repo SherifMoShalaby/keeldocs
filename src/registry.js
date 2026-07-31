@@ -25,4 +25,10 @@ export const REGISTRY = [
     entry: "providers/db-schema/prisma/prototype/extract_prisma.py",
     argMode: "schemaFile",
   },
+  {
+    id: "env-readers", semver: "0.1.0", capability: "config-surface", tier: "code",
+    detect: { always: true }, // the env surface exists in any repo; zero vars = zero facts
+    entry: "providers/config-surface/env-readers/extract_env.py",
+    argMode: "root",
+  },
 ];

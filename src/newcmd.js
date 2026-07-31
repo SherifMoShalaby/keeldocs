@@ -8,7 +8,7 @@
 import { mkdirSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { extractAll } from "./facts.js";
-import { renderEndpointsDoc, renderDataModelDoc } from "./render.js";
+import { renderEndpointsDoc, renderDataModelDoc, renderConfigDoc } from "./render.js";
 import { redact } from "./redact.js";
 
 const TYPES = ["erd", "endpoint-inventory", "adr", "system-map", "config-reference"];
@@ -27,8 +27,8 @@ export function runNew({ root, json, args }) {
   }
 
   try {
-    if (type === "system-map" || type === "config-reference") {
-      const need = type === "system-map" ? "services-topology" : "config-surface";
+    if (type === "system-map") {
+      const need = "services-topology";
       return emit(json, 2, { v: 1, ok: false, code: "NOT_AVAILABLE",
         summary: `${type} needs the ${need} capability, whose provider is a v0.1 stub - shipping a guessed ${type} would violate the never-fabricate rule. Tracked in docs/design/07-scope-roadmap.md.`,
         data: { requires: need }, next: [] });
@@ -80,10 +80,12 @@ export function runNew({ root, json, args }) {
       return emit(json, 2, { v: 1, ok: false, code: "TOOL_ERROR", summary: `tooling error: ${toolError}`, data: {}, next: [] });
     }
     const sink = [];
-    const rendered = type === "erd" ? renderDataModelDoc(factsById, sink) : renderEndpointsDoc(factsById, sink);
+    const rendered = type === "erd" ? renderDataModelDoc(factsById, sink)
+      : type === "config-reference" ? renderConfigDoc(factsById, sink)
+      : renderEndpointsDoc(factsById, sink);
     if (!rendered) {
       return emit(json, 2, { v: 1, ok: false, code: "NOT_AVAILABLE",
-        summary: `no ${type === "erd" ? "db-schema" : "http-endpoints"} facts extracted from this repo - nothing true to render`,
+        summary: `no ${type === "erd" ? "db-schema" : type === "config-reference" ? "config-surface" : "http-endpoints"} facts extracted from this repo - nothing true to render`,
         data: {}, next: [] });
     }
     if (existsSync(join(root, rendered.path))) {

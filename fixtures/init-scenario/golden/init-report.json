@@ -3,7 +3,7 @@
  "meta": {
   "engine": "keeldocs@0.1.0-dev.0",
   "head": null,
-  "providerSetHash": "90003edc9cac32a0",
+  "providerSetHash": "3fa41b7fbea099bb",
   "mode": "apply"
  },
  "card": {
@@ -20,9 +20,15 @@
     "providers": [
      "prisma@0.1.0"
     ]
+   },
+   "config-surface": {
+    "status": "ok",
+    "providers": [
+     "env-readers@0.1.0"
+    ]
    }
   },
-  "facts": 5
+  "facts": 7
  },
  "lies": {
   "findings": [
@@ -67,12 +73,14 @@
  "docs": {
   "written": [
    "docs/reference/endpoints.md",
-   "docs/architecture/data-model.md"
+   "docs/architecture/data-model.md",
+   "docs/reference/configuration.md"
   ],
   "skipped": [],
   "planned": [
    "docs/reference/endpoints.md",
-   "docs/architecture/data-model.md"
+   "docs/architecture/data-model.md",
+   "docs/reference/configuration.md"
   ]
  },
  "coverage": {
@@ -85,9 +93,13 @@
     "db-schema": {
      "total": 2,
      "documented": 0
+    },
+    "config-surface": {
+     "total": 2,
+     "documented": 0
     }
    },
-   "total": 5,
+   "total": 7,
    "documented": 0,
    "pct": 0
   },
@@ -100,10 +112,14 @@
     "db-schema": {
      "total": 2,
      "documented": 2
+    },
+    "config-surface": {
+     "total": 2,
+     "documented": 2
     }
    },
-   "total": 5,
-   "documented": 5,
+   "total": 7,
+   "documented": 7,
    "pct": 100
   }
  },
