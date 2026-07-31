@@ -27,7 +27,19 @@ jobs:
       - name: Engine unit tests
         run: node --test tests/*.test.js
       - name: Fixture matrix + integrations + determinism double-runs
-        run: python3 scripts/harness.py
+        run: |
+          set +e
+          python3 scripts/harness.py 2>&1 | tee /tmp/harness.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          {
+            echo "### harness (${{ matrix.os }}) rc=$rc"
+            echo "- node $(node --version) / $(python3 --version) / $(git --version)"
+            echo '```'
+            tail -60 /tmp/harness.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
 
   # npm packaging must stay publish-ready: pack the tarball, install it into a
   # clean consumer, run the bin. Publishing itself happens in release.yml.
