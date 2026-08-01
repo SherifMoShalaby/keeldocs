@@ -30,9 +30,9 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v6
       with: { node-version: 20 }
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v7
       with: { python-version: "3.12" }
     - name: Install extractor runtime (pinned)
       shell: bash
@@ -79,7 +79,7 @@ runs:
       run: node "${{ github.action_path }}/scripts/sarif.js" "${{ steps.check.outputs.full }}" > keeldocs.sarif
     - name: Upload SARIF
       if: ${{ inputs.sarif == 'true' && steps.check.outputs.full != '' }}
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       continue-on-error: true # code scanning may be off for this repo - never fail the check for that
       with:
         sarif_file: ${{ inputs.working-directory }}/keeldocs.sarif

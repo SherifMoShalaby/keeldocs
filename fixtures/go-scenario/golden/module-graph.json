@@ -1,0 +1,125 @@
+{
+ "modules": [
+  {
+   "path": ".",
+   "package": null,
+   "imports": [
+    {
+     "specifier": "github.com/gin-gonic/gin",
+     "resolved": "github.com/gin-gonic/gin"
+    }
+   ]
+  },
+  {
+   "path": "models",
+   "package": null,
+   "imports": []
+  },
+  {
+   "path": "routers",
+   "package": null,
+   "imports": []
+  },
+  {
+   "path": "store",
+   "package": null,
+   "imports": [
+    {
+     "specifier": "models",
+     "resolved": "models"
+    },
+    {
+     "specifier": "os",
+     "resolved": "os"
+    }
+   ]
+  }
+ ],
+ "symbols": [
+  {
+   "path": "main.go",
+   "name": "ListTags",
+   "package": null,
+   "kind": "function",
+   "sigs": [
+    "func ListTags(page int) ([]Tag, error)"
+   ],
+   "nameless": [
+    "func \u00a7(page int) ([]Tag, error)"
+   ]
+  },
+  {
+   "path": "main.go",
+   "name": "Tag",
+   "package": null,
+   "kind": "type struct",
+   "sigs": [
+    "type Tag struct struct { ID int Name string }"
+   ],
+   "nameless": [
+    "type \u00a7 struct struct { ID int Name string }"
+   ]
+  },
+  {
+   "path": "main.go",
+   "name": "Tag.Slug",
+   "package": null,
+   "kind": "function",
+   "sigs": [
+    "func Tag.Slug() string"
+   ],
+   "nameless": [
+    "func \u00a7() string"
+   ]
+  },
+  {
+   "path": "models/tag.go",
+   "name": "Record",
+   "package": null,
+   "kind": "type struct",
+   "sigs": [
+    "type Record struct struct { ID int }"
+   ],
+   "nameless": [
+    "type \u00a7 struct struct { ID int }"
+   ]
+  },
+  {
+   "path": "routers/extra.go",
+   "name": "Register",
+   "package": null,
+   "kind": "function",
+   "sigs": [
+    "func Register(g Grouper)"
+   ],
+   "nameless": [
+    "func \u00a7(g Grouper)"
+   ]
+  },
+  {
+   "path": "store/store.go",
+   "name": "Open",
+   "package": null,
+   "kind": "function",
+   "sigs": [
+    "func Open() Store"
+   ],
+   "nameless": [
+    "func \u00a7() Store"
+   ]
+  },
+  {
+   "path": "store/store.go",
+   "name": "Store",
+   "package": null,
+   "kind": "type interface",
+   "sigs": [
+    "type Store interface interface { Get(id int) string }"
+   ],
+   "nameless": [
+    "type \u00a7 interface interface { Get(id int) string }"
+   ]
+  }
+ ],
+ "warnings": []
+}

@@ -58,6 +58,23 @@ function detect(reg, repoRoot) {
 
 // timeout classes from the provider contract - C is the heavy code tier
 const TIMEOUTS = { A: 10_000, B: 30_000, C: 120_000, D: 60_000 };
+const OUTPUT_CAP = 5 * 1024 * 1024; // ADR-002: 5MB provider output cap
+
+// ADR-002 sandbox slice (R2 residue): best-effort NETWORK isolation on Linux
+// via a fresh network namespace (unshare -rn) around every NON-live provider -
+// `live` is the sole declared network exception (network:db). Probed once per
+// process; where the probe fails (macOS, Windows, restricted user namespaces)
+// providers run unwrapped - the ADR-013 documented weaker guarantee, now
+// smaller. Note: inside the wrapper a missing interpreter surfaces as the
+// wrapper's exit code + stderr, not ENOENT; the python3->python fallback still
+// covers the platforms where it is actually needed (probe fails there anyway).
+const NETNS = (() => {
+  if (process.platform !== "linux") return false;
+  try {
+    return spawnSync("unshare", ["-rn", "true"], { encoding: "utf8" }).status === 0;
+  } catch { return false; }
+})();
+export const sandboxState = () => ({ netns: NETNS });
 
 function runProvider(reg, repoRoot, detectInfo, factEnv = {}) {
   let args = [repoRoot];
@@ -70,9 +87,12 @@ function runProvider(reg, repoRoot, detectInfo, factEnv = {}) {
   }
   // externals resolve from their installed dir (absEntry); first-party from the engine tree
   const entryPath = reg.absEntry ?? join(ENGINE_ROOT, reg.entry);
-  const spawnWith = (bin) => spawnSync(bin, [entryPath, ...args], {
+  const wrapNet = NETNS && !reg.live; // live providers keep their declared network:db
+  const spawnWith = (bin) => spawnSync(
+    wrapNet ? "unshare" : bin,
+    wrapNet ? ["-rn", "--", bin, entryPath, ...args] : [entryPath, ...args], {
     cwd: repoRoot, timeout: TIMEOUTS[reg.timeoutClass] ?? TIMEOUTS.D,
-    maxBuffer: 16 * 1024 * 1024, encoding: "utf8",
+    maxBuffer: OUTPUT_CAP, encoding: "utf8",
     env: { ...process.env, ...factEnv },
   });
   let r;
@@ -83,8 +103,10 @@ function runProvider(reg, repoRoot, detectInfo, factEnv = {}) {
     if (r.error?.code === "ENOENT") r = spawnWith("python"); // Windows installs often lack a python3 shim
   }
   if (r.status !== 0 || r.error) {
-    return { status: "failed", reason: r.error ? String(r.error.message) : `rc=${r.status}`,
-             stderr: (r.stderr || "").slice(-400) };
+    const reason = r.error?.code === "ENOBUFS"
+      ? "output cap exceeded (5MB, ADR-002)"
+      : r.error ? String(r.error.message) : `rc=${r.status}`;
+    return { status: "failed", reason, stderr: (r.stderr || "").slice(-400) };
   }
   try {
     return { status: "ok", raw: JSON.parse(r.stdout) };

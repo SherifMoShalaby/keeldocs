@@ -1,6 +1,7 @@
 package demo;
 
 import org.springframework.web.bind.annotation.*;
+import demo.svc.OwnerService;
 
 @RestController
 @RequestMapping("/owners")

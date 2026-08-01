@@ -1,0 +1,14 @@
+id: go-symbols
+capability: module-graph
+semver: 0.3.0
+tier: code            # module-graph parity for Go (doc 11 N2 follow-up):
+                      # modules are PACKAGE DIRS (Go's real unit - imports
+                      # resolve dir-to-dir so fan-in means something), symbols
+                      # are per-FILE exported declarations with normalized
+                      # sigs + nameless shapes (the S2 re-anchoring aids)
+entry: ./extract_gosymbols.py
+detect: { files: ["go.mod"] }
+inputs: ["**/*.go", "${facts:workspace-layout}"]
+requires: ["tree-sitter", "tree-sitter-go"]
+timeout_class: C
+emits: [module, symbol]

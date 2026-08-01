@@ -1,0 +1,62 @@
+{
+ "modules": [
+  {
+   "path": "src/main/java/demo",
+   "package": null,
+   "imports": [
+    {
+     "specifier": "org.springframework.web.bind.annotation.*",
+     "resolved": "org.springframework.web.bind.annotation.*"
+    },
+    {
+     "specifier": "src/main/java/demo/svc",
+     "resolved": "src/main/java/demo/svc"
+    }
+   ]
+  },
+  {
+   "path": "src/main/java/demo/svc",
+   "package": null,
+   "imports": []
+  }
+ ],
+ "symbols": [
+  {
+   "path": "src/main/java/demo/svc/OwnerService.java",
+   "name": "OwnerService",
+   "package": null,
+   "kind": "class",
+   "sigs": [
+    "class OwnerService"
+   ],
+   "nameless": [
+    "class \u00a7"
+   ]
+  },
+  {
+   "path": "src/main/java/demo/svc/OwnerService.java",
+   "name": "OwnerService.exists",
+   "package": null,
+   "kind": "function method",
+   "sigs": [
+    "boolean OwnerService.exists(int id)"
+   ],
+   "nameless": [
+    "boolean \u00a7(int id)"
+   ]
+  },
+  {
+   "path": "src/main/java/demo/svc/OwnerService.java",
+   "name": "OwnerService.findOwner",
+   "package": null,
+   "kind": "function method",
+   "sigs": [
+    "String OwnerService.findOwner(int id)"
+   ],
+   "nameless": [
+    "String \u00a7(int id)"
+   ]
+  }
+ ],
+ "warnings": []
+}

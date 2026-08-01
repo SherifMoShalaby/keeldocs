@@ -54,6 +54,8 @@ owner-side). Not probed: method-level `@RequestMapping(method=...)` maps to
 gap (idiomatic repos keep registration in one file; measure prevalence
 before building a mount graph); echo/chi/gorilla and JAX-RS/Micronaut are
 separate probes when their turn comes. Symbol extraction (`ds` ids) for
-Java/Go is deliberately NOT in this slice — endpoints + workspace identity +
-env reads are what the shipped recipes consume; module-graph parity is named
-follow-up work in doc 11.
+Java/Go landed as the immediate follow-up (same day): go-symbols (package-dir
+modules with dir-to-dir internal import edges; exported funcs/methods/types)
+and java-symbols (declared-package modules; public/protected classes,
+interfaces, enums, methods) — both with normalized sigs + nameless shapes so
+S1b/S2 re-anchoring works for these languages too.

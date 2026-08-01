@@ -139,8 +139,11 @@ pair, plus `[resolve]` pins); **N2** Java + Go probe-first (E14: spring
 17/17 declarative via the new member-association mode; gin 15/15 code-tier
 group-chain resolver; workspace + env parity; module-graph/ds symbols for
 both languages named as follow-up); **R3** module-guide recipe (born-clean
-skeleton + one slot) and onboarding-verify lie classes (make targets,
-version floors); **R4** `mine` (local commit subjects only, HEAD-anchored
+skeleton + one slot; per-package region binds turned out to need a SPEC
+decision, not a patch - endpoint identity carries no package and bind
+values cap at 200 chars, so package-scoped sections wait on
+package-scoped fact identity) and onboarding-verify lie classes (make
+targets, version floors); **R4** `mine` (local commit subjects only, HEAD-anchored
 window, gitignored cache) feeding `rationale` interview cards. Still open
 from the ADR-002 amendment: the OS-level sandbox, permission-manifest
 display, output caps. Phase C remains gated as designed; the hygiene bumps

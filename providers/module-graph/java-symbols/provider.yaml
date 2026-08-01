@@ -1,0 +1,15 @@
+id: java-symbols
+capability: module-graph
+semver: 0.3.0
+tier: code            # module-graph parity for Java (doc 11 N2 follow-up):
+                      # modules are PACKAGE DIRS keyed by the declared java
+                      # package; imports resolve internally when their package
+                      # is declared somewhere in the repo; symbols are public/
+                      # protected classes, interfaces, enums, and methods with
+                      # normalized sigs + nameless shapes (S2 aids)
+entry: ./extract_javasymbols.py
+detect: { files: ["pom.xml", "build.gradle"] }
+inputs: ["**/*.java", "${facts:workspace-layout}"]
+requires: ["tree-sitter", "tree-sitter-java"]
+timeout_class: C
+emits: [module, symbol]

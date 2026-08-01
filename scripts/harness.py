@@ -104,6 +104,18 @@ MATRIX = [
         "golden": "fixtures/go-scenario/golden/workspace-layout.json",
     },
     {
+        "name": "go-scenario / module-graph (go-symbols: dir modules, exported syms)",
+        "cmd": [sys.executable, "providers/module-graph/go-symbols/extract_gosymbols.py",
+                "fixtures/go-scenario"],
+        "golden": "fixtures/go-scenario/golden/module-graph.json",
+    },
+    {
+        "name": "java-scenario / module-graph (java-symbols: package modules, public syms)",
+        "cmd": [sys.executable, "providers/module-graph/java-symbols/extract_javasymbols.py",
+                "fixtures/java-scenario"],
+        "golden": "fixtures/java-scenario/golden/module-graph.json",
+    },
+    {
         "name": "compose-scenario / workspace-layout",
         "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
                 "fixtures/compose-scenario"],
@@ -1179,6 +1191,34 @@ def main():
         print(f"  PASS  skill lint: {len(skill_dirs)} skills within ADR-010 budgets (listing {total_listing}/8000)")
     except Exception as e:
         failures.append(f"skill lint: {e}")
+
+    # ---- ADR-002 sandbox slice: netns proof (linux) + wiring + output cap ----
+    try:
+        probe = subprocess.run(["unshare", "-rn", "true"], capture_output=True).returncode == 0 \
+            if sys.platform == "linux" else False
+        wired = subprocess.run(["node", "-e",
+            "import(process.argv[1]).then(m=>console.log(JSON.stringify(m.sandboxState())))",
+            os.path.join(ROOT, "src", "facts.js")], capture_output=True, text=True)
+        assert wired.returncode == 0 and json.loads(wired.stdout)["netns"] == probe, \
+            f"engine sandbox wiring disagrees with the probe: {wired.stdout!r} vs {probe}"
+        if probe:
+            # mechanism: a localhost listener reachable directly, unreachable in the netns
+            import socket
+            srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(1)
+            port = srv.getsockname()[1]
+            code = ("import socket,sys\ns=socket.socket()\ns.settimeout(2)\n"
+                    f"sys.exit(0 if s.connect_ex((\"127.0.0.1\", {port})) == 0 else 3)")
+            direct = subprocess.run([sys.executable, "-c", code], capture_output=True)
+            wrapped = subprocess.run(["unshare", "-rn", "--", sys.executable, "-c", code],
+                                     capture_output=True)
+            srv.close()
+            assert direct.returncode == 0, "control: direct connect must succeed"
+            assert wrapped.returncode == 3, "netns must block even localhost"
+            print("  PASS  sandbox: netns wired + proven (localhost blocked inside the namespace)")
+        else:
+            print("  PASS  sandbox: netns unavailable here - wiring agrees, best-effort documented (ADR-013)")
+    except Exception as e:
+        failures.append(f"sandbox slice: {e}")
 
     # CLI envelope smoke: usage error must be exit 2 with a parseable envelope
     r = subprocess.run(["node", "bin/keeldocs.js", "bogus-command", "--json"],

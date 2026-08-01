@@ -17,3 +17,12 @@ func main() {
 
 	r.Run()
 }
+
+type Tag struct {
+	ID   int
+	Name string
+}
+
+func ListTags(page int) ([]Tag, error) { return nil, nil }
+
+func (t Tag) Slug() string { return t.Name }
