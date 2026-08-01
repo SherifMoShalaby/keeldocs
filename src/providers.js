@@ -164,6 +164,11 @@ function entryOf(y, cap, id, dir, relFile) {
     id: y.id, semver: y.semver, capability: y.capability, tier: y.tier,
     ...(y.confidence ? { confidence: y.confidence } : {}),
     detect: y.detect,
+    // `inputs` stops being documentation at v0.3: the sandbox builds the
+    // provider's readable view from exactly these globs (ADR-002 FS slice II),
+    // so an under-declared manifest now fails loudly instead of quietly
+    // reading what it was never granted.
+    inputs: Array.isArray(y.inputs) ? y.inputs.filter((i) => typeof i === "string") : [],
     argMode: y.argMode ?? (y.runtime === "query" ? "providerDir" : "root"),
     // dir is emitted posix-slash (registry entries are contract data, and
     // the python runtime accepts D:/-style paths); fs joins above stay native

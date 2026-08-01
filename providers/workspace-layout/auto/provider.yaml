@@ -5,7 +5,7 @@ tier: declarative     # manifest parsing only (pnpm-workspace.yaml, package.json
 confidence: PARSED    # full yaml/json parse, not regex patterns - overrides the tier default
 entry: ./extract_workspace.py
 detect: { always: true }   # every repo has a layout; single-package = one fact
-inputs: ["pnpm-workspace.yaml", "package.json", "*/package.json", "**/package.json"]
+inputs: ["**/pnpm-workspace.yaml", "**/package.json", "**/pyproject.toml", "**/pubspec.yaml", "**/go.mod", "**/pom.xml"]   # every manifest the extractor OPENS - under-declaring means a python or dart repo silently loses its identity
 requires: ["pyyaml"]
 timeout_class: D
 emits: [package]

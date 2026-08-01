@@ -1618,8 +1618,39 @@ def main():
     except Exception as e:
         failures.append(f"skill lint: {e}")
 
+    # ---- manifest lint: `inputs` is load-bearing now, so it must exist ----
+    try:
+        missing = []
+        for cap in sorted(os.listdir(os.path.join(ROOT, "providers"))):
+            capd = os.path.join(ROOT, "providers", cap)
+            if cap.startswith("_") or not os.path.isdir(capd):
+                continue
+            for pid in sorted(os.listdir(capd)):
+                py = os.path.join(capd, pid, "provider.yaml")
+                if not os.path.exists(py):
+                    continue
+                text = open(py, encoding="utf-8").read()
+                if "status: stub" in text:
+                    continue                       # declared, not shipped
+                if "live: true" in text:
+                    continue                       # reads a DSN, not the repository
+                line = next((l for l in text.splitlines() if l.startswith("inputs:")), None)
+                if line is None or line.split(":", 1)[1].strip() in ("[]", ""):
+                    missing.append(f"{cap}/{pid}")
+        assert not missing, ("a provider with no declared inputs gets an EMPTY sandbox view "
+                             f"and silently extracts nothing: {', '.join(missing)}")
+        load = subprocess.run(["node", "-e",
+            "import(process.argv[1]).then(m=>console.log(m.loadProviders().length))",
+            __import__("pathlib").Path(ROOT, "src", "providers.js").as_uri()],
+            capture_output=True, text=True)
+        assert load.returncode == 0, f"the registry does not load: {load.stderr[-300:]}"
+        print(f"  PASS  manifest lint: {load.stdout.strip()} providers declare a read scope, registry loads")
+    except Exception as e:
+        failures.append(f"manifest lint: {e}")
+
     # ---- ADR-002 sandbox: tier probe + MECHANISM proofs (net and rofs) ----
     try:
+        import shutil
         RO = 'mount --bind "$1" "$1" && mount -o remount,ro,bind "$1" && shift && exec "$@"'
         def unshare_ok(args):
             if sys.platform != "linux":
@@ -1662,6 +1693,76 @@ def main():
             assert open(os.path.join(d, "seed.txt")).read() == "x", "reads must still work"
             rmtree(d)
             print("  PASS  sandbox tier rofs: network blocked AND repo read-only (purity enforced by the kernel)")
+
+            # ---- per-glob READ scoping: the undeclared file does not exist ----
+            # Same control discipline as above: every assertion is paired with
+            # the unsandboxed run that proves the test itself is not vacuous.
+            SCOPE = "\n".join([
+                'view=$1; root=$2; n=$3; shift 3',
+                'while [ "$n" -gt 0 ]; do',
+                '  mount --bind "$1" "$2" || exit 91',
+                '  mount -o remount,ro,bind "$2" || exit 92',
+                '  shift 2; n=$((n-1))',
+                'done',
+                'mount --rbind "$view" "$root" || exit 93',
+                'mount -o remount,ro,bind "$root" || exit 94',
+                'cd "$root" || exit 95',
+                'exec "$@"',
+            ])
+            repo = _tf.mkdtemp(prefix="keeldocs-scope-")
+            os.makedirs(os.path.join(repo, "src"))
+            os.makedirs(os.path.join(repo, ".git", "objects"))
+            os.makedirs(os.path.join(repo, "view", "src"))
+            os.makedirs(os.path.join(repo, "view", ".git"))
+            W(os.path.join(repo, "src", "a.ts"), "declared\n")
+            W(os.path.join(repo, ".env"), "DB_PASSWORD=hunter2\n")
+            W(os.path.join(repo, ".git", "objects", "o"), "OBJ\n")
+            os.link(os.path.join(repo, "src", "a.ts"), os.path.join(repo, "view", "src", "a.ts"))
+
+            def probe(rel, caged):
+                # read a repo-relative path, and the same path ABSOLUTELY -
+                # scoping that only hid relative paths would be theatre
+                code = ("import sys\ntry:\n sys.stdout.write(open(sys.argv[1]).read())\n"
+                        " sys.exit(0)\nexcept OSError:\n sys.exit(8)")
+                target = os.path.join(repo, rel)
+                if not caged:
+                    return subprocess.run([sys.executable, "-c", code, target], capture_output=True)
+                return subprocess.run(
+                    ["unshare", "-rnm", "--", "/bin/sh", "-c", SCOPE, "sh",
+                     os.path.join(repo, "view"), repo, "1",
+                     os.path.join(repo, ".git"), os.path.join(repo, "view", ".git"),
+                     sys.executable, "-c", code, target], capture_output=True)
+
+            assert probe(".env", caged=False).returncode == 0, "control: .env is readable unsandboxed"
+            assert probe(".env", caged=True).returncode == 8, \
+                "an UNDECLARED file must not exist inside the view, not even by absolute path"
+            assert probe("src/a.ts", caged=True).returncode == 0, "a declared file stays readable"
+            assert probe(".git/objects/o", caged=True).returncode == 0, \
+                "a directory grant is carried through by --rbind"
+            assert open(os.path.join(repo, ".env")).read().startswith("DB_PASSWORD"), \
+                "the real repository is untouched by any of this"
+            rmtree(repo)
+
+            # and the engine leaves NO view behind - a leaked one inside the
+            # repo is indistinguishable from repository content to any walker
+            probe_repo = _tf.mkdtemp(prefix="keeldocs-scopeE2E-")
+            shutil.copytree(os.path.join(ROOT, "fixtures", "express-mounts"),
+                            os.path.join(probe_repo, "repo"),
+                            ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+            dstp = os.path.join(probe_repo, "repo")
+            W(os.path.join(dstp, ".env"), "DB_PASSWORD=hunter2\n")
+            assert kd(dstp, "init", "--yes", "--json").returncode == 0
+            assert not os.path.exists(os.path.join(dstp, ".keeldocs", "cache", "scope")), \
+                "every sandbox view must be torn down, on every path out"
+            fdir = os.path.join(dstp, ".keeldocs", "cache", "facts")
+            blob = "".join(open(os.path.join(fdir, f)).read() for f in sorted(os.listdir(fdir)))
+            assert "hunter2" not in blob, "a secret must never reach any fact file"
+            assert "hunter2" not in "".join(
+                open(os.path.join(r_, f)).read()
+                for r_, _d, fs in os.walk(os.path.join(dstp, "docs")) for f in fs), \
+                "nor any generated document"
+            rmtree(probe_repo)
+            print("  PASS  per-glob read scoping: undeclared files absent, grants carried, views torn down")
         elif expect == "net":
             print("  PASS  sandbox tier net: network blocked; no usable mount namespace here")
         else:

@@ -11,6 +11,7 @@ language: java
 association: member
 query: endpoints.scm
 detect: { files: ["pom.xml", "build.gradle", "application.properties", "application.yml"] }
+inputs: ["**/*.java"]          # the ENFORCED read scope (ADR-002); `files` is the runtime's suffix filter
 files: [".java"]
 skip-files: ["Test.java", "Tests.java", "IT.java"]
 verbs: { GetMapping: GET, PostMapping: POST, PutMapping: PUT, DeleteMapping: DELETE, PatchMapping: PATCH, RequestMapping: ALL }

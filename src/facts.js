@@ -18,6 +18,7 @@ import { resolveClaims, parsePins } from "./resolve.js";
 import { loadExternalProviders, orderEntries } from "./providers.js";
 import { refusalOf, loadLock, parseTrustedKeys } from "./trust.js";
 import { REGISTRY, REGISTRY_ERROR, ENGINE_VERSION } from "./registry.js";
+import { repoFiles, resolveInputs, buildView } from "./scope.js";
 
 // fileURLToPath, never URL.pathname (Windows: "/D:/..." breaks join - item 10)
 const ENGINE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -75,6 +76,26 @@ const OUTPUT_CAP = 5 * 1024 * 1024; // ADR-002: 5MB provider output cap
 // that need it (their probe lands on "none" anyway).
 const RO_SCRIPT = 'mount --bind "$1" "$1" && mount -o remount,ro,bind "$1" && shift && exec "$@"';
 
+// Per-glob read scoping (ADR-002's last sandbox debt, src/scope.js). Argument
+// shape: <view> <root> <pairCount> [<src> <dst>]... -- <cmd>...
+// Directory grants are bound INTO the view first, while paths still resolve
+// against the real tree; `--rbind` then carries those child mounts along when
+// the view lands on the repo path. `cd` is not optional: a process keeps the
+// cwd INODE across a mount, so without it every relative read would still land
+// in the unscoped repository.
+const SCOPE_SCRIPT = [
+  'view=$1; root=$2; n=$3; shift 3',
+  'while [ "$n" -gt 0 ]; do',
+  '  mount --bind "$1" "$2" || exit 91',
+  '  mount -o remount,ro,bind "$2" || exit 92',
+  '  shift 2; n=$((n-1))',
+  'done',
+  'mount --rbind "$view" "$root" || exit 93',
+  'mount -o remount,ro,bind "$root" || exit 94',
+  'cd "$root" || exit 95',
+  'exec "$@"',
+].join("\n");
+
 const SANDBOX = (() => {
   if (process.platform !== "linux") return "none";
   const ok = (args) => {
@@ -85,9 +106,36 @@ const SANDBOX = (() => {
   if (ok(["-rn", "true"])) return "net";
   return "none";
 })();
-export const sandboxState = () => ({ tier: SANDBOX, netns: SANDBOX !== "none" });
+export const sandboxState = () => ({ tier: SANDBOX, netns: SANDBOX !== "none",
+  scoping: SANDBOX === "rofs" ? "per-glob" : "none" });
 
-function runProvider(reg, repoRoot, detectInfo, factEnv = {}) {
+// The provider's view of the repository: its declared globs, minus the
+// security exclusion set, plus the fact files the engine hands it and - when
+// keeldocs is installed INSIDE the repo it is reading - the engine's own tree,
+// without which the provider's entry file would not exist to run.
+function viewFor(reg, repoRoot, scope) {
+  const dir = join(scope.dir, reg.id);
+  rmSync(dir, { recursive: true, force: true });
+  const { files, dirs } = resolveInputs(repoRoot, reg.inputs, scope.allFiles);
+  for (const p of Object.values(scope.factEnv ?? {})) {
+    const rel = toPosix(relative(repoRoot, p));
+    if (rel && !rel.startsWith("..")) files.push(rel);
+  }
+  // A T2 provider installed under `.keeldocs/providers/` lives inside the very
+  // repository it reads, so its OWN code has to be in the view or it has no
+  // entry file to execute. That directory is hash-pinned and PR-reviewed by
+  // construction (ADR-002 R2), so granting a provider its own source grants it
+  // nothing it did not already ship.
+  const links = [...scope.engineRel];
+  if (reg.external) {
+    const rel = toPosix(relative(repoRoot, reg.dir));
+    if (rel && !rel.startsWith("..")) links.push(rel);
+  }
+  const { mounts } = buildView(repoRoot, dir, { files, dirs, links });
+  return { dir: toPosix(dir), mounts };
+}
+
+function runProvider(reg, repoRoot, detectInfo, factEnv = {}, scope = null) {
   let args = [repoRoot];
   if (reg.argMode === "schemaFile") {
     const schema = detectInfo.file ?? walk(repoRoot, (n) => n === "schema.prisma")[0];
@@ -99,7 +147,14 @@ function runProvider(reg, repoRoot, detectInfo, factEnv = {}) {
   // externals resolve from their installed dir (absEntry); first-party from the engine tree
   const entryPath = reg.absEntry ?? join(ENGINE_ROOT, reg.entry);
   const tier = reg.live ? "none" : SANDBOX; // live keeps its declared network:db
-  const wrap = (bin) => tier === "rofs"
+  // Per-glob scoping rides the rofs tier: the view REPLACES the repository the
+  // provider sees, so the read-only guarantee is unchanged and the READABLE
+  // set shrinks to exactly what the manifest declared.
+  const view = tier === "rofs" && scope ? viewFor(reg, repoRoot, { ...scope, factEnv }) : null;
+  const wrap = (bin) => view
+    ? ["unshare", ["-rnm", "--", "/bin/sh", "-c", SCOPE_SCRIPT, "sh", view.dir, repoRoot,
+        String(view.mounts.length), ...view.mounts.flat(), bin, entryPath, ...args]]
+    : tier === "rofs"
     ? ["unshare", ["-rnm", "--", "/bin/sh", "-c", RO_SCRIPT, "sh", repoRoot, bin, entryPath, ...args]]
     : tier === "net"
     ? ["unshare", ["-rn", "--", bin, entryPath, ...args]]
@@ -109,23 +164,33 @@ function runProvider(reg, repoRoot, detectInfo, factEnv = {}) {
     maxBuffer: OUTPUT_CAP, encoding: "utf8",
     env: { ...process.env, ...factEnv },
   });
-  let r;
-  if (reg.exec === "node") {
-    r = spawnWith(process.execPath); // the running node - no PATH guessing
-  } else {
-    r = spawnWith("python3");
-    if (r.error?.code === "ENOENT") r = spawnWith("python"); // Windows installs often lack a python3 shim
-  }
-  if (r.status !== 0 || r.error) {
-    const reason = r.error?.code === "ENOBUFS"
-      ? "output cap exceeded (5MB, ADR-002)"
-      : r.error ? String(r.error.message) : `rc=${r.status}`;
-    return { status: "failed", reason, stderr: (r.stderr || "").slice(-400) };
-  }
   try {
-    return { status: "ok", raw: JSON.parse(r.stdout) };
-  } catch {
-    return { status: "failed", reason: "bad-json-output" };
+    let r;
+    if (reg.exec === "node") {
+      r = spawnWith(process.execPath); // the running node - no PATH guessing
+    } else {
+      r = spawnWith("python3");
+      if (r.error?.code === "ENOENT") r = spawnWith("python"); // Windows installs often lack a python3 shim
+    }
+    if (r.status !== 0 || r.error) {
+      const reason = r.error?.code === "ENOBUFS"
+        ? "output cap exceeded (5MB, ADR-002)"
+        : r.error ? String(r.error.message) : `rc=${r.status}`;
+      return { status: "failed", reason, stderr: (r.stderr || "").slice(-400) };
+    }
+    try {
+      return { status: "ok", raw: JSON.parse(r.stdout) };
+    } catch {
+      return { status: "failed", reason: "bad-json-output" };
+    }
+  } finally {
+    // The view is torn down on EVERY path out, including a crashing provider.
+    // It lives inside the repository (hardlinks need one filesystem), so a
+    // leaked view is not merely litter: any tool that walks without skipping
+    // `.keeldocs` would read the engine's own scratch space as repository
+    // source. Teardown is the guarantee; extractors skipping `.keeldocs` is
+    // the belt to its braces.
+    if (view) rmSync(view.dir, { recursive: true, force: true });
   }
 }
 
@@ -489,6 +554,26 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
   rmSync(factsDir, { recursive: true, force: true });
   mkdirSync(factsDir, { recursive: true });
   const capFile = (cap) => join(factsDir, `${cap}.jsonl`);
+
+  // Per-glob read scoping context (ADR-002 FS slice II). The repo is walked ONCE
+  // and every provider's view is a regex filter over that list. Scoping needs a
+  // view to mount OVER the repository path, so the one case it cannot serve is
+  // keeldocs reading the repository it is itself installed as: replacing the
+  // repo root would remove the provider's own entry file. That degrades to the
+  // repo-wide rofs tier with a NAMED gap rather than silently, because a
+  // sandbox that quietly weakens is worse than one that says so.
+  let scope = null;
+  if (SANDBOX === "rofs") {
+    const engineRel = toPosix(relative(repoRoot, ENGINE_ROOT));
+    if (ENGINE_ROOT === repoRoot) {
+      gaps.push({ kind: "scope-unavailable: engine is the repository under analysis", file: null });
+    } else {
+      const scopeDir = join(repoRoot, ".keeldocs", "cache", "scope");
+      rmSync(scopeDir, { recursive: true, force: true });
+      scope = { dir: scopeDir, allFiles: repoFiles(repoRoot),
+                engineRel: engineRel.startsWith("..") ? [] : [engineRel] };
+    }
+  }
   const writeCapFile = (cap) => {
     const list = [...factsById.values()].filter((f) => capOf(f.id) === cap)
       .sort((a, b) => a.id.localeCompare(b.id));
@@ -532,7 +617,7 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
       }
       if (dsn) factEnv.KEELDOCS_DSN = dsn;
     }
-    const run = runProvider(reg, repoRoot, d, factEnv);
+    const run = runProvider(reg, repoRoot, d, factEnv, scope);
     const cap = (capabilities[reg.capability] ??= { status: "absent", providers: [] });
     cap.providers.push(`${reg.id}@${reg.semver}`);
     if (run.status === "failed") {
@@ -593,6 +678,11 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
     if (cap.status !== "failed") cap.status = "ok";
     flushGroup();
   }
+  // Second teardown, deliberately redundant with the per-provider one: the
+  // scope directory must not outlive the extraction that created it under any
+  // exit path, because a leaked view inside the repository is indistinguishable
+  // from repository content to anything that walks it.
+  if (scope) rmSync(scope.dir, { recursive: true, force: true });
 
   // Disagreeing claims become conflict records: every claim, the winner, the
   // deciding rule (ADR-003 - "conflicts as facts", so silent averaging is
