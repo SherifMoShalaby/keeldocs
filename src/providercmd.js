@@ -2,10 +2,14 @@
 //   keygen              author: mint an ed25519 keypair (private stays local)
 //   sign <dir>          author: sign the provider dir's canonical manifest
 //   trust <name> <key>  consumer: add a signer to keeldocs.toml [trust] keys
-//   add <dir>           consumer: verify (signature + trusted signer) THEN
-//                       copy into .keeldocs/providers/ and pin every file
-//                       hash into .keeldocs/providers.lock - refusal first,
-//                       installation second, never the other way around
+//   show <dir>          consumer: print the PERMISSION MANIFEST - what this
+//                       provider runs, reads, is withheld, and whether this
+//                       host will actually enforce any of it. Read-only.
+//   add <dir>           consumer: verify (signature + trusted signer), SHOW the
+//                       permission manifest, take consent, THEN copy into
+//                       .keeldocs/providers/ and pin every file hash into
+//                       .keeldocs/providers.lock - refusal first, consent
+//                       second, installation last, never in another order
 // Local paths only in v0.3 (the PR-review flow: vendor the dir, review it,
 // add it); git-url install waits for a fetch story with the same proofs.
 
@@ -14,10 +18,12 @@ import { join, resolve, basename } from "node:path";
 import { generateKeypair, signProvider, manifestOf, refusalOf, loadLock, writeLock, parseTrustedKeys, SIG_FILE, LOCK_REL } from "./trust.js";
 import { parseProviderYaml } from "./providers.js";
 import { loadConfig } from "./config.js";
+import { permissionManifest, renderManifest } from "./permissions.js";
 
-const out = (json, exit, code, summary, data = {}, next = []) => {
+const out = (json, exit, code, summary, data = {}, next = [], preface = null) => {
   const env = { v: 1, ok: exit === 0, code, summary: String(summary).slice(0, 300), data, truncated: false, next };
-  process.stdout.write(json ? JSON.stringify(env) + "\n" : `${code}: ${env.summary}\n`);
+  if (json) process.stdout.write(JSON.stringify(env) + "\n");
+  else process.stdout.write((preface ? preface + "\n\n" : "") + `${code}: ${env.summary}\n`);
   return exit;
 };
 
@@ -68,6 +74,22 @@ export function runProviderCmd({ root, json, args }) {
       { name }, ["keeldocs provider add <dir>"]);
   }
 
+  if (sub === "show") {
+    const dir = pos[2] && resolve(root, pos[2]);
+    if (!dir) return out(json, 2, "USAGE", "usage: keeldocs provider show <provider-dir>");
+    const cfg = loadConfig(root);
+    if (!cfg.ok) return out(json, 2, "CONFIG", cfg.error);
+    let m;
+    try { m = permissionManifest(root, dir, { trustKeys: cfg.config.trust.keys }); }
+    catch (err) { return out(json, 2, "CONFIG", err.message); }
+    return out(json, 0, "PERMISSIONS",
+      `${m.capability}/${m.id} reads ${m.reads.matched} file(s) here` +
+      (m.reads.dirs.length ? ` plus ${m.reads.dirs.length} whole director${m.reads.dirs.length === 1 ? "y" : "ies"}` : "") +
+      `; network ${m.network}; sandbox ${m.enforcement.enforced ? "enforced" : "NOT enforced"} (${m.enforcement.level})`,
+      m, ["keeldocs provider add <dir> --yes  (installs, after you have read the above)"],
+      renderManifest(m));
+  }
+
   if (sub === "add") {
     const srcDir = pos[2] && resolve(root, pos[2]);
     if (!srcDir) return out(json, 2, "USAGE", "usage: keeldocs provider add <local-provider-dir>");
@@ -87,6 +109,20 @@ export function runProviderCmd({ root, json, args }) {
     const refusal = refusalOf(srcDir, probe, trusted);
     if (refusal) return out(json, 2, "REFUSED", `provider ${y.capability}/${y.id} REFUSED: ${refusal}`,
       { refusal }, ["keeldocs provider trust <name> <key>  (if the signer is legitimate)"]);
+    // CONSENT, showing the permission manifest (ADR-002's exact words). The
+    // proofs above establish WHO wrote this; the manifest establishes WHAT it
+    // will be able to do. A human needs both, and `--yes` is the only way to
+    // say so - a machine caller must state consent explicitly rather than
+    // inherit it from the absence of a terminal.
+    let manifest = null;
+    try { manifest = permissionManifest(root, srcDir, { trustKeys: cfg.config.trust.keys }); }
+    catch (err) { return out(json, 2, "CONFIG", err.message); }
+    if (!args.includes("--yes")) {
+      return out(json, 1, "CONSENT_REQUIRED",
+        `${y.capability}/${y.id} verified but NOT installed: review the permission manifest, then re-run with --yes`,
+        manifest, [`keeldocs provider add ${pos[2]} --yes`], renderManifest(manifest));
+    }
+
     const dstDir = join(root, ".keeldocs", "providers", y.capability, y.id);
     mkdirSync(dstDir, { recursive: true });
     cpSync(srcDir, dstDir, { recursive: true });
@@ -99,9 +135,12 @@ export function runProviderCmd({ root, json, args }) {
     writeLock(root, lock);
     return out(json, 0, "INSTALLED",
       `${y.capability}/${y.id} installed and pinned (commit .keeldocs/providers/ and ${LOCK_REL})`,
-      { capability: y.capability, id: y.id, files: Object.keys(lock.get(`${y.capability}/${y.id}`).files).length },
+      { capability: y.capability, id: y.id,
+        files: Object.keys(lock.get(`${y.capability}/${y.id}`).files).length,
+        granted: { reads: manifest.reads.matched, dirs: manifest.reads.dirs,
+                   network: manifest.network, enforcement: manifest.enforcement.level } },
       ["keeldocs check"]);
   }
 
-  return out(json, 2, "USAGE", "usage: keeldocs provider <keygen|sign|trust|add> ...");
+  return out(json, 2, "USAGE", "usage: keeldocs provider <keygen|sign|trust|show|add> ...");
 }

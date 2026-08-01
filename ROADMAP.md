@@ -25,7 +25,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. Thirty-four providers across ten
-capabilities feed eight document recipes. The engine has 86 unit tests, 39
+capabilities feed eight document recipes. The engine has 92 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 438 concrete surfaces,
@@ -106,7 +106,7 @@ not been promoted to `v0.1.0` only because publication is blocked.
 | PostgREST derived surface + database routines | **Done** | E9 round 4: route claims 5 → 0 on the field repo |
 | Recipe migration (`sync --upgrade`) | **Done** | validated retroactively: byte-identical to a delete-and-regenerate, without the delete |
 | Per-glob read scoping | **Done** | `inputs` is now an enforced contract; undeclared files do not exist inside a provider's namespace |
-| Permission-manifest display at `provider trust` | **Open** | |
+| Permission-manifest display at `provider trust` | **Done** | `provider show`; `add` stops at `CONSENT_REQUIRED` and states the enforcement this host really applies |
 | N5 MySQL / Mongo live | **Gated** | needs a real MySQL + a 3-repo OBSERVED pilot at FP <10% |
 | N6 Headless prose (BYO key / Ollama) | **Gated** | needs slot-write rejection <20% with a 7B local model |
 | N7 Portfolio (`export --backstage`) | **Gated** | needs ≥3 distinct real multi-repo users asking |
@@ -172,21 +172,16 @@ into committed artifacts.
 
 ## 6. Open engineering debt — buildable now, ranked
 
-**1. Permission-manifest display at `provider trust` time.** The last ADR-002
-line. A human approving a third-party provider should see what it is asking to
-read before approving it — the read scope is now enforced, so the manifest is
-worth showing.
-
-**2. Package-scoped fact identity.** Blocks the module guide's per-package
+**1. Package-scoped fact identity.** Blocks the module guide's per-package
 region binds: endpoint identity carries no package, and bind values cap at 200
 characters. This is a spec decision, not a patch.
 
-**3. PostgREST increment: views and `PUT`.** Views and materialized views are a
+**2. PostgREST increment: views and `PUT`.** Views and materialized views are a
 real exposed surface currently reported as `view-unmodeled` gaps (four of them
 on the field repo). `PUT` stays unclaimed until primary keys are in the
 extracted payload — an endpoint that cannot be verified is one not to emit.
 
-**4. Sandbox minimal root.** The scoping slice confines REPOSITORY reads; the
+**3. Sandbox minimal root.** The scoping slice confines REPOSITORY reads; the
 rest of the host filesystem is still visible to a provider. A full minimal root
 (no `/home`, no `/etc`) is a further step and is named here rather than implied
 by the word "sandbox".
@@ -224,7 +219,7 @@ alongside the build rather than after.
 34 shipped providers across 10 capabilities (workspace-layout, module-graph,
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
-agent skills · 86 unit tests · 39 byte-compared extractor goldens · ~24
+agent skills · 92 unit tests · 39 byte-compared extractor goldens · ~24
 end-to-end integration blocks · 13 ADRs · 15 experiments.
 
 Field deployment: one real production application (Next.js App Router +

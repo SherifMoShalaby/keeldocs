@@ -1505,7 +1505,7 @@ def main():
         prov = os.path.join(author, "acme-schema"); os.makedirs(prov)
         W(os.path.join(prov, "provider.yaml"),
           "id: acme-schema\ncapability: db-schema\nsemver: 1.0.0\ntier: code\n"
-          "entry: ./extract.py\ndetect: { files: [\"acme.schema\"] }\ntimeout_class: A\nemits: [table]\n")
+          "entry: ./extract.py\ndetect: { files: [\"acme.schema\"] }\ninputs: [\"**/*.schema\"]\ntimeout_class: A\nemits: [table]\n")
         W(os.path.join(prov, "extract.py"),
           "import json\nprint(json.dumps({\"models\": [{\"name\": \"Gadget\", \"fields\": "
           "[{\"name\": \"id\", \"type\": \"Int\"}]}], \"enums\": []}))\n")
@@ -1526,10 +1526,22 @@ def main():
                   env=local_env).returncode == 0
         r = kd(dst, "provider", "add", prov, "--json", env=local_env)
         assert r.returncode == 2 and "not trusted" in json.loads(r.stdout)["data"]["refusal"]
-        # 3) trust the signer -> add installs, pins the lock, facts flow
+        # 3) trust the signer -> VERIFIED, but installation still needs consent
         assert kd(dst, "provider", "trust", "acme", pub, "--json", env=local_env).returncode == 0
         r = kd(dst, "provider", "add", prov, "--json", env=local_env)
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 1 and env_["code"] == "CONSENT_REQUIRED", r.stdout[:200]
+        assert not os.path.exists(os.path.join(dst, ".keeldocs", "providers")), \
+            "a verified signature is WHO wrote it, not permission to run it"
+        # the manifest a human is being asked to approve is concrete, not a rule
+        man = env_["data"]
+        assert man["reads"]["matched"] == 1 and man["reads"]["sample"] == ["acme.schema"], man["reads"]
+        assert man["network"] == "denied" and man["trust"]["proof"] == "verified", man
+        assert man["enforcement"]["level"] in ("per-glob", "network-only", "none")
+        # ... and --yes is the only way to give it
+        r = kd(dst, "provider", "add", prov, "--yes", "--json", env=local_env)
         assert r.returncode == 0 and json.loads(r.stdout)["code"] == "INSTALLED", r.stdout[:200]
+        assert json.loads(r.stdout)["data"]["granted"]["reads"] == 1, "the envelope records what was granted"
         assert os.path.exists(os.path.join(dst, ".keeldocs", "providers.lock"))
         r = kd(dst, "check", "--json")
         assert r.returncode <= 1, r.stdout[:200]
@@ -1554,7 +1566,7 @@ def main():
                         ignore=shutil.ignore_patterns("golden", ".keeldocs"))
         W(os.path.join(dst2, "acme.schema"), "gadget\n")
         assert kd(dst2, "provider", "trust", "acme", pub, "--json", env=local_env).returncode == 0
-        assert kd(dst2, "provider", "add", prov, "--json", env=local_env).returncode == 0
+        assert kd(dst2, "provider", "add", prov, "--yes", "--json", env=local_env).returncode == 0
         r = kd(dst2, "init", "--yes", "--json", env=local_env)
         assert r.returncode == 0, r.stdout[:300]
         dm = open(os.path.join(dst2, "docs", "architecture", "data-model.md")).read()
@@ -1566,6 +1578,29 @@ def main():
             "the dropped hostile fact must be a NAMED gap, not silence"
         rc = kd(dst2, "check", "--json")
         assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", "born-clean must survive the drop"
+        # 6) the permission manifest is READABLE without installing anything,
+        #    and it tells the truth about what this host will enforce
+        r = kd(dst2, "provider", "show", prov, "--json", env=local_env)
+        assert r.returncode == 0 and json.loads(r.stdout)["code"] == "PERMISSIONS", r.stdout[:200]
+        shown = json.loads(r.stdout)["data"]
+        assert shown["id"] == "acme-schema" and shown["reads"]["globs"] == ["**/*.schema"], shown
+        human = kd(dst2, "provider", "show", prov, env=local_env)
+        assert human.returncode == 0
+        for word in ("RUNS", "READS", "NETWORK", "WITHHELD", "TRUST", "SANDBOX"):
+            assert word in human.stdout, f"the consent screen must name {word}: {human.stdout[:300]}"
+        # a secret matching a provider's globs is named as WITHHELD, by path
+        W(os.path.join(dst2, "secrets.schema"), "x\n")
+        W(os.path.join(dst2, ".env"), "DB_PASSWORD=hunter2\n")
+        wide = os.path.join(tmp, "wide")
+        shutil.copytree(prov, wide)
+        W(os.path.join(wide, "provider.yaml"),
+          open(os.path.join(wide, "provider.yaml")).read().replace('inputs: ["**/*.schema"]',
+                                                                   'inputs: ["**/*"]'))
+        r = kd(dst2, "provider", "show", wide, "--json", env=local_env)
+        w = json.loads(r.stdout)["data"]
+        assert ".env" in w["withheld"]["sample"], \
+            f"a provider asking for the world must be SHOWN what it will not get: {w['withheld']}"
+        assert ".env" not in w["reads"]["sample"] and w["reads"]["matched"] > 0
         rmtree(tmp)
         print("  PASS  E10 red-team: unsigned/untrusted/tampered all REFUSED; marker forgery dropped as a named gap")
     except Exception as e:
