@@ -116,6 +116,14 @@ MATRIX = [
         "golden": "fixtures/java-scenario/golden/module-graph.json",
     },
     {
+        # owner-requested client-routes capability: both react-router idioms
+        # (nested JSX trees + createBrowserRouter objects), gaps never guesses
+        "name": "react-scenario / client-routes (react-router, both idioms)",
+        "cmd": [sys.executable, "providers/client-routes/react-router/extract_routes.py",
+                "fixtures/react-scenario"],
+        "golden": "fixtures/react-scenario/golden/client-routes.json",
+    },
+    {
         "name": "compose-scenario / workspace-layout",
         "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
                 "fixtures/compose-scenario"],
@@ -962,6 +970,28 @@ def main():
         print("  PASS  N2 java+go: spring member-mode + gin chains, born-clean, drift loops close")
     except Exception as e:
         failures.append(f"java/go integration: {e}")
+
+    # ---- client-routes end-to-end: facts land, coverage denominator untouched ----
+    try:
+        import shutil as _shx
+        rs = os.path.join(ROOT, "fixtures", "react-scenario", ".keeldocs")
+        _shx.rmtree(rs, ignore_errors=True)
+        r = run_check("react-scenario")
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and env_["code"] == "CLEAN", r.stdout[:200]
+        files = [f for f in os.listdir(os.path.join(rs, "out")) if f.startswith("check-")]
+        rep = json.load(open(os.path.join(rs, "out", files[0])))
+        assert rep["capabilities"]["client-routes"]["providers"] == ["react-router@0.3.0"]
+        cache = open(os.path.join(rs, "cache", "facts", "client-routes.jsonl")).read()
+        assert cache.count('"fact:client-routes/') == 9, "both idioms, composed and deduped"
+        assert '"/owners/:ownerId/edit"' in cache and '"/admin/users/:uid"' in cache
+        assert "client-routes" not in rep["coverage"].get("perCapability", {}), \
+            "routes must stay OUT of the coverage denominator (owner decision)"
+        assert any(g["kind"] == "non-literal Route path" for g in rep["extractionGaps"]), \
+            "the computed path must be an honest gap"
+        print("  PASS  client-routes: react-router idioms extracted, coverage denominator untouched")
+    except Exception as e:
+        failures.append(f"client-routes integration: {e}")
 
     # ---- interview: cap-5 cards from engine state, resumable, journal-verified ----
     try:

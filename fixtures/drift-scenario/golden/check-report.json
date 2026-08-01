@@ -8,6 +8,10 @@
   "mode": "local"
  },
  "capabilities": {
+  "client-routes": {
+   "status": "absent",
+   "providers": []
+  },
   "config-surface": {
    "status": "ok",
    "providers": [

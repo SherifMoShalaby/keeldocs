@@ -1,0 +1,46 @@
+{
+ "routes": [
+  {
+   "file": "src/App.tsx",
+   "path": "/"
+  },
+  {
+   "file": "src/App.tsx",
+   "path": "/about"
+  },
+  {
+   "file": "src/adminRouter.ts",
+   "path": "/admin"
+  },
+  {
+   "file": "src/adminRouter.ts",
+   "path": "/admin/stats"
+  },
+  {
+   "file": "src/adminRouter.ts",
+   "path": "/admin/users"
+  },
+  {
+   "file": "src/adminRouter.ts",
+   "path": "/admin/users/:uid"
+  },
+  {
+   "file": "src/App.tsx",
+   "path": "/owners"
+  },
+  {
+   "file": "src/App.tsx",
+   "path": "/owners/:ownerId"
+  },
+  {
+   "file": "src/App.tsx",
+   "path": "/owners/:ownerId/edit"
+  }
+ ],
+ "warnings": [
+  {
+   "file": "src/App.tsx",
+   "reason": "non-literal Route path"
+  }
+ ]
+}

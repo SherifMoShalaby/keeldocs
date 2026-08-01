@@ -239,6 +239,22 @@ function replayFacts(raw, provenanceBase, declaredTables, declaredEnums) {
   return { facts, gaps };
 }
 
+function routeFacts(raw, provenanceBase) {
+  // client-routes (owner-requested, 2026-08-01): the app's screen inventory.
+  // Route facts are NOT coverage surfaces (owner decision fixed the
+  // denominator) but are fully bindable/drift-checkable via fact:client-routes/*.
+  const facts = [];
+  for (const r of raw.routes ?? []) {
+    facts.push({
+      id: `fact:client-routes/${r.path}`,
+      payload: { schema_version: 1, type: "route", attrs: { path: r.path } },
+      provenance: { ...provenanceBase, source: [{ file: r.file }] },
+    });
+  }
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? w.reason ?? "unknown", file: w.file ?? null }));
+  return { facts, gaps };
+}
+
 function policyFacts(raw, provenanceBase) {
   // Own capability so db-schema/* stays pure tables+enums (diagram noise
   // isolation + born-clean); db keys schema-qualified per ADR-007.
@@ -481,6 +497,8 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
       ? churnFacts(run.raw, provenanceBase)
       : reg.capability === "db-policies"
       ? policyFacts(run.raw, provenanceBase)
+      : reg.capability === "client-routes"
+      ? routeFacts(run.raw, provenanceBase)
       : reg.id === "sql-replay"
       ? replayFacts(run.raw, provenanceBase,
           [...factsById.values()].filter((f) => f.payload.type === "table").map((f) => f.payload.attrs.name),
