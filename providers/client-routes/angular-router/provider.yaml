@@ -8,7 +8,7 @@ tier: code            # Angular Routes arrays are object literals with `path`
                       # entries and cross-file lazy targets are named gaps.
 entry: ./extract_ng.py
 detect: { deps: ["@angular/router", "@angular/core"] }
-inputs: ["src/**/*.ts", "**/*routing*.ts", "**/app.routes.ts"]
+inputs: ["**/*.ts"]   # shared objroutes walker scans from the repo root
 requires: ["tree-sitter", "tree-sitter-typescript"]
 timeout_class: C
 emits: [route, extraction-gap]

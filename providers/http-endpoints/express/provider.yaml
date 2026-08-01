@@ -6,7 +6,7 @@ tier: code            # dynamic registration (app.use mount chains) is invisible
                       # on a router-structured app vs 100% for this mount-graph resolver.
 entry: ./prototype/extract_express.py   # working prototype; engine port pending
 detect: { deps: ["express"] }
-inputs: ["src/**/*.{ts,js,mjs}", "routes/**/*.{ts,js}", "*.js", "app/**/*.js"]
+inputs: ["**/*.{ts,js,mjs}"]   # the extractor walks the WHOLE tree for .ts/.js - a root-anchored src/** would have hidden every package in a monorepo
 requires: []
 timeout_class: C
 emits: [endpoint, extraction-gap]

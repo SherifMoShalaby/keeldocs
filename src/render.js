@@ -6,6 +6,7 @@
 import { aggregateHash } from "./drift.js";
 import { contentHash, display } from "./hash.js";
 import { redact } from "./redact.js";
+import { ownershipIndex, resolvePackageBind } from "./ownership.js";
 
 // Redaction happens BEFORE content-hashing (ADR-013): the recorded content=
 // hash must match the bytes actually written, so redacted docs stay born clean.
@@ -21,15 +22,17 @@ function genBlock(id, binds, ids, factsById, rawBody, sink) {
 
 // ---------- region body builders (shared by init and sync) ----------
 
-function endpointFacts(factsById) {
+function endpointFacts(factsById, only = null) {
   return [...factsById.values()]
-    .filter((f) => f.payload.type === "endpoint")
+    .filter((f) => f.payload.type === "endpoint" && (!only || only.has(f.id)))
     .sort((a, b) => a.payload.attrs.path.localeCompare(b.payload.attrs.path)
                  || a.payload.attrs.method.localeCompare(b.payload.attrs.method));
 }
 
-export function endpointsTableBody(factsById) {
-  const eps = endpointFacts(factsById);
+// `only` is the region's RESOLVED bind set: a package-scoped section renders
+// exactly what it bound, so body and hash can never describe different sets.
+export function endpointsTableBody(factsById, only = null) {
+  const eps = endpointFacts(factsById, only);
   const rows = eps.map((f) => {
     const src = f.provenance?.source?.[0];
     const where = !src ? ""
@@ -210,8 +213,8 @@ export function renderRegionBody(regionId, boundIds, factsById) {
   // module-guide regions (R3) were unrenderable at sync time until now: a
   // stale guide could be REPORTED but never repaired, which is exactly the
   // half-loop the design forbids
-  if (/^mod\..+\.surface$/.test(regionId)) return endpointsTableBody(factsById);
-  if (/^mod\..+\.deps$/.test(regionId)) return moduleDepsBody(factsById);
+  if (/^mod\..+\.surface$/.test(regionId)) return endpointsTableBody(factsById, new Set(boundIds));
+  if (/^mod\..+\.deps$/.test(regionId)) return moduleDepsBody(factsById, new Set(boundIds));
   const m = regionId.match(/^db\..+\.columns$/);
   if (m) {
     const tableId = boundIds.find((id) => id.startsWith("fact:db-schema/") && !id.includes("/enum."));
@@ -350,8 +353,9 @@ export function renderDataFlowDoc(factsById, sink) {
   return { path: "docs/architecture/data-flow.md", content };
 }
 
-export function moduleDepsBody(factsById) {
-  const mods = [...factsById.values()].filter((f) => f.payload.type === "module")
+export function moduleDepsBody(factsById, only = null) {
+  const mods = [...factsById.values()]
+    .filter((f) => f.payload.type === "module" && (!only || only.has(f.id)))
     .sort((a, b) => a.id.localeCompare(b.id));
   const fan = new Map();
   for (const m of mods) {
@@ -377,21 +381,27 @@ export function renderModuleGuideDoc(factsById, sink, pkgName) {
     `<!-- keeldocs:slot id=mod.${slug}.overview binds=${pkg.id} max-words=120 -->`,
     "<!-- /keeldocs:slot -->",
   ];
-  // regions carry their OWN binds (wildcards): without them they would
-  // inherit the anchor's package-fact bind and go stale at birth. The v0.3
-  // slice reflects the whole repo surface; per-package binds are follow-up.
-  const allEps = endpointFacts(factsById);
-  const allMods = [...factsById.values()].filter((f) => f.payload.type === "module")
-    .sort((a, b) => a.id.localeCompare(b.id));
-  if (allEps.length) {
+  // Regions carry their OWN binds: without them they would inherit the anchor's
+  // single package fact and go stale at birth. They are PACKAGE-SCOPED - this
+  // guide describes this package, and `fact:http-endpoints/*` would have made
+  // every guide in a monorepo show every other package's surface and stale on
+  // it. Ownership is derived from provenance (src/ownership.js), so the bind
+  // stays one short token however many endpoints the package has.
+  const owned = new Set(resolvePackageBind({ pkg: name, capability: "http-endpoints" },
+    factsById, ownershipIndex(factsById)));
+  const ownedMods = new Set(resolvePackageBind({ pkg: name, capability: "module-graph" },
+    factsById, ownershipIndex(factsById)));
+  const eps = endpointFacts(factsById, owned);
+  const mods = [...ownedMods].sort();
+  if (eps.length) {
     parts.push("", "## Public surface",
-      genBlock(`mod.${slug}.surface`, "fact:http-endpoints/*", allEps.map((f) => f.id),
-        factsById, endpointsTableBody(factsById), sink));
+      genBlock(`mod.${slug}.surface`, `pkg:${name}#http-endpoints/*`, eps.map((f) => f.id),
+        factsById, endpointsTableBody(factsById, owned), sink));
   }
-  if (allMods.length) {
+  if (mods.length) {
     parts.push("", "## Module dependencies",
-      genBlock(`mod.${slug}.deps`, "fact:module-graph/*", allMods.map((f) => f.id),
-        factsById, moduleDepsBody(factsById), sink));
+      genBlock(`mod.${slug}.deps`, `pkg:${name}#module-graph/*`, mods,
+        factsById, moduleDepsBody(factsById, ownedMods), sink));
   }
   parts.push("", "<!-- Human notes below this line are never touched by keeldocs. -->", "");
   return { path: `docs/reference/modules/${slug}.md`, content: parts.join("\n") };

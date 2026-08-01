@@ -224,6 +224,18 @@ restoration assertion against a document carrying slot prose and human notes)
 and an end-to-end harness block. The release-notes workaround this paragraph
 used to require is retired.
 
+**Package-scoped fact identity — SHIPPED (2026-08-01).** R3's deferred spec
+decision. A bind may now name `pkg:<name>#<capability>/*`; fact IDs are
+unchanged and ownership is DERIVED from provenance (`src/ownership.js`),
+never hashed into the fact — so moving a file between packages changes which
+region binds it, not the fact's own hash. Normative rules in doc 06
+§Package scope. The module guide is the first consumer: in the monorepo
+fixture, each package's guide lists only its own endpoints, and editing one
+package stales that package's guide alone while the other stays
+byte-identical through sync — the defect the deferral described. A fact whose
+sources span two packages belongs to both; a fact with no file provenance
+belongs to none.
+
 ## 3. Sequencing
 
 Phase A — *pay the debt that undermines the thesis*: R1 (replay; long pole,

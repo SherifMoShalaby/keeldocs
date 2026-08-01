@@ -1653,6 +1653,46 @@ def main():
     except Exception as e:
         failures.append(f"skill lint: {e}")
 
+    # ---- package-scoped fact identity: a monorepo guide describes ITS package ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-mono-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "mono-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        assert kd(dst, "init", "--yes", "--json").returncode == 0
+        for pkg, slug in [("@acme/web", "acme-web"), ("@acme/api", "acme-api")]:
+            r = kd(dst, "new", "module-guide", "--package", pkg, "--json")
+            assert r.returncode == 0 and json.loads(r.stdout)["code"] == "CREATED", r.stdout[:200]
+        web = open(os.path.join(dst, "docs", "reference", "modules", "acme-web.md")).read()
+        api = open(os.path.join(dst, "docs", "reference", "modules", "acme-api.md")).read()
+        # the bind is ONE short token however many endpoints the package has -
+        # the 200-char cap is why enumeration was never an option
+        assert "binds=pkg:@acme/web#http-endpoints/*" in web, web[:400]
+        assert "binds=pkg:@acme/api#http-endpoints/*" in api
+        # and each guide describes only its own package
+        assert "/web/home" in web and "/api/orders" not in web, "a guide must not claim another package's surface"
+        assert "/api/orders" in api and "/web/home" not in api
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN", "born-clean per package"
+        # DRIFT ISOLATION - the whole point. Touch web; api must stay clean.
+        W(os.path.join(dst, "packages", "web", "src", "app.js"),
+          "\napp.get('/web/settings', (req, res) => res.end());\n", "a")
+        r = kd(dst, "check", "--json")
+        stale = {t_["id"] for t_ in json.loads(r.stdout)["data"]["top"]}
+        assert r.returncode == 1 and "mod.acme-web.surface" in stale, stale
+        assert "mod.acme-api.surface" not in stale, \
+            "editing one package must NOT stale another package's guide - the defect this closes"
+        assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
+        web2 = open(os.path.join(dst, "docs", "reference", "modules", "acme-web.md")).read()
+        api2 = open(os.path.join(dst, "docs", "reference", "modules", "acme-api.md")).read()
+        assert "/web/settings" in web2, "the scoped region regenerates scoped"
+        assert api2 == api, "the untouched package's guide is byte-identical after sync"
+        rmtree(tmp)
+        print("  PASS  package-scoped identity: per-package binds, disjoint guides, drift isolated per package")
+    except Exception as e:
+        failures.append(f"package-scope integration: {e}")
+
     # ---- manifest lint: `inputs` is load-bearing now, so it must exist ----
     try:
         missing = []

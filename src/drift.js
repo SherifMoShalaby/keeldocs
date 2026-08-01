@@ -6,8 +6,22 @@
 
 import { factHash, contentHash, hashesMatch, display } from "./hash.js";
 import { inheritBinds } from "./anchors.js";
+import { ownershipIndex, resolvePackageBind } from "./ownership.js";
+
+// Package-scope resolution needs an ownership index over the whole fact set;
+// it is built lazily and memoised per fact map, because a document full of
+// per-package sections would otherwise rebuild it for every bind.
+const OWNERSHIP = new WeakMap();
+function ownershipFor(factsById) {
+  let idx = OWNERSHIP.get(factsById);
+  if (!idx) { idx = ownershipIndex(factsById); OWNERSHIP.set(factsById, idx); }
+  return idx;
+}
 
 function resolveBind(bind, factsById) {
+  if (bind.kind === "package") {
+    return { ids: resolvePackageBind(bind, factsById, ownershipFor(factsById)), wildcard: true };
+  }
   if (bind.wildcard) {
     const ids = [...factsById.keys()].filter((id) => id.startsWith(bind.prefix)).sort();
     return { ids, wildcard: true };

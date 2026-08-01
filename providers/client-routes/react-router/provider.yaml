@@ -14,7 +14,7 @@ tier: code            # tier by shape, not preference (the E1/E14 method):
                       # E9 (owner-side). No renderer yet - anchors bind manually.
 entry: ./extract_routes.py
 detect: { deps: ["react-router-dom", "react-router", "@tanstack/react-router"] }
-inputs: ["src/**/*.tsx", "src/**/*.jsx", "src/**/*.ts", "app/**/*.tsx"]
+inputs: ["**/*.{tsx,jsx,ts,js}"]   # the extractor walks the whole tree; a root-anchored src/** hid every package in a monorepo
 requires: ["tree-sitter", "tree-sitter-typescript"]
 timeout_class: C
 emits: [route, extraction-gap]

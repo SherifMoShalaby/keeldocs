@@ -6,7 +6,7 @@ tier: code            # vue-router route records are the same nested object
                       # createRouter({routes}) or exported as a routes array.
 entry: ./extract_vue.py
 detect: { deps: ["vue-router"] }
-inputs: ["src/**/*.{ts,js}", "**/router/**/*.{ts,js}"]
+inputs: ["**/*.{ts,js}"]   # shared objroutes walker scans from the repo root
 requires: ["tree-sitter", "tree-sitter-typescript"]
 timeout_class: C
 emits: [route, extraction-gap]

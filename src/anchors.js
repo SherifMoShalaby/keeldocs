@@ -49,6 +49,17 @@ function parseBinds(raw) {
   const binds = [];
   for (const part of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
     if (part.length > MAX_VALUE) return null;
+    // PACKAGE SCOPE (v0.3): `pkg:<name>#<capability>/*` names every fact of one
+    // capability owned by one package. It exists because per-package sections
+    // cannot enumerate ids inside a 200-char value and endpoint identity
+    // carries no package - ownership is derived from provenance instead
+    // (src/ownership.js). `#` delimits because package names contain `/`.
+    const pk = part.match(/^pkg:([^#,]{1,120})#([a-z0-9-]+)\/\*$/);
+    if (pk) {
+      binds.push({ raw: part, wildcard: true, prefix: null,
+        kind: "package", pkg: pk[1], capability: pk[2] });
+      continue;
+    }
     // Wildcards are PREFIX matches: `fact:cap/*` (whole capability) and
     // `fact:cap/policy.*` (id-prefix family) are the same mechanism - the
     // trailing `*` strips to a prefix. Exact ids never end in `*`.
