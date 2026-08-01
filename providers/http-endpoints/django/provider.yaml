@@ -1,0 +1,16 @@
+id: django
+capability: http-endpoints
+semver: 0.3.0
+tier: code            # probe (wagtail/bakerydemo, 2026-08-01): URLconfs are an
+                      # include() GRAPH across files - path("p/", include(x))
+                      # composes prefixes exactly like Express mounts (E1's
+                      # lesson), so code tier. URL routing is method-agnostic
+                      # in Django, so routes emit method ALL; regex re_path
+                      # routes and non-repo urlconfs are named gaps, never
+                      # guessed.
+entry: ./extract_django.py
+detect: { files: ["manage.py"] }
+inputs: ["**/urls.py", "**/*.py"]
+requires: ["tree-sitter", "tree-sitter-python"]
+timeout_class: C
+emits: [endpoint, extraction-gap]

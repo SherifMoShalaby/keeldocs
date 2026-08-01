@@ -1,0 +1,45 @@
+{
+ "endpoints": [
+  {
+   "file": "Controllers/OrdersController.cs",
+   "method": "DELETE",
+   "path": "/api/Orders/{id}"
+  },
+  {
+   "file": "Controllers/OrdersController.cs",
+   "method": "GET",
+   "path": "/api/Orders"
+  },
+  {
+   "file": "Controllers/OrdersController.cs",
+   "method": "GET",
+   "path": "/api/Orders/{id}"
+  },
+  {
+   "file": "Controllers/OrdersController.cs",
+   "method": "POST",
+   "path": "/api/Orders"
+  },
+  {
+   "file": "Program.cs",
+   "method": "GET",
+   "path": "/api/v2/tags"
+  },
+  {
+   "file": "Program.cs",
+   "method": "GET",
+   "path": "/health"
+  },
+  {
+   "file": "Program.cs",
+   "method": "POST",
+   "path": "/api/v2/tags"
+  }
+ ],
+ "warnings": [
+  {
+   "file": "Program.cs",
+   "reason": "non-literal group prefix"
+  }
+ ]
+}

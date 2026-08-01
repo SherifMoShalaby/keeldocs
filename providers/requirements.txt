@@ -7,3 +7,4 @@ tree-sitter-python==0.25.0
 pyyaml==6.0.3
 tree-sitter-java==0.23.5
 tree-sitter-go==0.25.0
+tree-sitter-c-sharp==0.23.1

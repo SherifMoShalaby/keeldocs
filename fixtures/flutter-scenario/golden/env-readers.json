@@ -1,0 +1,28 @@
+{
+ "vars": [
+  {
+   "name": "API_BASE_URL",
+   "read_in_code": true,
+   "declared_in_example": false,
+   "sources": [
+    {
+     "file": "lib/main.dart",
+     "line": 3,
+     "kind": "code"
+    }
+   ]
+  },
+  {
+   "name": "APP_REGION",
+   "read_in_code": true,
+   "declared_in_example": false,
+   "sources": [
+    {
+     "file": "lib/main.dart",
+     "line": 4,
+     "kind": "code"
+    }
+   ]
+  }
+ ]
+}

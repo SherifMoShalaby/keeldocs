@@ -1,0 +1,4 @@
+name: flutter_scenario_fixture
+description: keeldocs breadth fixture
+environment:
+  sdk: ">=3.0.0 <4.0.0"

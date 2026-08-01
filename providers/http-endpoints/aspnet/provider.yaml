@@ -1,0 +1,16 @@
+id: aspnet
+capability: http-endpoints
+semver: 0.3.0
+tier: code            # two registration idioms in one platform: attribute
+                      # controllers ([Route]/[HttpGet], member-attached like
+                      # Spring) AND minimal APIs (MapGet/MapGroup variable
+                      # chains, dynamic like gin/express) - the second is
+                      # invisible to a single-tree query, so code tier covers
+                      # both. [controller] tokens resolve to the true class
+                      # name; non-literal paths are named gaps, never guesses.
+entry: ./extract_aspnet.py
+detect: { files: ["Program.cs", "Startup.cs"] }
+inputs: ["**/*.cs"]
+requires: ["tree-sitter", "tree-sitter-c-sharp"]
+timeout_class: C
+emits: [endpoint, extraction-gap]

@@ -25,6 +25,14 @@ def pkg_name(d):
                 return name
         except Exception:
             pass
+    ps = os.path.join(d, "pubspec.yaml")
+    if os.path.exists(ps):  # dart/flutter identity (breadth batch)
+        try:
+            name = (yaml.safe_load(open(ps, encoding="utf-8")) or {}).get("name")
+            if name:
+                return name
+        except Exception:
+            pass
     gm = os.path.join(d, "go.mod")
     if os.path.exists(gm):  # module path's last segment is the go identity (N2)
         try:
@@ -86,6 +94,7 @@ def main(root):
         manager = "single"
         mfile = ("package.json" if os.path.exists(pj)
                  else "pyproject.toml" if os.path.exists(os.path.join(root, "pyproject.toml"))
+                 else "pubspec.yaml" if os.path.exists(os.path.join(root, "pubspec.yaml"))
                  else "go.mod" if os.path.exists(os.path.join(root, "go.mod"))
                  else "pom.xml" if os.path.exists(os.path.join(root, "pom.xml"))
                  else None)

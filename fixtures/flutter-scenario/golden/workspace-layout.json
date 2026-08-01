@@ -1,0 +1,10 @@
+{
+ "manager": "single",
+ "file": "pubspec.yaml",
+ "packages": [
+  {
+   "name": "flutter_scenario_fixture",
+   "path": "."
+  }
+ ]
+}

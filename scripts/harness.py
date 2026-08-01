@@ -137,6 +137,40 @@ MATRIX = [
         "golden": "fixtures/next-scenario/golden/http-endpoints.json",
     },
     {
+        # breadth batch: Django include() graph (probe: wagtail/bakerydemo)
+        "name": "django-scenario / http-endpoints (URLconf include graph)",
+        "cmd": [sys.executable, "providers/http-endpoints/django/extract_django.py",
+                "fixtures/django-scenario"],
+        "golden": "fixtures/django-scenario/golden/http-endpoints.json",
+    },
+    {
+        # breadth batch: Rails routes DSL with RESTful expansion
+        "name": "rails-routes-scenario / http-endpoints (routes.rb DSL)",
+        "cmd": [sys.executable, "providers/http-endpoints/rails/extract_rails.py",
+                "fixtures/rails-routes-scenario"],
+        "golden": "fixtures/rails-routes-scenario/golden/http-endpoints.json",
+    },
+    {
+        # breadth batch: ASP.NET attribute controllers + minimal APIs
+        "name": "aspnet-scenario / http-endpoints (attributes + minimal APIs)",
+        "cmd": [sys.executable, "providers/http-endpoints/aspnet/extract_aspnet.py",
+                "fixtures/aspnet-scenario"],
+        "golden": "fixtures/aspnet-scenario/golden/http-endpoints.json",
+    },
+    {
+        # breadth batch: flutter identity + dart env reads
+        "name": "flutter-scenario / workspace-layout (pubspec identity)",
+        "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
+                "fixtures/flutter-scenario"],
+        "golden": "fixtures/flutter-scenario/golden/workspace-layout.json",
+    },
+    {
+        "name": "flutter-scenario / config-surface (dart env forms)",
+        "cmd": [sys.executable, "providers/config-surface/env-readers/extract_env.py",
+                "fixtures/flutter-scenario"],
+        "golden": "fixtures/flutter-scenario/golden/env-readers.json",
+    },
+    {
         "name": "compose-scenario / workspace-layout",
         "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
                 "fixtures/compose-scenario"],

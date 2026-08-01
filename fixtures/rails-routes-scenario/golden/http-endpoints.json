@@ -1,0 +1,90 @@
+{
+ "endpoints": [
+  {
+   "file": "config/routes.rb",
+   "method": "GET",
+   "path": "/"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "GET",
+   "path": "/admin/stats"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "GET",
+   "path": "/admin/users"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "GET",
+   "path": "/admin/users/:id"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "GET",
+   "path": "/admin/users/:id/edit"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "GET",
+   "path": "/admin/users/new"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "GET",
+   "path": "/health"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "GET",
+   "path": "/orders"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "GET",
+   "path": "/orders/:id"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "GET",
+   "path": "/profile"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "PATCH",
+   "path": "/admin/users/:id"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "PATCH",
+   "path": "/profile"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "POST",
+   "path": "/admin/users"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "POST",
+   "path": "/orders"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "PUT",
+   "path": "/admin/users/:id"
+  },
+  {
+   "file": "config/routes.rb",
+   "method": "PUT",
+   "path": "/profile"
+  }
+ ],
+ "warnings": [
+  {
+   "file": "config/routes.rb",
+   "reason": "unrecognized routing DSL: mount ActionCable.server => \"/cable\""
+  }
+ ]
+}

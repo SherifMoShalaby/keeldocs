@@ -25,7 +25,9 @@ import tree_sitter_go as tsgo
 
 EXCLUDE_DIRS = {"vendor", ".git", ".keeldocs", "golden", "node_modules", "testdata"}
 VERBS = {"GET": "GET", "POST": "POST", "PUT": "PUT", "DELETE": "DELETE",
-         "PATCH": "PATCH", "HEAD": "HEAD", "OPTIONS": "OPTIONS", "Any": "ALL"}
+         "PATCH": "PATCH", "HEAD": "HEAD", "OPTIONS": "OPTIONS", "Any": "ALL",
+         # chi spells verbs Capitalized
+         "Get": "GET", "Post": "POST", "Put": "PUT", "Delete": "DELETE", "Patch": "PATCH"}
 
 lang = Language(tsgo.language())
 parser = Parser(lang)
@@ -46,9 +48,6 @@ def first_arg(call):
 
 def scan_file(rel, src, endpoints, warns):
     tree = parser.parse(src)
-    roots = set()    # vars holding gin.Default()/gin.New() engines
-    groups = {}      # var -> (parent var, literal prefix or None)
-    calls = []       # (receiver var, verb, path node)
 
     def selector(call):
         fn = call.child_by_field_name("function")
@@ -59,7 +58,11 @@ def scan_file(rel, src, endpoints, warns):
                 return op.text.decode(), fld.text.decode()
         return None, None
 
-    def walk(n):
+    ROOT_MAKERS = {("gin", "Default"), ("gin", "New"), ("echo", "New"),
+                   ("chi", "NewRouter"), ("chi", "NewMux")}
+
+    # eager scoped walk: env maps router var -> resolved prefix (None = tainted)
+    def walk(n, env):
         if n.type in ("short_var_declaration", "assignment_statement"):
             left = n.child_by_field_name("left")
             right = n.child_by_field_name("right")
@@ -69,45 +72,66 @@ def scan_file(rel, src, endpoints, warns):
                 call = right.named_child(0)
                 if call.type == "call_expression":
                     op, fld = selector(call)
-                    if fld in ("Default", "New") and op == "gin":
-                        roots.add(var)
+                    if (op, fld) in ROOT_MAKERS:
+                        env[var] = ""
                     elif fld == "Group":
-                        groups[var] = (op, lit(first_arg(call)))
+                        seg = lit(first_arg(call))
+                        base = env.get(op)
+                        env[var] = (base + seg) if (base is not None and seg is not None) else None
         if n.type == "call_expression":
             op, fld = selector(n)
             if fld in VERBS and op is not None:
-                calls.append((op, fld, first_arg(n)))
+                seg = lit(first_arg(n))
+                # chi capitalizes verbs, but so do unrelated APIs (gin's own
+                # c.Get("key")) - Capitalized verbs must LOOK like routes
+                # (literal leading-slash) or they are silently not routes
+                chi_style = fld in ("Get", "Post", "Put", "Delete", "Patch")
+                if chi_style and (seg is None or not seg.startswith("/")):
+                    walk_children(n, env)
+                    return
+                if seg is None:
+                    warns.append({"file": rel, "reason": f"non-literal {fld} path"})
+                else:
+                    base = env.get(op, "__unknown__")
+                    if base == "__unknown__":
+                        warns.append({"file": rel, "reason": f"cross-file or unknown receiver `{op}`"})
+                    elif base is None:
+                        warns.append({"file": rel, "reason": "non-literal group prefix"})
+                    else:
+                        full = "/" + "/".join(x for x in (base + seg).split("/") if x)
+                        endpoints.append({"file": rel, "method": VERBS[fld], "path": full or "/"})
+            elif fld == "Route" and op is not None:
+                # chi idiom: r.Route("/p", func(r chi.Router) { ... }) - the
+                # closure PARAM shadows into a nested scope with the composed prefix
+                args = n.child_by_field_name("arguments")
+                seg = lit(first_arg(n))
+                fnlit = None
+                if args is not None:
+                    for c in args.children:
+                        if c.type == "func_literal":
+                            fnlit = c
+                if fnlit is not None:
+                    base = env.get(op)
+                    params = fnlit.child_by_field_name("parameters")
+                    pname = None
+                    if params is not None and params.named_child_count:
+                        first = params.named_child(0)
+                        nn = first.child_by_field_name("name")
+                        pname = nn.text.decode() if nn is not None else None
+                    inner = dict(env)
+                    if pname is not None:
+                        inner[pname] = (base + seg) if (base is not None and seg is not None) else None
+                        if seg is None:
+                            warns.append({"file": rel, "reason": "non-literal group prefix"})
+                    walk_children(fnlit, inner)
+                    return  # closure handled with its own scope
+        walk_children(n, env)
+
+    def walk_children(n, env):
         for c in n.children:
-            walk(c)
+            walk(c, env)
 
-    walk(tree.root_node)
-
-    def prefix_of(var, seen=()):
-        """(prefix, resolved?) - walk the group chain to a root."""
-        if var in roots:
-            return "", True
-        if var in seen or var not in groups:
-            return "", False
-        parent, p = groups[var]
-        if p is None:
-            return "", False  # non-literal group path taints the chain
-        pre, ok = prefix_of(parent, seen + (var,))
-        return pre + p, ok
-
-    for var, verb, pnode in calls:
-        path = lit(pnode)
-        if path is None:
-            warns.append({"file": rel, "reason": f"non-literal {verb} path"})
-            continue
-        pre, ok = prefix_of(var)
-        if not ok and var not in roots:
-            if var in groups:
-                warns.append({"file": rel, "reason": "non-literal group prefix"})
-                continue
-            warns.append({"file": rel, "reason": f"cross-file or unknown receiver `{var}`"})
-            continue
-        full = "/" + "/".join(x for x in (pre + path).split("/") if x)
-        endpoints.append({"file": rel, "method": VERBS[verb], "path": full or "/"})
+    walk(tree.root_node, {})
 
 
 def main(root):

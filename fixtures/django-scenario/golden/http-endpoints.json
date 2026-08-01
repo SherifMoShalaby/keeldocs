@@ -1,0 +1,35 @@
+{
+ "endpoints": [
+  {
+   "file": "config/urls.py",
+   "method": "ALL",
+   "path": "/health"
+  },
+  {
+   "file": "shop/urls.py",
+   "method": "ALL",
+   "path": "/api/items"
+  },
+  {
+   "file": "shop/urls.py",
+   "method": "ALL",
+   "path": "/api/items/<int:pk>"
+  },
+  {
+   "file": "shop/urls.py",
+   "method": "ALL",
+   "path": "/legacy/items"
+  },
+  {
+   "file": "shop/urls.py",
+   "method": "ALL",
+   "path": "/legacy/items/<int:pk>"
+  }
+ ],
+ "warnings": [
+  {
+   "file": "config/urls.py",
+   "reason": "regex route (re_path) not composed"
+  }
+ ]
+}

@@ -19,6 +19,31 @@
    "file": "main.go",
    "method": "POST",
    "path": "/api/v1/tags"
+  },
+  {
+   "file": "routers/chi.go",
+   "method": "GET",
+   "path": "/api/v3/reports"
+  },
+  {
+   "file": "routers/chi.go",
+   "method": "GET",
+   "path": "/ping"
+  },
+  {
+   "file": "routers/chi.go",
+   "method": "POST",
+   "path": "/api/v3/reports"
+  },
+  {
+   "file": "routers/echo.go",
+   "method": "GET",
+   "path": "/echo-health"
+  },
+  {
+   "file": "routers/echo.go",
+   "method": "POST",
+   "path": "/eapi/notes"
   }
  ],
  "warnings": [

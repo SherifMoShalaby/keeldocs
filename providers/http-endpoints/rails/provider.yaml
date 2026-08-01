@@ -1,0 +1,16 @@
+id: rails
+capability: http-endpoints
+semver: 0.3.0
+tier: code            # config/routes.rb is a CONSTRAINED DSL, not general Ruby:
+                      # a deterministic block-stack parser covers the idioms
+                      # (resources with RESTful expansion + only/except,
+                      # get/post/... verbs, namespace/scope prefixes, root)
+                      # without adding a Ruby grammar for one file. Anything
+                      # outside the recognized DSL is a named gap, never a
+                      # guessed route.
+entry: ./extract_rails.py
+detect: { files: ["routes.rb"] }
+inputs: ["config/routes.rb"]
+requires: []
+timeout_class: B
+emits: [endpoint, extraction-gap]

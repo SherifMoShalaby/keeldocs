@@ -18,7 +18,16 @@
   {
    "path": "routers",
    "package": null,
-   "imports": []
+   "imports": [
+    {
+     "specifier": "github.com/go-chi/chi/v5",
+     "resolved": "github.com/go-chi/chi/v5"
+    },
+    {
+     "specifier": "github.com/labstack/echo/v4",
+     "resolved": "github.com/labstack/echo/v4"
+    }
+   ]
   },
   {
    "path": "store",
@@ -82,6 +91,30 @@
    ],
    "nameless": [
     "type \u00a7 struct struct { ID int }"
+   ]
+  },
+  {
+   "path": "routers/chi.go",
+   "name": "ChiRoutes",
+   "package": null,
+   "kind": "function",
+   "sigs": [
+    "func ChiRoutes()"
+   ],
+   "nameless": [
+    "func \u00a7()"
+   ]
+  },
+  {
+   "path": "routers/echo.go",
+   "name": "EchoRoutes",
+   "package": null,
+   "kind": "function",
+   "sigs": [
+    "func EchoRoutes()"
+   ],
+   "nameless": [
+    "func \u00a7()"
    ]
   },
   {

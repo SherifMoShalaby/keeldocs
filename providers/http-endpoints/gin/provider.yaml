@@ -1,4 +1,6 @@
-id: gin
+id: gin               # id kept for continuity; the extractor now covers the
+                      # go router FAMILY: gin, echo (same shapes), and chi
+                      # (Capitalized verbs + Route closure nesting)
 capability: http-endpoints
 semver: 0.3.0
 tier: code            # E14 probe (go-gin-example, 2026-07-31): gin routes are
