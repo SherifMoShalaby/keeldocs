@@ -1925,6 +1925,65 @@ def main():
     except Exception:
         failures.append(f"CLI envelope smoke: rc={r.returncode} stdout={r.stdout[:200]!r}")
 
+    # ---- D1 incremental extraction (R10): the cache must be INVISIBLE in the
+    # output and visible only in the clock. Every assertion here is about the
+    # cached answer being indistinguishable from the uncached one; a cache that
+    # is merely fast is not the feature.
+    try:
+        import re as _re8, shutil as _shd, tempfile as _tfd
+        tmp = _tfd.mkdtemp(prefix="keeldocs-d1-")
+        dst = os.path.join(tmp, "repo")
+        _shd.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), dst,
+                      ignore=_shd.ignore_patterns("golden", ".keeldocs"))
+        KD = os.path.join(ROOT, "bin", "keeldocs.js")
+
+        def kd(*a, text_mode=False):
+            return subprocess.run(["node", KD, *a], cwd=dst, capture_output=True, text=True, timeout=600)
+
+        assert kd("init", "--yes", "--json").returncode == 0, "init failed"
+        report = os.path.join(dst, ".keeldocs", "out")
+
+        def check_report(*extra):
+            _shd.rmtree(report, ignore_errors=True)
+            r = kd("check", "--json", *extra)
+            files = [f for f in os.listdir(report) if f.startswith("check-")]
+            assert len(files) == 1, files
+            return r.stdout, open(os.path.join(report, files[0])).read()
+
+        # cold: no extract cache at all
+        _shd.rmtree(os.path.join(dst, ".keeldocs", "cache", "extract"), ignore_errors=True)
+        cold_env, cold_rep = check_report()
+        warm_env, warm_rep = check_report()
+        assert cold_env == warm_env, "cached run produced a DIFFERENT envelope - the cache reached the deterministic channel"
+        assert cold_rep == warm_rep, "cached run produced a DIFFERENT report"
+
+        # the cache must actually have done something, or everything above passes vacuously
+        human = kd("check").stdout
+        m = _re8.search(r"^cache: (\d+)/(\d+) provider\(s\) reused", human, _re8.M)
+        assert m and int(m.group(1)) > 0, f"nothing was reused; cache line was {human!r}"
+        reused, total = int(m.group(1)), int(m.group(2))
+
+        # an EDIT must reach the output through the cache, identically to without it
+        schema = os.path.join(dst, "prisma", "schema.prisma")
+        W(schema, open(schema).read() + "\nmodel Widget {\n  id Int @id @default(autoincrement())\n  label String\n}\n")
+        edited_env, edited_rep = check_report()
+        truth_env, truth_rep = check_report("--no-cache")
+        assert edited_rep == truth_rep, "the cached answer after an edit differs from a from-scratch run"
+        assert edited_env == truth_env, "envelope differs between cached and --no-cache"
+        # the strongest assertion in this block: the new table is VISIBLE through
+        # the cache. Equal-but-both-stale would satisfy everything above.
+        cold_j, edited_j = json.loads(cold_rep), json.loads(edited_rep)
+        assert edited_j["coverage"]["perCapability"]["db-schema"]["total"] \
+            == cold_j["coverage"]["perCapability"]["db-schema"]["total"] + 1, \
+            "the new model never reached the facts - a stale hit served the old schema"
+        assert edited_j["counts"].get("stale") == 1, "and the ERD it belongs in must have gone stale"
+        # ...and --no-cache must really refuse the cache
+        assert _re8.search(r"^cache: disabled", kd("check", "--no-cache").stdout, _re8.M), "--no-cache did not disable it"
+        rmtree(tmp)
+        print(f"  PASS  D1 incremental extraction: warm==cold and edited==--no-cache byte-for-byte ({reused}/{total} reused)")
+    except Exception as e:
+        failures.append(f"D1 incremental extraction: {why(e)}")
+
     # ---- ERD scale (E11 / R13): a database past Mermaid's ceiling still ships
     # a document that RENDERS, is born clean, and loses no table. The unit
     # tests cover the plan; this covers the loop - init writes it, the content

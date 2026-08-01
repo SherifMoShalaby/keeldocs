@@ -30,6 +30,12 @@ def main(repo, label):
         out["init"]["summary"] = json.loads(init["stdout"])["summary"]
     except Exception:
         out["init"]["error"] = init["stdout"][-300:] or init["stderr"]
+    # D1 made "cold" and "warm" genuinely different operations for the first
+    # time, so the bench has to measure both or it reports the average of two
+    # regimes. --no-cache is exactly what EVERY run cost before D1 existed,
+    # which makes it the honest baseline column rather than a separate historical run.
+    cold = run(repo, "check", "--json", "--no-cache")
+    out["check_cold"] = {k: cold[k] for k in ("seconds", "peak_rss_mb", "rc")}
     for i in (1, 2):
         c = run(repo, "check", "--json")
         out[f"check{i}"] = {k: c[k] for k in ("seconds", "peak_rss_mb", "rc")}

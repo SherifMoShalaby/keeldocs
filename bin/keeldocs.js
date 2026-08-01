@@ -12,6 +12,12 @@ const args = process.argv.slice(2);
 const cmd = args[0];
 const json = args.includes("--json");
 
+// D1 escape hatch, global rather than per-command: extraction is cached at the
+// provider-subprocess boundary, and every command that extracts must be able to
+// refuse it. Set as env because it has to reach nine call sites through several
+// library entry points, and because the same variable then works in CI.
+if (args.includes("--no-cache")) process.env.KEELDOCS_NO_CACHE = "1";
+
 function envelope(ok, code, summary, next = []) {
   // Hard caps per ADR-010: envelope <= 8KB, summary <= 300 chars.
   return JSON.stringify({ v: 1, ok, code, summary: summary.slice(0, 300), data: {}, next });
@@ -20,7 +26,7 @@ function envelope(ok, code, summary, next = []) {
 if (cmd === "--version" || cmd === "-v") { console.log(pkg.version); process.exit(0); }
 
 if (!COMMANDS.includes(cmd)) {
-  const msg = `usage: keeldocs <init|check|sync|new|interview> [--json] [--ci]  (v${pkg.version})`;
+  const msg = `usage: keeldocs <init|check|sync|new|interview> [--json] [--ci] [--no-cache]  (v${pkg.version})`;
   if (json) console.log(envelope(false, "USAGE", msg));
   else console.error(msg);
   process.exit(2);

@@ -1,0 +1,32 @@
+{
+ "label": "1m",
+ "repo": "(synthetic, see RESULTS.md#reproduce)",
+ "init": {
+  "seconds": 35.84,
+  "peak_rss_mb": 894.5,
+  "rc": 2,
+  "summary": "tooling error: ts-imports: output cap exceeded (5MB, ADR-002)"
+ },
+ "check_cold": {
+  "seconds": 35.18,
+  "peak_rss_mb": 896.3,
+  "rc": 2
+ },
+ "check1": {
+  "seconds": 19.48,
+  "peak_rss_mb": 896.3,
+  "rc": 2,
+  "code": "TOOL_ERROR"
+ },
+ "check2": {
+  "seconds": 20.25,
+  "peak_rss_mb": 896.3,
+  "rc": 2,
+  "code": "TOOL_ERROR"
+ },
+ "check_after_1_file_edit": {
+  "seconds": 31.1,
+  "peak_rss_mb": 896.3,
+  "rc": 2
+ }
+}

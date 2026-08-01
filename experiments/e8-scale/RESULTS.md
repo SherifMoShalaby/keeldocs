@@ -104,11 +104,14 @@ the beta cohort will bring. It is not the "1M-LOC monorepo" the design gate
 was written against, and the README should not imply otherwise until sharding
 lands.
 
+*(Superseded by the D1 section below: a warm check at that size is now 2.2s.
+The 1M sentence still stands.)*
+
 ## Debt this experiment creates (measured, not estimated)
 
 1. **Incremental extraction keyed on git blob hashes** — the missing warm
    path. Target: a one-file edit re-extracts one file. Everything below
-   depends on this.
+   depends on this. → **built 2026-08-01 as D1; re-measured below.**
 2. **Provider output sharding** — `ts-imports` (and any provider) must stream
    or shard rather than buffer one JSON blob into the 5 MB cap. This is what
    unblocks 1M LOC.
@@ -116,6 +119,99 @@ lands.
    from a 10s p50 to a sub-second one.
 4. **Re-run E8 after each.** The numbers above are the baseline they are
    measured against; the gate is unchanged.
+
+---
+
+# Re-run after D1 (incremental extraction) — 2026-08-01
+
+`src/cache.js`. The cache boundary is the provider subprocess: raw stdout,
+keyed on provider identity, the provider's own code, the exact resolved input
+set by content hash, upstream capability facts, argv and sandbox tier. Content
+hashes rather than git index blob hashes — the index needs git's stat-based
+dirty detection to describe the working tree, and its failure mode is a
+silently stale answer. Hashing every file in the 1M-LOC tree costs 155 ms.
+
+The bench gained a `--no-cache` column so cold and warm are measured in the
+same invocation, on the same machine, in the same minute. That matters: this
+container's run-to-run variance is ±20%, large enough to manufacture or hide a
+1-second effect across separate runs.
+
+| size | cold (`--no-cache`) | warm #1 | warm #2 | after 1-file edit | peak RSS | exit |
+|---|---|---|---|---|---|---|
+| 10k | 6.91s | **1.32s** | **1.40s** | **2.24s** | 897 MB | 0 |
+| 100k | 11.85s | **2.13s** | **2.23s** | **6.32s** | 891 MB | 0 |
+| 1M | 35.18s | 19.48s | 20.25s | 31.10s | 896 MB | **2 / TOOL_ERROR** |
+
+Against the pre-D1 baseline (`baseline-*.json`, same generator, same gates):
+the 100k warm check went from **9.66s to 2.23s**, and the one-file edit from
+**9.97s to 6.32s**.
+
+## Verdict after D1
+
+| budget | 10k | 100k | 1M |
+|---|---|---|---|
+| RAM ≤ 2 GB | PASS | PASS | PASS |
+| cold ≤ 10 min | PASS | PASS | PASS |
+| warm p50 ≤ 5s (unchanged tree) | **PASS** 1.40s | **PASS** 2.23s | FAIL 20.25s |
+| warm p95 ≤ 15s | **PASS** | **PASS** | FAIL |
+| warm p50 ≤ 5s (one-file edit) | **PASS** 2.24s | **MISS** 6.32s | FAIL |
+| completes at all | PASS | PASS | **FAIL** (D2) |
+
+**E8 still does not pass, and the gate is still not moved.** What changed is
+where it fails. Before D1 every budget except RAM and cold-run failed at every
+size; now the failures are two specific, named things: the 1M configuration
+still dies on the ADR-002 output cap (that is D2, untouched), and a one-file
+edit at 100k is 1.3 seconds over p50.
+
+## Why the one-file edit is still 6.32s, precisely
+
+Editing one `.ts` file in the 100k tree invalidates **12 providers**, because
+twelve manifests declare a glob that matches it. Measured individually:
+
+| provider | re-run cost | files it re-parsed | bytes it emitted |
+|---|---|---|---|
+| react-router | 1,890 ms | 1,400 | **35** |
+| express | 1,353 ms | 1,400 | 1,757,760 |
+| ts-imports | 1,232 ms | 1,400 | 4,375,314 |
+| nestjs | 959 ms | 1,400 | 38 |
+| env-readers | 195 ms | 1,401 | 147,534 |
+| seven others (messaging, other routers) | 55–63 ms each | 1,400 | ~37 each |
+
+Subtotal 6,046 ms — which is the 6.32s, almost exactly.
+
+The finding worth keeping: **react-router is the single most expensive provider
+on this edit and it emits 35 bytes.** It re-parses 1,400 files to conclude
+there are no react-router routes here. D1 made the *provider* the unit of
+caching, and that was the right first cut — it took the unchanged-tree case
+from 9.66s to 2.23s. But a provider's unit of work is still its entire declared
+input set, so one changed file costs a full re-parse of every file that
+provider declared.
+
+That is a different problem from the one D1 solved, and it does not have the
+same shape: closing it means either per-file results in the provider contract
+(providers emit results keyed by input file, the engine reassembles) or an
+engine-supplied changed-file list that providers may narrow to. Both are
+contract changes, not engine changes, and both should be designed rather than
+improvised. Filed as a new debt item rather than folded into D3, which is a
+different mechanism (skip providers a diff cannot have affected — no help here,
+since this provider genuinely reads the changed file).
+
+## What D1 cost
+
+Directly measured on the 100k tree: the repo walk is 9 ms and the whole-run
+hash pass is 23 ms over 1,603 files — **33 ms, 3% of a warm run**. Cold runs
+with the cache on versus off, back to back on the same tree, came out at 11.54s
+vs 10.49s and then 10.14s vs 10.14s: the write cost is inside this container's
+noise floor. Nothing was traded away for the warm-path win.
+
+## Reproduce
+
+```
+python3 experiments/e8-scale/gen.py  /tmp/e8-100k 200  6  83
+python3 experiments/e8-scale/bench.py /tmp/e8-100k 100k
+```
+
+`baseline-*.json` are the pre-D1 measurements; `d1-*.json` are these.
 
 ## Residual risk
 

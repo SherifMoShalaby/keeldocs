@@ -4,14 +4,14 @@
 tagged `v0.1.0-rc.1` at `927b4cb` · 3-OS CI green (Windows non-blocking) ·
 110 unit tests · 39 extractor goldens · 75 harness checks.
 
-**The backlog was empty; running E8 and E11 refilled it — which is what
-experiments are for.** Both never-run validation experiments were executed on
-2026-08-01. **E11 failed and was fixed the same day**: the flagship ERD stopped
-rendering between 100 and 250 tables, so `src/render.js` gained budget-driven
-chunking and a permanent gate. **E8 failed and cannot be fixed the same day**:
-two of four scale budgets are missed and 1M LOC does not complete, because the
-incremental cache R10's mitigation column has always promised was never built.
-Section 6 is no longer empty — it holds three measured, sized items.
+**E8 and E11 ran on 2026-08-01, both failed, and the repairable half is
+repaired.** E11's flagship ERD stopped rendering between 100 and 250 tables;
+`src/render.js` gained budget-driven chunking and a permanent gate. E8 found
+that the incremental cache R10 has promised since day one was never built, so
+**D1 was built** (`src/cache.js`): a warm check at 100k LOC went from **9.66s
+to 2.23s**, and E8's warm budgets now pass at 10k and 100k. E8 as a whole still
+does not pass — 1M LOC still dies on a provider output cap (D2), and a one-file
+edit at 100k is 6.3s against a 5s p50. Section 6 holds what is left, measured.
 
 This is the single tracking document. It reconciles three things that had been
 living in separate places: the original design brief's deliverables, the phased
@@ -35,7 +35,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. Thirty-four providers across ten
-capabilities feed eight document recipes. The engine has 110 unit tests, 39
+capabilities feed eight document recipes. The engine has 130 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
@@ -44,8 +44,8 @@ accurate receipts across four hardening rounds. What is *not* done splits
 cleanly into three piles: a short list of owner actions that gate publication
 and therefore gate every adoption metric; a set of features deliberately
 refused until their evidence arrives; and — new as of 2026-08-01, from running
-E8 — three measured scale items, because the loop that is correct at 100k lines
-of code does not complete at a million.
+E8 — a short list of measured scale items, because the loop that is correct and
+now fast at 100k lines of code still does not complete at a million.
 
 ---
 
@@ -196,22 +196,21 @@ into committed artifacts.
 
 ## 6. Open engineering debt — buildable now
 
-Three items, all created by E8 on 2026-08-01, all with measured baselines
-rather than estimates. They are ordered by dependency: each one is worth less
-until the one above it lands.
+Created by E8 on 2026-08-01, all with measured baselines rather than estimates.
 
-| # | Item | Why | Baseline to beat |
+| # | Item | Status | Measurement |
 |---|---|---|---|
-| D1 | **Incremental extraction keyed on git blob hashes** | There is no cache. "Warm" and "cold" are the same operation, so a one-file edit re-extracts the entire repository. This is the single cause of the p50 miss at every size | one-file-edit check: 5.72s @10k, 9.97s @100k, 31.8s @1M — indistinguishable from a full run. Target: re-extract one file |
-| D2 | **Provider output sharding / streaming** | `ts-imports` buffers one JSON blob and hits the 5 MB ADR-002 cap at 5,402 files. The cap is correct and stays; the provider must stop needing it | 1M LOC exits 2, `TOOL_ERROR`, no documents written. Target: completes |
-| D3 | **`--affected`** | Scope a check to what a diff touched. The shortest path from a 10s p50 to a sub-second one — but pointless before D1 | 9.66s @100k full check. Target: proportional to the diff |
+| D1 | **Incremental extraction** — cache the provider subprocess, keyed on the exact resolved input set by content hash | **Done** (`src/cache.js`, 20 unit tests, harness gate) | warm check 5.61s → **1.40s** @10k, 9.66s → **2.23s** @100k; one-file edit 9.97s → **6.32s** @100k; overhead 33ms (3% of a warm run) |
+| D2 | **Provider output sharding / streaming** | **Open** | `ts-imports` buffers one JSON blob and hits the 5 MB ADR-002 cap at 5,402 files. The cap is correct and stays; the provider must stop needing it. 1M LOC exits 2 with no documents written. Target: completes |
+| D4 | **Per-file work inside a provider** | **Open** — new, found by re-running E8 after D1 | One `.ts` edit at 100k invalidates 12 providers because 12 manifests declare a glob matching it, and each re-parses all 1,400 declared files. react-router is the most expensive at 1,890ms and emits **35 bytes**. Needs a contract change (per-file results, or an engine-supplied changed-file list), not an engine change. Target: 6.32s → under the 5s p50 |
+| D3 | **`--affected`** | **Open, and demoted** | Skips providers a diff cannot have affected. D4's measurement shows this is the smaller half of the remaining cost — the expensive providers genuinely do read the changed file |
 
-Re-run E8 after each; the numbers in `experiments/e8-scale/RESULTS.md` are the
-baseline, and the R10 budgets are unchanged. Until D1–D3 land, the honest
-statement of what keeldocs handles is **~100k LOC / 200 packages at a ~10s
-check** — most repositories, and the size the beta cohort will bring, but not
-the 1M-LOC monorepo the design gate was written against. No public material
-should imply otherwise.
+Re-run E8 after each; `experiments/e8-scale/RESULTS.md` holds both the
+pre-D1 baseline and the current numbers, and the R10 budgets are unchanged.
+The honest statement of what keeldocs handles is now **~100k LOC / 200
+packages at a ~2s warm check** — most repositories, and the size the beta
+cohort will bring — but still not the 1M-LOC monorepo the design gate was
+written against, which needs D2. No public material should imply otherwise.
 
 Two sandbox residuals are recorded rather than open, because closing them buys
 nothing at the current threat model: `/proc`, `/sys` and `/dev` stay the host's
@@ -236,7 +235,7 @@ alongside the build rather than after.
 | E5 determinism goldens | "byte-identical output across OSes" | **Passed, permanent** — runs every CI push |
 | E6 redaction adversarial corpus | "the write barrier catches realistic leaks" | **Passed** |
 | E7 agent adapter smoke matrix | the distribution bet | **Blocked (you)** — needs a published package |
-| E8 scale benchmark (1M LOC) | "warm check ≤5s p50" | **Run 2026-08-01 → FAILED.** RAM (900 MB flat) and cold (≤34s) pass with room; p50 fails at every size and 1M LOC exits 2 on the ADR-002 output cap. Root cause: no incremental cache exists. Budgets held, debt filed as D1–D3 |
+| E8 scale benchmark (1M LOC) | "warm check ≤5s p50" | **Run 2026-08-01 → FAILED; re-run after D1 → PASSES at 10k and 100k, still fails at 1M.** Root cause of the original failure was that no incremental cache existed; D1 built one and the 100k warm check went 9.66s → 2.23s. Remaining failures are named and sized: 1M exits 2 on the ADR-002 output cap (D2), and a one-file edit at 100k is 6.32s against the 5s p50 (D4). Budgets never moved |
 | E9 noise SLO field trial | the adoption bet | **Four rounds run** on a real production repo; the 4-week accept-rate number still needs a cohort |
 | E10 injection red-team | "artifact-borne injection cannot reach an action" | **Passed, permanent CI gate** |
 | E11 ERD scale rendering | "the flagship diagram survives 500 tables" | **Run 2026-08-01 → FAILED, REDESIGNED, PASSES.** The flat ERD crossed `maxTextSize` between 100 and 250 tables — real Supabase and Rails schemas live there, and the failure renders *nothing*. Chunking shipped; 1,000 tables now render with every table drawn. Gated by 8 unit tests against Mermaid's real ceilings plus a 260-table end-to-end harness check |

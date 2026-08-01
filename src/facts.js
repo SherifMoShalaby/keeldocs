@@ -21,6 +21,7 @@ import { refusalOf, loadLock, parseTrustedKeys } from "./trust.js";
 import { REGISTRY, REGISTRY_ERROR, ENGINE_VERSION } from "./registry.js";
 import { repoFiles, resolveInputs, buildView } from "./scope.js";
 import { minimalRootPlan, STAGE } from "./minroot.js";
+import { cacheEnabled, extractKey, fileDigest, hashAll, hashInputs, inputsUnmoved, readEntry, uncacheableReason, writeEntry } from "./cache.js";
 
 // fileURLToPath, never URL.pathname (Windows: "/D:/..." breaks join - item 10)
 const ENGINE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,7 +38,20 @@ function walk(root, pred, out = [], dir = root) {
   return out;
 }
 
-function detect(reg, repoRoot) {
+// `allFiles` is the ONE repo walk (src/scope.js), reused here instead of
+// re-walking per provider. Detection ran its own recursive walk for every
+// provider that names files - 20-odd full traversals of the tree, ~50ms each at
+// 1M LOC, for a list already in memory. The walk orders are identical (same
+// skip set, same sorted depth-first order), so "first match" is unchanged.
+const firstNamed = (repoRoot, allFiles, names) => {
+  for (const rel of allFiles) {
+    const base = rel.slice(rel.lastIndexOf("/") + 1);
+    if (names.includes(base)) return join(repoRoot, rel);
+  }
+  return null;
+};
+
+function detect(reg, repoRoot, allFiles) {
   if (reg.detect.always) return { applicable: true, via: "always" };
   const pkgPath = join(repoRoot, "package.json");
   if (reg.detect.deps && existsSync(pkgPath)) {
@@ -48,8 +62,8 @@ function detect(reg, repoRoot) {
     } catch { /* unreadable manifest -> fall through to file detection */ }
   }
   if (reg.detect.files) {
-    const found = walk(repoRoot, (n) => reg.detect.files.includes(n));
-    if (found.length) return { applicable: true, via: "file", file: found[0] };
+    const found = firstNamed(repoRoot, allFiles, reg.detect.files);
+    if (found) return { applicable: true, via: "file", file: found };
   }
   if (reg.detect.dirs) { // fixed repo-relative dirs (e.g. migration chains)
     for (const d of reg.detect.dirs) {
@@ -215,10 +229,12 @@ export const sandboxState = () => ({ tier: SANDBOX, netns: SANDBOX !== "none",
 // security exclusion set, plus the fact files the engine hands it and - when
 // keeldocs is installed INSIDE the repo it is reading - the engine's own tree,
 // without which the provider's entry file would not exist to run.
-function viewFor(reg, repoRoot, scope) {
+function viewFor(reg, repoRoot, scope, resolved) {
   const dir = join(scope.dir, reg.id);
   rmSync(dir, { recursive: true, force: true });
-  const { files, dirs } = resolveInputs(repoRoot, reg.inputs, scope.allFiles);
+  // the SAME resolved list the cache keys on - one computation, so the readable
+  // set and the invalidation set cannot drift apart
+  const files = [...resolved.files], dirs = resolved.dirs;
   for (const p of Object.values(scope.factEnv ?? {})) {
     const rel = toPosix(relative(repoRoot, p));
     if (rel && !rel.startsWith("..")) files.push(rel);
@@ -237,22 +253,25 @@ function viewFor(reg, repoRoot, scope) {
   return { dir: toPosix(dir), mounts };
 }
 
-function runProvider(reg, repoRoot, detectInfo, factEnv = {}, scope = null) {
-  let args = [repoRoot];
+// The exact argv a provider receives. Split out of runProvider because the
+// cache key must contain it: same repo, different args, different answer.
+function argsFor(reg, repoRoot, detectInfo, allFiles) {
   if (reg.argMode === "schemaFile") {
-    const schema = detectInfo.file ?? walk(repoRoot, (n) => n === "schema.prisma")[0];
-    if (!schema) return { status: "not_applicable" };
-    args = [schema];
-  } else if (reg.argMode === "providerDir") {
-    args = [reg.dir, repoRoot]; // generic .scm runtime: which provider + which repo
+    const schema = detectInfo.file ?? firstNamed(repoRoot, allFiles, ["schema.prisma"]);
+    return schema ? [schema] : null;
   }
+  if (reg.argMode === "providerDir") return [reg.dir, repoRoot]; // .scm runtime: which provider + which repo
+  return [repoRoot];
+}
+
+function runProvider(reg, repoRoot, args, factEnv = {}, scope = null, resolved = null) {
   // externals resolve from their installed dir (absEntry); first-party from the engine tree
   const entryPath = reg.absEntry ?? join(ENGINE_ROOT, reg.entry);
   const tier = reg.live ? "none" : SANDBOX; // live keeps its declared network:db
   // Per-glob scoping rides the rofs tier: the view REPLACES the repository the
   // provider sees, so the read-only guarantee is unchanged and the READABLE
   // set shrinks to exactly what the manifest declared.
-  const view = tier === "rofs" && scope ? viewFor(reg, repoRoot, { ...scope, factEnv }) : null;
+  const view = tier === "rofs" && scope ? viewFor(reg, repoRoot, { ...scope, factEnv }, resolved) : null;
   const wrap = (bin) => view && MINROOT.ok
     // minimal root: the host is masked and only the runtime, the engine and
     // this provider's own view survive
@@ -700,6 +719,10 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
   // repo root would remove the provider's own entry file. That degrades to the
   // repo-wide rofs tier with a NAMED gap rather than silently, because a
   // sandbox that quietly weakens is worse than one that says so.
+  // ONE walk, now unconditional: scoping needs it to build views, detection
+  // needs it to find manifests, and D1's cache needs it to know what each
+  // provider could have read. Three consumers, one traversal.
+  const allFiles = repoFiles(repoRoot);
   let scope = null;
   if (SANDBOX === "rofs") {
     const engineRel = toPosix(relative(repoRoot, ENGINE_ROOT));
@@ -708,10 +731,19 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
     } else {
       const scopeDir = join(repoRoot, ".keeldocs", "cache", "scope");
       rmSync(scopeDir, { recursive: true, force: true });
-      scope = { dir: scopeDir, allFiles: repoFiles(repoRoot),
+      scope = { dir: scopeDir, allFiles,
                 engineRel: engineRel.startsWith("..") ? [] : [engineRel] };
     }
   }
+  // D1 (risk R10). Counters, not a report field: how a run was SERVED is run
+  // state, not repository state. Two runs that disagree about hit counts must
+  // still produce byte-identical facts, envelopes and reports - which is
+  // exactly what the harness asserts - so this never enters the deterministic
+  // stdout path. It surfaces on the human channel only.
+  const useCache = cacheEnabled();
+  const cacheStats = { hits: 0, misses: 0, uncacheable: 0, enabled: useCache, reasons: {} };
+  // one hash pass for the whole run, shared by every provider's key
+  const digests = useCache ? hashAll(repoRoot, allFiles) : null;
   const writeCapFile = (cap) => {
     const list = [...factsById.values()].filter((f) => capOf(f.id) === cap)
       .sort((a, b) => a.id.localeCompare(b.id));
@@ -725,7 +757,7 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
     const flushGroup = () => { // last provider of this capability just finished
       if (active[i + 1]?.capability !== reg.capability) writeCapFile(reg.capability);
     };
-    const d = detect(reg, repoRoot);
+    const d = detect(reg, repoRoot, allFiles);
     if (!d.applicable) {
       capabilities[reg.capability] ??= { status: "absent", providers: [] };
       flushGroup();
@@ -755,7 +787,41 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
       }
       if (dsn) factEnv.KEELDOCS_DSN = dsn;
     }
-    const run = runProvider(reg, repoRoot, d, factEnv, scope);
+    // ---- D1: the subprocess, or the answer it gave last time ----
+    const resolved = resolveInputs(repoRoot, reg.inputs, allFiles);
+    const args = argsFor(reg, repoRoot, d, allFiles);
+    let run;
+    if (args === null) {
+      run = { status: "not_applicable" }; // argMode: schemaFile with no schema
+    } else {
+      const why = useCache ? uncacheableReason(reg, resolved) : "cache disabled";
+      const key = why ? null : extractKey({
+        reg, engine: ENGINE_VERSION, repoRoot, args,
+        tier: `${reg.live ? "none" : SANDBOX}/${MINROOT.ok ? "minroot" : "host"}/${scope ? "scoped" : "wide"}`,
+        detect: { via: d.via, file: d.file ? toPosix(relative(repoRoot, d.file)) : null },
+        env: Object.keys(factEnv).sort(),
+        files: hashInputs(repoRoot, resolved.files, digests),
+        factFiles: (reg.factInputs ?? []).map((c) => [c, existsSync(capFile(c)) ? fileDigest(capFile(c)) : "absent"]),
+      });
+      const hit = key ? readEntry(repoRoot, reg.id, key) : null;
+      if (hit !== null) {
+        cacheStats.hits++;
+        run = { status: "ok", raw: hit };
+      } else {
+        if (why) { cacheStats.uncacheable++; cacheStats.reasons[reg.id] = why; }
+        else cacheStats.misses++;
+        run = runProvider(reg, repoRoot, args, factEnv, scope, resolved);
+        // Only a clean run is worth remembering. A failure is a state of the
+        // world right now, not a property of these inputs - caching it would
+        // make a transient timeout permanent until something unrelated changed.
+        // And only if the inputs held still while it ran: an answer computed
+        // from bytes that arrived after the key was taken must not be filed
+        // under that key (see inputsUnmoved).
+        if (key && run.status === "ok" && inputsUnmoved(repoRoot, hashInputs(repoRoot, resolved.files, digests), resolved.files)) {
+          writeEntry(repoRoot, reg.id, key, run.raw);
+        }
+      }
+    }
     const cap = (capabilities[reg.capability] ??= { status: "absent", providers: [] });
     cap.providers.push(`${reg.id}@${reg.semver}`);
     if (run.status === "failed") {
@@ -843,5 +909,5 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
     .update([...active.map((r) => `${r.id}@${r.semver}`)].sort().join(",") + `|engine:${ENGINE_VERSION.split(".")[0]}`)
     .digest("hex").slice(0, 16);
 
-  return { factsById, capabilities, gaps, providerSetHash, toolError, conflicts };
+  return { factsById, capabilities, gaps, providerSetHash, toolError, conflicts, cache: cacheStats };
 }

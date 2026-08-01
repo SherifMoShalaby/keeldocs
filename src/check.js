@@ -56,7 +56,12 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   mkdirSync(outDir, { recursive: true });
   const outName = `check-${report.meta.head ? report.meta.head.slice(0, 8) : "nogit"}.json`;
   const outPath = join(outDir, outName);
-  const { noise, upgrades, ...spill } = report;
+  // `cache` leaves with `noise` and `upgrades`: how a run was SERVED is run
+  // state, not repository state. Two runs of the same tree - one cold, one
+  // warm - must produce byte-identical envelopes and byte-identical reports, or
+  // the cache has become visible in the deterministic channel and every golden
+  // comparison in the harness turns into a coin flip.
+  const { noise, upgrades, cache, ...spill } = report;
   writeFileSync(outPath, JSON.stringify(spill, null, 1) + "\n");
 
   const c = report.counts;
@@ -81,7 +86,7 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
     next: [...(exit === 1 ? ["keeldocs sync"] : []),
            ...(upgrades?.length ? ["keeldocs sync --upgrade"] : [])],
   };
-  return emit(json, exit, envelope, report);
+  return emit(json, exit, envelope, report, cache);
 }
 
 function buildReport(repoRoot, ci, config, since, live = false) {
@@ -91,7 +96,7 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     ? (git(repoRoot, ["show", "-s", "--format=%cI", "HEAD"]) ?? "9999-12-31T00:00:00Z")
     : new Date().toISOString();
 
-  const { factsById, capabilities, gaps, providerSetHash, toolError, conflicts } =
+  const { factsById, capabilities, gaps, providerSetHash, toolError, conflicts, cache } =
     extractAll(repoRoot, { disable: config.providers.disable, trustKeys: config.trust.keys, resolvePins: config.resolve.pin,
       live: live ? { dsnEnv: config.live["dsn-env"] } : null });
   const rawJournal = loadJournal(repoRoot);
@@ -143,6 +148,10 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     // as a smaller-but-CLEAN report (this line was missing once - check said
     // CLEAN while db-schema was failed; caught by the live DSN-missing test)
     ...(toolError ? { toolError } : {}),
+    // D1 cache accounting is HUMAN-CHANNEL ONLY (see below): it rides the
+    // report object in memory so `humanize` can reach it, and is stripped
+    // before the report is written or the envelope is built.
+    cache,
     capabilities, counts, findings, coverage: cov,
     noise: noiseStats(rawJournal, nowIso), upgrades,
     quarantined, extractionGaps: gaps,
@@ -152,7 +161,7 @@ function buildReport(repoRoot, ci, config, since, live = false) {
   };
 }
 
-function emit(json, exit, envelope, report) {
+function emit(json, exit, envelope, report, cache = null) {
   if (json) {
     let out = JSON.stringify(envelope);
     if (out.length > 8192) { // hard envelope cap - trim top findings until it fits
@@ -162,18 +171,29 @@ function emit(json, exit, envelope, report) {
     }
     process.stdout.write(out + "\n");
   } else {
-    process.stdout.write(humanize(envelope, report));
+    process.stdout.write(humanize(envelope, report, cache));
   }
   return exit;
 }
 
-function humanize(envelope, report) {
+function humanize(envelope, report, cache = null) {
   const lines = [`keeldocs check - ${envelope.code}`, envelope.summary, ""];
   for (const f of envelope.data.top ?? []) {
     lines.push(`  ${f.state.toUpperCase().padEnd(9)} ${f.doc}:${f.line}  ${f.id}${f.missing ? `  (missing: ${f.missing.join(", ")})` : ""}`);
     if (f.candidates?.length) lines.push(`            candidates: ${f.candidates.join(", ")}`);
   }
   if (report?.quarantined?.length) lines.push(`  note: ${report.quarantined.length} malformed marker(s) quarantined`);
+  // Stated, not silent: a reader must be able to tell that work was skipped,
+  // and must be told how to stop skipping it. Human channel only - the JSON
+  // envelope stays a pure function of the repository.
+  if (cache && (cache.hits || cache.misses)) {
+    const total = cache.hits + cache.misses;
+    lines.push("", cache.hits
+      ? `cache: ${cache.hits}/${total} provider(s) reused from .keeldocs/cache (--no-cache to re-extract)`
+      : `cache: 0/${total} provider(s) reused - everything re-extracted`);
+  } else if (cache && !cache.enabled) {
+    lines.push("", "cache: disabled (KEELDOCS_NO_CACHE)");
+  }
   if (envelope.full) lines.push("", `full report: ${envelope.full}`);
   return lines.join("\n") + "\n";
 }
