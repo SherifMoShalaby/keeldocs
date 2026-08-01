@@ -8,7 +8,8 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { jcs } from "./jcs.js";
@@ -19,6 +20,7 @@ import { loadExternalProviders, orderEntries } from "./providers.js";
 import { refusalOf, loadLock, parseTrustedKeys } from "./trust.js";
 import { REGISTRY, REGISTRY_ERROR, ENGINE_VERSION } from "./registry.js";
 import { repoFiles, resolveInputs, buildView } from "./scope.js";
+import { minimalRootPlan, STAGE } from "./minroot.js";
 
 // fileURLToPath, never URL.pathname (Windows: "/D:/..." breaks join - item 10)
 const ENGINE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -96,6 +98,53 @@ const SCOPE_SCRIPT = [
   'exec "$@"',
 ].join("\n");
 
+// MINIMAL ROOT (ADR-002's last residual, src/minroot.js). Argument shape:
+//   <view> <root> <nGrants> [<src> <dst>]... <nKeeps> [<path>]... <nMasks> [<path>]... <cmd>...
+// Order is the whole design. Everything that must survive is bound into a
+// staging tmpfs while real paths still resolve; only then is the host masked;
+// only then are the survivors re-exposed at their ORIGINAL paths, so no runtime
+// has to be told it moved. The staging area is masked again at the end.
+export const MINROOT_SCRIPT = [
+  `stage=${STAGE}/keeldocs`,
+  `mount -t tmpfs none ${STAGE} || exit 90`,
+  'mkdir -p "$stage" || exit 90',
+  ': > "$stage/keeps" || exit 90',
+  'view=$1; root=$2; shift 2',
+  'n=$1; shift',                        // directory grants, bound into the view
+  'while [ "$n" -gt 0 ]; do',
+  '  mount --bind "$1" "$2" || exit 91',
+  '  mount -o remount,ro,bind "$2" || exit 92',
+  '  shift 2; n=$((n-1))',
+  'done',
+  'mkdir -p "$stage/view" || exit 93',  // rbind so the grants ride along
+  'mount --rbind "$view" "$stage/view" || exit 93',
+  'k=$1; shift; i=0',
+  'while [ "$k" -gt 0 ]; do',
+  '  i=$((i+1)); mkdir -p "$stage/k$i" || exit 97',
+  '  mount --rbind "$1" "$stage/k$i" || exit 97',
+  '  printf "%s\\n" "$1" >> "$stage/keeps" || exit 97',
+  '  shift; k=$((k-1))',
+  'done',
+  'm=$1; shift',                        // the host disappears here
+  'while [ "$m" -gt 0 ]; do',
+  '  mount -t tmpfs -o mode=0755 none "$1" || exit 96',
+  '  shift; m=$((m-1))',
+  'done',
+  'i=0',                                // survivors return to their real paths
+  'while IFS= read -r d; do',
+  '  i=$((i+1))',
+  '  mkdir -p "$d" || exit 98',
+  '  mount --rbind "$stage/k$i" "$d" || exit 98',
+  '  mount -o remount,ro,bind "$d" || exit 98',
+  'done < "$stage/keeps"',
+  'mkdir -p "$root" || exit 94',
+  'mount --rbind "$stage/view" "$root" || exit 94',
+  'mount -o remount,ro,bind "$root" || exit 94',
+  `mount -t tmpfs none ${STAGE} || exit 90`,   // hide the staging area itself
+  'cd "$root" || exit 95',
+  'exec "$@"',
+].join("\n");
+
 const SANDBOX = (() => {
   if (process.platform !== "linux") return "none";
   const ok = (args) => {
@@ -106,8 +155,61 @@ const SANDBOX = (() => {
   if (ok(["-rn", "true"])) return "net";
   return "none";
 })();
+// The child's environment. NODE_EXTRA_CA_CERTS is dropped deliberately: it
+// points at a host path the minimal root masks, and the sandbox denies network
+// anyway, so keeping it only produces a warning on the stderr the engine
+// captures into failure reports.
+function childEnv(extra = {}) {
+  const e = { ...process.env, ...extra };
+  delete e.NODE_EXTRA_CA_CERTS;
+  return e;
+}
+
+// MINIMAL-ROOT PROBE. Same discipline as every other sandbox tier here: run the
+// real primitive and see, never assume. A wrapper the interpreters cannot start
+// inside is worse than no wrapper, so this falls back to the repo-scoped tier
+// with a NAMED reason rather than failing every provider.
+const MINROOT = (() => {
+  if (SANDBOX !== "rofs") return { ok: false, reason: "needs the rofs tier" };
+  let plan;
+  try { plan = minimalRootPlan([ENGINE_ROOT]); }
+  catch (err) { return { ok: false, reason: `plan failed: ${String(err.message)}` }; }
+  let probe;
+  try {
+    probe = mkdtempSync(join(tmpdir(), "keeldocs-minroot-"));
+    mkdirSync(join(probe, "view"), { recursive: true });
+    mkdirSync(join(probe, "root"), { recursive: true });
+    const wrap = (bin, args) => ["-rnm", "--", "/bin/sh", "-c", MINROOT_SCRIPT, "sh",
+      join(probe, "view"), join(probe, "root"), "0",
+      String(plan.keeps.length), ...plan.keeps,
+      String(plan.masks.length), ...plan.masks, bin, ...args];
+    const run = (bin, args) => spawnSync("unshare", wrap(bin, args), { encoding: "utf8", env: childEnv() });
+    if (run(process.execPath, ["-e", "process.exit(0)"]).status !== 0) {
+      return { ok: false, reason: "node cannot start inside the minimal root" };
+    }
+    // tree-sitter is what the whole declarative tier imports. If it works on the
+    // host but not inside, the mask took something a provider needs - degrade
+    // rather than break every .scm provider on this machine.
+    const py = (code) => ["python3", "python"].map((b) => run(b, ["-c", code]))
+      .some((r) => r.status === 0);
+    if (!py("import sys")) return { ok: false, reason: "python cannot start inside the minimal root" };
+    if (!py("import tree_sitter")) {
+      const outside = ["python3", "python"].some((b) =>
+        spawnSync(b, ["-c", "import tree_sitter"], { encoding: "utf8" }).status === 0);
+      if (outside) return { ok: false, reason: "tree_sitter is importable on this host but not inside the minimal root" };
+    }
+    return { ok: true, plan };
+  } catch (err) {
+    return { ok: false, reason: String(err.message) };
+  } finally {
+    if (probe) rmSync(probe, { recursive: true, force: true });
+  }
+})();
+
 export const sandboxState = () => ({ tier: SANDBOX, netns: SANDBOX !== "none",
-  scoping: SANDBOX === "rofs" ? "per-glob" : "none" });
+  scoping: SANDBOX === "rofs" ? "per-glob" : "none",
+  root: MINROOT.ok ? "minimal" : "host",
+  ...(MINROOT.ok ? {} : { rootReason: MINROOT.reason }) });
 
 // The provider's view of the repository: its declared globs, minus the
 // security exclusion set, plus the fact files the engine hands it and - when
@@ -151,7 +253,14 @@ function runProvider(reg, repoRoot, detectInfo, factEnv = {}, scope = null) {
   // provider sees, so the read-only guarantee is unchanged and the READABLE
   // set shrinks to exactly what the manifest declared.
   const view = tier === "rofs" && scope ? viewFor(reg, repoRoot, { ...scope, factEnv }) : null;
-  const wrap = (bin) => view
+  const wrap = (bin) => view && MINROOT.ok
+    // minimal root: the host is masked and only the runtime, the engine and
+    // this provider's own view survive
+    ? ["unshare", ["-rnm", "--", "/bin/sh", "-c", MINROOT_SCRIPT, "sh", view.dir, repoRoot,
+        String(view.mounts.length), ...view.mounts.flat(),
+        String(MINROOT.plan.keeps.length), ...MINROOT.plan.keeps,
+        String(MINROOT.plan.masks.length), ...MINROOT.plan.masks, bin, entryPath, ...args]]
+    : view
     ? ["unshare", ["-rnm", "--", "/bin/sh", "-c", SCOPE_SCRIPT, "sh", view.dir, repoRoot,
         String(view.mounts.length), ...view.mounts.flat(), bin, entryPath, ...args]]
     : tier === "rofs"
@@ -162,7 +271,7 @@ function runProvider(reg, repoRoot, detectInfo, factEnv = {}, scope = null) {
   const spawnWith = (bin) => spawnSync(...wrap(bin), {
     cwd: repoRoot, timeout: TIMEOUTS[reg.timeoutClass] ?? TIMEOUTS.D,
     maxBuffer: OUTPUT_CAP, encoding: "utf8",
-    env: { ...process.env, ...factEnv },
+    env: childEnv(factEnv),
   });
   try {
     let r;

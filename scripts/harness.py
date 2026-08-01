@@ -8,7 +8,7 @@ For every registered provider fixture:
 Also smoke-tests the CLI envelope contract (exit codes + JSON shape).
 Exit 0 = all green; 1 = mismatch/failure. No network, no clock, no LLM - by design.
 """
-import json, os, subprocess, sys
+import json, os, subprocess, sys, traceback
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -313,6 +313,14 @@ def canonical(text):
     return json.dumps(json.loads(text), sort_keys=True, separators=(",", ":"))
 
 
+
+def why(e):
+    """A bare `assert x` carries no message; without the line number a failure
+    here is a scavenger hunt. Report where it fired, always."""
+    tb = traceback.extract_tb(e.__traceback__)
+    where = f" [harness.py:{tb[-1].lineno}]" if tb else ""
+    return f"{e}{where}"
+
 def canonical_lines(text):
     """A JSONL fact file compared key-order-insensitively, line by line."""
     return [canonical(l) for l in text.splitlines() if l.strip()]
@@ -348,7 +356,7 @@ def main():
                 continue
             print(f"  PASS  {case['name']} (deterministic, matches golden)")
         except Exception as e:  # noqa: BLE001 - harness reports, never hides
-            failures.append(f"{case['name']}: {e}")
+            failures.append(f"{case['name']}: {why(e)}")
 
     # ---- check integration: drift-scenario must reproduce the golden report ----
     def run_check(fixture, extra=()):
@@ -381,7 +389,7 @@ def main():
             raise AssertionError("full report != golden/check-report.json (regenerate deliberately if behavior changed)")
         print("  PASS  check integration: drift-scenario (exit 1, all 6 states, matches golden)")
     except Exception as e:
-        failures.append(f"check integration drift-scenario: {e}")
+        failures.append(f"check integration drift-scenario: {why(e)}")
 
     try:
         r = run_check("express-mounts")
@@ -389,7 +397,7 @@ def main():
         assert r.returncode == 0 and env["code"] == "CLEAN", f"rc={r.returncode} code={env.get('code')}"
         print("  PASS  check integration: express-mounts (clean repo, exit 0)")
     except Exception as e:
-        failures.append(f"check integration express-mounts: {e}")
+        failures.append(f"check integration express-mounts: {why(e)}")
 
     # ---- ADR-003 resolution: two providers claim the same fact id ----
     # express (app.js) and fastapi (main.py) both emit GET /health. Agreement
@@ -416,7 +424,7 @@ def main():
             "total order must keep exactly one fact with the winner's provenance"
         print("  PASS  ADR-003 resolution: same-id claims corroborate to ONE fact, deterministic winner")
     except Exception as e:
-        failures.append(f"resolution integration: {e}")
+        failures.append(f"resolution integration: {why(e)}")
 
     # ---- N1: the first REAL conflict pair (drizzle vs prisma) + the pin ----
     try:
@@ -457,7 +465,7 @@ def main():
             os.remove(os.path.join(ROOT, "fixtures", "conflict-scenario", "keeldocs.toml"))
         print("  PASS  N1 conflict pair: drizzle-vs-prisma conflict recorded, union kept, pin flips winner")
     except Exception as e:
-        failures.append(f"conflict integration: {e}")
+        failures.append(f"conflict integration: {why(e)}")
 
     # ---- init integration: wow loop end-to-end, born-clean, deterministic ----
     import shutil, tempfile
@@ -506,7 +514,7 @@ def main():
         rmtree(tmp1); rmtree(tmp2)
         print("  PASS  init integration: init-scenario (4 lies w/ receipts, born-clean, idempotent, deterministic)")
     except Exception as e:
-        failures.append(f"init integration: {e}")
+        failures.append(f"init integration: {why(e)}")
 
     # ---- sync integration: the full retention loop ----
     # Journal writes are CI-guarded by design; the harness explicitly clears CI to
@@ -574,7 +582,7 @@ def main():
         rmtree(tmp)
         print("  PASS  sync integration: retention loop (drift->apply->clean), restore, reject->held, rebind")
     except Exception as e:
-        failures.append(f"sync integration: {e}")
+        failures.append(f"sync integration: {why(e)}")
 
     # ---- new + slot-write/approve integration: the honesty loop ----
     try:
@@ -641,7 +649,7 @@ def main():
         rmtree(tmp)
         print("  PASS  new/slot-write/approve integration: honesty loop (gates, stability, stale->reprose->attest->clean, CI guard)")
     except Exception as e:
-        failures.append(f"new/slot-write integration: {e}")
+        failures.append(f"new/slot-write integration: {why(e)}")
 
     # ---- system-map integration: workspace+compose -> owned/external topology ----
     try:
@@ -687,7 +695,7 @@ def main():
         rmtree(tmp)
         print("  PASS  system-map integration: owned/external topology, born-clean, drift loop, verbatim ${VAR}")
     except Exception as e:
-        failures.append(f"system-map integration: {e}")
+        failures.append(f"system-map integration: {why(e)}")
 
     # ---- symbol identity + S1b re-anchoring: the ADR-007 loop on `ds` anchors ----
     try:
@@ -721,7 +729,7 @@ def main():
         rmtree(tmp)
         print("  PASS  symbol identity: ds anchors, overload-impl exclusion, move -> S1b rebind -> clean")
     except Exception as e:
-        failures.append(f"symbol identity integration: {e}")
+        failures.append(f"symbol identity integration: {why(e)}")
 
     # ---- keeldocs.toml: provider disable respected; bad config fails loud ----
     try:
@@ -747,7 +755,7 @@ def main():
         rmtree(tmp)
         print("  PASS  keeldocs.toml: provider disable honored, typo'd key fails loud (CONFIG, exit 2)")
     except Exception as e:
-        failures.append(f"config integration: {e}")
+        failures.append(f"config integration: {why(e)}")
 
     # ---- decision-history + plan ranking: hotspot x fan-in on a real git repo ----
     try:
@@ -786,7 +794,7 @@ def main():
         rmtree(tmp)
         print("  PASS  decision-history: HEAD-anchored churn, hotspot x fan-in plan ranking")
     except Exception as e:
-        failures.append(f"decision-history integration: {e}")
+        failures.append(f"decision-history integration: {why(e)}")
 
     # ---- RLS static surface: policies render, born clean, drift is surgical ----
     try:
@@ -826,7 +834,7 @@ def main():
         rmtree(tmp)
         print("  PASS  RLS static surface: replay, policy table, born-clean, surgical drift loop")
     except Exception as e:
-        failures.append(f"rls integration: {e}")
+        failures.append(f"rls integration: {why(e)}")
 
     # ---- Python end-to-end: FastAPI docs born clean, drift loop, ds symbols ----
     try:
@@ -880,7 +888,7 @@ def main():
         rmtree(tmp)
         print("  PASS  python end-to-end: fastapi mounts, ds symbols w/ overload rule, born-clean, drift loop")
     except Exception as e:
-        failures.append(f"python integration: {e}")
+        failures.append(f"python integration: {why(e)}")
 
     # ---- noise instruments: self-caused scoping, one-keystroke apply, throttle ----
     try:
@@ -937,7 +945,7 @@ def main():
         rmtree(tmp)
         print("  PASS  noise instruments: self-caused split, sync --self, applied journal, quiet throttle")
     except Exception as e:
-        failures.append(f"noise instruments: {e}")
+        failures.append(f"noise instruments: {why(e)}")
 
     # ---- re-anchoring pipeline: S1+S2 auto-rebind gate, S2-only stays proposal ----
     try:
@@ -990,7 +998,7 @@ def main():
         rmtree(tmp)
         print("  PASS  re-anchoring: file-move auto-rebind (S1+S2, journaled), in-place rename stays human-choice")
     except Exception as e:
-        failures.append(f"re-anchoring: {e}")
+        failures.append(f"re-anchoring: {why(e)}")
 
     # ---- live-Postgres via tbls: opt-in, declared-beats-live, CI-guarded ----
     try:
@@ -1037,7 +1045,7 @@ def main():
         rmtree(tmp)
         print("  PASS  live-Postgres (tbls): opt-in only, declared-beats-live, CI guard, env-named DSN")
     except Exception as e:
-        failures.append(f"live integration: {e}")
+        failures.append(f"live integration: {why(e)}")
 
     # ---- replay engine end-to-end: pure-SQL repo -> ERD -> drift loop ----
     try:
@@ -1100,7 +1108,7 @@ def main():
         rmtree(tmp)
         print("  PASS  replay engine: chain -> catalog ERD, born-clean, migration drift loop closes")
     except Exception as e:
-        failures.append(f"replay integration: {e}")
+        failures.append(f"replay integration: {why(e)}")
 
     # ---- R4: the derived PostgREST surface, config-driven and honest ----
     try:
@@ -1148,7 +1156,7 @@ def main():
         rmtree(tmp)
         print("  PASS  PostgREST surface: derived endpoints, config-driven exposure, gaps named, drift loop closes")
     except Exception as e:
-        failures.append(f"postgrest integration: {e}")
+        failures.append(f"postgrest integration: {why(e)}")
 
     # ---- recipe migration: a doc that predates a section gets it, losslessly ----
     try:
@@ -1214,7 +1222,7 @@ def main():
         rmtree(tmp)
         print("  PASS  recipe migration: older doc gains the section in recipe order, zero human bytes lost")
     except Exception as e:
-        failures.append(f"upgrade integration: {e}")
+        failures.append(f"upgrade integration: {why(e)}")
 
     # ---- N2: java + go end-to-end (born clean, drift loop closes) ----
     try:
@@ -1252,7 +1260,7 @@ def main():
             rmtree(tmp)
         print("  PASS  N2 java+go: spring member-mode + gin chains, born-clean, drift loops close")
     except Exception as e:
-        failures.append(f"java/go integration: {e}")
+        failures.append(f"java/go integration: {why(e)}")
 
     # ---- N3 variant topology: helm + kustomize, unknowns never guessed ----
     try:
@@ -1293,7 +1301,7 @@ def main():
         rmtree(tmp)
         print("  PASS  N3 variant topology: helm declared-values render, kustomize base, unknowns explicit")
     except Exception as e:
-        failures.append(f"variant topology integration: {e}")
+        failures.append(f"variant topology integration: {why(e)}")
 
     # ---- async-messaging + data-flow recipe: labeled corpus, born clean ----
     try:
@@ -1343,7 +1351,7 @@ def main():
         rmtree(tmp)
         print("  PASS  async-messaging: 10/10 labeled channels, gap held, data-flow born clean, drift loop closes")
     except Exception as e:
-        failures.append(f"async-messaging integration: {e}")
+        failures.append(f"async-messaging integration: {why(e)}")
 
     # ---- next-scenario end-to-end: file-based routes + edge fns land ----
     try:
@@ -1364,7 +1372,7 @@ def main():
         assert '"fact:http-endpoints/POST /functions/v1/accept-ride"' in ep
         print("  PASS  next-scenario: app-router routes + edge-function endpoints extracted")
     except Exception as e:
-        failures.append(f"next-scenario integration: {e}")
+        failures.append(f"next-scenario integration: {why(e)}")
 
     # ---- client-routes end-to-end: facts land, coverage denominator untouched ----
     try:
@@ -1388,7 +1396,7 @@ def main():
             "the computed path must be an honest gap"
         print("  PASS  client-routes: react-router idioms extracted, coverage denominator untouched")
     except Exception as e:
-        failures.append(f"client-routes integration: {e}")
+        failures.append(f"client-routes integration: {why(e)}")
 
     # ---- interview: cap-5 cards from engine state, resumable, journal-verified ----
     try:
@@ -1441,7 +1449,7 @@ def main():
         rmtree(tmp)
         print("  PASS  interview: cap-5 batch, tombstone/reject effects journaled, resumable, CI-guarded")
     except Exception as e:
-        failures.append(f"interview integration: {e}")
+        failures.append(f"interview integration: {why(e)}")
 
     # ---- R3+R4: module guide, onboarding-verify classes, mine -> rationale ----
     try:
@@ -1505,7 +1513,7 @@ def main():
         rmtree(tmp)
         print("  PASS  R3+R4: module guide born clean, make/version lie classes, mine -> rationale -> reject holds")
     except Exception as e:
-        failures.append(f"R3/R4 integration: {e}")
+        failures.append(f"R3/R4 integration: {why(e)}")
 
     # ---- E10 red-team: T2 refusals + marker-forgery neutralized (doc 11 R2) ----
     try:
@@ -1547,7 +1555,8 @@ def main():
         man = env_["data"]
         assert man["reads"]["matched"] == 1 and man["reads"]["sample"] == ["acme.schema"], man["reads"]
         assert man["network"] == "denied" and man["trust"]["proof"] == "verified", man
-        assert man["enforcement"]["level"] in ("per-glob", "network-only", "none")
+        assert man["enforcement"]["level"] in \
+            ("minimal-root", "per-glob", "network-only", "none"), man["enforcement"]
         # ... and --yes is the only way to give it
         r = kd(dst, "provider", "add", prov, "--yes", "--json", env=local_env)
         assert r.returncode == 0 and json.loads(r.stdout)["code"] == "INSTALLED", r.stdout[:200]
@@ -1614,7 +1623,7 @@ def main():
         rmtree(tmp)
         print("  PASS  E10 red-team: unsigned/untrusted/tampered all REFUSED; marker forgery dropped as a named gap")
     except Exception as e:
-        failures.append(f"E10 trust red-team: {e}")
+        failures.append(f"E10 trust red-team: {why(e)}")
 
     # ---- redaction barrier: secret in facts -> [REDACTED] in docs, still born clean ----
     try:
@@ -1640,7 +1649,7 @@ def main():
         rmtree(tmp)
         print("  PASS  redaction barrier: secret neutralized, envelope loud, born-clean preserved")
     except Exception as e:
-        failures.append(f"redaction barrier: {e}")
+        failures.append(f"redaction barrier: {why(e)}")
 
     # ---- skill lint (E7's runnable slice): ADR-010 budget caps, structurally ----
     try:
@@ -1661,7 +1670,7 @@ def main():
         assert total_listing <= 8000, f"skills listing {total_listing} chars > 8000 (Codex listing cap)"
         print(f"  PASS  skill lint: {len(skill_dirs)} skills within ADR-010 budgets (listing {total_listing}/8000)")
     except Exception as e:
-        failures.append(f"skill lint: {e}")
+        failures.append(f"skill lint: {why(e)}")
 
     # ---- package-scoped fact identity: a monorepo guide describes ITS package ----
     try:
@@ -1701,7 +1710,7 @@ def main():
         rmtree(tmp)
         print("  PASS  package-scoped identity: per-package binds, disjoint guides, drift isolated per package")
     except Exception as e:
-        failures.append(f"package-scope integration: {e}")
+        failures.append(f"package-scope integration: {why(e)}")
 
     # ---- manifest lint: `inputs` is load-bearing now, so it must exist ----
     try:
@@ -1731,7 +1740,7 @@ def main():
         assert load.returncode == 0, f"the registry does not load: {load.stderr[-300:]}"
         print(f"  PASS  manifest lint: {load.stdout.strip()} providers declare a read scope, registry loads")
     except Exception as e:
-        failures.append(f"manifest lint: {e}")
+        failures.append(f"manifest lint: {why(e)}")
 
     # ---- ADR-002 sandbox: tier probe + MECHANISM proofs (net and rofs) ----
     try:
@@ -1848,12 +1857,62 @@ def main():
                 "nor any generated document"
             rmtree(probe_repo)
             print("  PASS  per-glob read scoping: undeclared files absent, grants carried, views torn down")
+            # ---- MINIMAL ROOT: the host outside the repository is gone too ----
+            # Composed from the ENGINE's own script and plan, so this gate proves
+            # the shipped mechanism rather than a copy of it.
+            state = json.loads(subprocess.run(["node", "-e",
+                "import(process.argv[1]).then(m=>console.log(JSON.stringify(m.sandboxState())))",
+                __import__("pathlib").Path(ROOT, "src", "facts.js").as_uri()],
+                capture_output=True, text=True).stdout)
+            if state.get("root") != "minimal":
+                print(f"  PASS  minimal root: unavailable here, reported honestly "
+                      f"({state.get('rootReason', '?')})")
+            else:
+                spec = subprocess.run(["node", "--input-type=module", "-e",
+                    "import {MINROOT_SCRIPT} from %r;"
+                    "import {minimalRootPlan} from %r;"
+                    "console.log(JSON.stringify({script: MINROOT_SCRIPT, plan: minimalRootPlan([])}))"
+                    % (__import__("pathlib").Path(ROOT, "src", "facts.js").as_uri(),
+                       __import__("pathlib").Path(ROOT, "src", "minroot.js").as_uri())],
+                    capture_output=True, text=True)
+                assert spec.returncode == 0, spec.stderr[-300:]
+                spec = json.loads(spec.stdout)
+                mr = _tf.mkdtemp(prefix="keeldocs-minroot-")
+                os.makedirs(os.path.join(mr, "view"))
+                os.makedirs(os.path.join(mr, "root"))
+                # a credential OUTSIDE the repository, in the shape that matters
+                home = _tf.mkdtemp(prefix="keeldocs-homelike-")
+                W(os.path.join(home, "id_rsa"), "-----BEGIN OPENSSH PRIVATE KEY-----\n")
+                code = ("import sys\ntry:\n open(sys.argv[1]).read()\n sys.exit(0)\n"
+                        "except OSError:\n sys.exit(8)")
+                target = os.path.join(home, "id_rsa")
+                free = subprocess.run([sys.executable, "-c", code, target], capture_output=True)
+                caged = subprocess.run(
+                    ["unshare", "-rnm", "--", "/bin/sh", "-c", spec["script"], "sh",
+                     os.path.join(mr, "view"), os.path.join(mr, "root"), "0",
+                     str(len(spec["plan"]["keeps"])), *spec["plan"]["keeps"],
+                     str(len(spec["plan"]["masks"])), *spec["plan"]["masks"],
+                     sys.executable, "-c", code, target], capture_output=True)
+                assert free.returncode == 0, "control: the credential is readable on the host"
+                assert caged.returncode == 8, \
+                    "a credential OUTSIDE the repository must not exist inside the minimal root"
+                # ...and the runtimes still start, which is the other half of the claim
+                alive = subprocess.run(
+                    ["unshare", "-rnm", "--", "/bin/sh", "-c", spec["script"], "sh",
+                     os.path.join(mr, "view"), os.path.join(mr, "root"), "0",
+                     str(len(spec["plan"]["keeps"])), *spec["plan"]["keeps"],
+                     str(len(spec["plan"]["masks"])), *spec["plan"]["masks"],
+                     sys.executable, "-c", "import sys; sys.exit(0)"], capture_output=True)
+                assert alive.returncode == 0, f"python must still start: {alive.stderr[-200:]}"
+                rmtree(mr); rmtree(home)
+                print("  PASS  minimal root: the host outside the repository is masked; runtimes still start")
+
         elif expect == "net":
             print("  PASS  sandbox tier net: network blocked; no usable mount namespace here")
         else:
             print("  PASS  sandbox tier none: wiring agrees, best-effort documented (ADR-013)")
     except Exception as e:
-        failures.append(f"sandbox: {e}")
+        failures.append(f"sandbox: {why(e)}")
 
     # CLI envelope smoke: usage error must be exit 2 with a parseable envelope
     r = subprocess.run(["node", "bin/keeldocs.js", "bogus-command", "--json"],

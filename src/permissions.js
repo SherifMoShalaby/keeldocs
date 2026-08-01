@@ -27,14 +27,18 @@ const SAMPLE = 8;
 // the ADR uses. `live` providers keep their declared network:db exception and
 // are never scoped - they read a DSN, not the repository.
 export function enforcementOf(live) {
-  const { tier } = sandboxState();
+  const { tier, root } = sandboxState();
   if (live) {
     return { level: "declared-exception", enforced: false,
       detail: "a `live` provider keeps its declared network:db socket and is not scoped - it reads a database, not the repository" };
   }
+  if (tier === "rofs" && root === "minimal") {
+    return { level: "minimal-root", enforced: true,
+      detail: "network denied; the repository is read-only and shrunk to exactly the reads listed here; and the rest of the host - home directories, credential stores, other checkouts - is masked away, so this provider's whole filesystem is the runtime plus the list above" };
+  }
   if (tier === "rofs") {
     return { level: "per-glob", enforced: true,
-      detail: "network denied, repository read-only, and the readable set is exactly the reads listed here - an undeclared file does not exist inside this provider's namespace" };
+      detail: "network denied, repository read-only, and the readable set is exactly the reads listed here - an undeclared file does not exist inside this provider's namespace. The rest of the HOST filesystem is still visible: this machine could not stand up a minimal root" };
   }
   if (tier === "net") {
     return { level: "network-only", enforced: false,

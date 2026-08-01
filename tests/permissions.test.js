@@ -91,7 +91,7 @@ test("enforcement is stated, never implied - a live provider is not scoped", () 
   assert.equal(live.enforced, false);
   assert.match(live.detail, /reads a database, not the repository/);
   const normal = enforcementOf(false);
-  assert.ok(["per-glob", "network-only", "none"].includes(normal.level));
+  assert.ok(["minimal-root", "per-glob", "network-only", "none"].includes(normal.level));
   // whichever tier this host has, the rendering must not claim more than it does
-  assert.equal(normal.enforced, normal.level === "per-glob");
+  assert.equal(normal.enforced, ["minimal-root", "per-glob"].includes(normal.level));
 });

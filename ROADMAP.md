@@ -25,7 +25,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. Thirty-four providers across ten
-capabilities feed eight document recipes. The engine has 99 unit tests, 39
+capabilities feed eight document recipes. The engine has 102 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 438 concrete surfaces,
@@ -33,7 +33,7 @@ a real 30-table Supabase/Next.js application end to end: 438 concrete surfaces,
 accurate receipts across four hardening rounds. What is *not* done splits
 cleanly into three piles: a short list of owner actions that gate publication
 and therefore gate every adoption metric; a set of features deliberately
-refused until their evidence arrives; and one item of real engineering debt.
+refused until their evidence arrives; and no remaining engineering debt that a build environment can close.
 
 ---
 
@@ -108,6 +108,7 @@ not been promoted to `v0.1.0` only because publication is blocked.
 | Recipe migration (`sync --upgrade`) | **Done** | validated retroactively: byte-identical to a delete-and-regenerate, without the delete |
 | Per-glob read scoping | **Done** | `inputs` is now an enforced contract; undeclared files do not exist inside a provider's namespace |
 | Package-scoped fact identity (`pkg:<name>#<cap>/*` binds) | **Done** | monorepo guides are disjoint; editing one package leaves the others byte-identical |
+| Sandbox minimal root | **Done** | the host outside the repository is masked; probed per host, degrades with a named reason; ~0.5s/run |
 | Permission-manifest display at `provider trust` | **Done** | `provider show`; `add` stops at `CONSENT_REQUIRED` and states the enforcement this host really applies |
 | N5 MySQL / Mongo live | **Gated** | needs a real MySQL + a 3-repo OBSERVED pilot at FP <10% |
 | N6 Headless prose (BYO key / Ollama) | **Gated** | needs slot-write rejection <20% with a 7B local model |
@@ -172,12 +173,17 @@ into committed artifacts.
 
 ---
 
-## 6. Open engineering debt — buildable now, ranked
+## 6. Open engineering debt — buildable now
 
-**1. Sandbox minimal root.** The scoping slice confines REPOSITORY reads; the
-rest of the host filesystem is still visible to a provider. A full minimal root
-(no `/home`, no `/etc`) is a further step and is named here rather than implied
-by the word "sandbox".
+**None.** Every item that was buildable from a build environment is built. What
+remains is the two piles above: owner actions that gate publication, and
+features deliberately refused until their evidence arrives.
+
+Two sandbox residuals are recorded rather than open, because closing them buys
+nothing at the current threat model: `/proc`, `/sys` and `/dev` stay the host's
+(they leak machine shape, not user data, and removing them breaks interpreters),
+and the minimal root is a masked root rather than a pivoted one. Both are named
+in ADR-002's fourth FS amendment.
 
 ---
 
@@ -212,7 +218,7 @@ alongside the build rather than after.
 34 shipped providers across 10 capabilities (workspace-layout, module-graph,
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
-agent skills · 99 unit tests · 39 byte-compared extractor goldens · ~24
+agent skills · 102 unit tests · 39 byte-compared extractor goldens · ~24
 end-to-end integration blocks · 13 ADRs · 15 experiments.
 
 Field deployment: one real production application (Next.js App Router +
