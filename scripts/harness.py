@@ -1925,6 +1925,91 @@ def main():
     except Exception:
         failures.append(f"CLI envelope smoke: rc={r.returncode} stdout={r.stdout[:200]!r}")
 
+    # ---- D2 input-proportional output cap (R10): a provider whose LEGITIMATE
+    # output exceeds the old 5MB constant must complete with nothing lost, and a
+    # runaway must still be killed. Both halves matter: the first without the
+    # second is just a raised limit.
+    try:
+        import re as _re2, shutil as _sh2, tempfile as _tf2
+        tmp = _tf2.mkdtemp(prefix="keeldocs-d2-")
+        KD = os.path.join(ROOT, "bin", "keeldocs.js")
+
+        # (a) legitimate large output: 222 files / 160k lines makes ts-imports
+        # emit ~7.2MB from ~4.4MB of input - over the old constant, under 6x.
+        big = os.path.join(tmp, "big")
+        subprocess.run([sys.executable, os.path.join(ROOT, "experiments", "e8-scale", "gen.py"),
+                        big, "20", "10", "800"], capture_output=True, text=True, timeout=300, check=True)
+        direct = subprocess.run(
+            [sys.executable, os.path.join(ROOT, "providers", "module-graph", "ts-imports", "extract_symbols.py"), big],
+            capture_output=True, text=True, timeout=600)
+        emitted = json.loads(direct.stdout)
+        assert len(direct.stdout) > 5 * 1024 * 1024, \
+            f"fixture no longer exceeds the old constant ({len(direct.stdout)}B) - this gate would pass vacuously"
+        r = subprocess.run(["node", KD, "init", "--yes", "--json"], cwd=big,
+                           capture_output=True, text=True, timeout=900)
+        env = json.loads(r.stdout)
+        assert r.returncode == 0 and env["code"] == "INITIALIZED", \
+            f"a {len(direct.stdout) // 1048576}MB provider still cannot complete: {r.stdout[:300]}"
+        # completing is not enough - NOTHING may be lost on the way through
+        rc = subprocess.run(["node", KD, "check", "--json"], cwd=big, capture_output=True, text=True, timeout=900)
+        rep = json.load(open(os.path.join(big, ".keeldocs", "out",
+                        [f for f in os.listdir(os.path.join(big, ".keeldocs", "out")) if f.startswith("check-")][0])))
+        assert "toolError" not in rep, rep.get("toolError")
+        counted = subprocess.run(["node", "-e", (
+            'import("%s/src/facts.js").then(({extractAll}) => {'
+            'const r = extractAll(process.argv[1], {});'
+            'const t = (k) => [...r.factsById.values()].filter(f => f.payload.type === k).length;'
+            'console.log(JSON.stringify({modules: t("module"), symbols: t("symbol"), err: r.toolError ?? null}));'
+            '});') % ROOT.replace("\\", "/"), big], capture_output=True, text=True, timeout=900)
+        got = json.loads(counted.stdout.strip().splitlines()[-1])
+        assert got["err"] is None, got["err"]
+        assert got["modules"] == len(emitted["modules"]) and got["symbols"] == len(emitted["symbols"]), \
+            f"facts lost in transit: engine {got} vs provider " \
+            f"{{'modules': {len(emitted['modules'])}, 'symbols': {len(emitted['symbols'])}}}"
+        big_mb = len(direct.stdout) / 1048576
+
+        # (b) a runaway is STILL killed. Tiny declared input -> the floor binds,
+        # and the provider prints far past it. Installed through the real T2
+        # path so this is the engine's cap, not a test harness's.
+        author = os.path.join(tmp, "author"); os.makedirs(author)
+        prov = os.path.join(author, "flood-schema"); os.makedirs(prov)
+        W(os.path.join(prov, "provider.yaml"),
+          "id: flood-schema\ncapability: db-schema\nsemver: 1.0.0\ntier: code\n"
+          "entry: ./extract.py\ndetect: { files: [\"flood.schema\"] }\ninputs: [\"**/*.schema\"]\n"
+          "timeout_class: B\nemits: [table]\n")
+        W(os.path.join(prov, "extract.py"),
+          "import sys\n# ~8MB from a 12-byte input: nothing about this is proportional\n"
+          "sys.stdout.write('{\"models\": [')\n"
+          "sys.stdout.write(','.join('{\"name\": \"T%d\", \"fields\": [{\"name\": \"pad\", \"type\": \"%s\"}]}'\n"
+          "                          % (i, 'x' * 200) for i in range(40000)))\n"
+          "sys.stdout.write('], \"enums\": []}')\n")
+        flood = os.path.join(tmp, "flood")
+        _sh2.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), flood,
+                      ignore=_sh2.ignore_patterns("golden", ".keeldocs"))
+        W(os.path.join(flood, "flood.schema"), "tiny\n")
+        lenv = {**os.environ, "CI": ""}
+        def kd2(cwd, *a):
+            return subprocess.run(["node", KD, *a], cwd=cwd, capture_output=True, text=True, timeout=600, env=lenv)
+        pub = json.loads(kd2(author, "provider", "keygen", "--json").stdout)["data"]["publicKeyB64"]
+        assert kd2(author, "provider", "sign", prov, "--key",
+                   os.path.join(author, "keeldocs-signing-key.pem"), "--signer", "acme", "--json").returncode == 0
+        assert kd2(flood, "provider", "trust", "acme", pub, "--json").returncode == 0
+        assert kd2(flood, "provider", "add", prov, "--yes", "--json").returncode == 0, "install failed"
+        r = kd2(flood, "check", "--json")
+        env = json.loads(r.stdout)
+        assert r.returncode == 2 and env["code"] == "TOOL_ERROR", \
+            f"a provider emitting ~8MB from 5 bytes was NOT killed: rc={r.returncode} {r.stdout[:300]}"
+        assert "output cap exceeded" in env["summary"], env["summary"]
+        # and the message must name the rule that really bound - the FLOOR here,
+        # never the ratio (which would be an explanation that is not true)
+        assert "floor" in env["summary"], f"message does not name the binding rule: {env['summary']}"
+        assert "6x" not in env["summary"], f"message blames the ratio when the floor bound: {env['summary']}"
+        rmtree(tmp)
+        print(f"  PASS  D2 output cap: {big_mb:.1f}MB provider completes with 0 facts lost; "
+              f"runaway still killed naming the floor")
+    except Exception as e:
+        failures.append(f"D2 output cap: {why(e)}")
+
     # ---- D1 incremental extraction (R10): the cache must be INVISIBLE in the
     # output and visible only in the clock. Every assertion here is about the
     # cached answer being indistinguishable from the uncached one; a cache that

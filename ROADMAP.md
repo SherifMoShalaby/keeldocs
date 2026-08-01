@@ -4,14 +4,16 @@
 tagged `v0.1.0-rc.1` at `927b4cb` · 3-OS CI green (Windows non-blocking) ·
 130 unit tests · 39 extractor goldens · 76 harness checks.
 
-**E8 and E11 ran on 2026-08-01, both failed, and the repairable half is
-repaired.** E11's flagship ERD stopped rendering between 100 and 250 tables;
-`src/render.js` gained budget-driven chunking and a permanent gate. E8 found
-that the incremental cache R10 has promised since day one was never built, so
-**D1 was built** (`src/cache.js`): a warm check at 100k LOC went from **9.66s
-to 2.23s**, and E8's warm budgets now pass at 10k and 100k. E8 as a whole still
-does not pass — 1M LOC still dies on a provider output cap (D2), and a one-file
-edit at 100k is 6.3s against a 5s p50. Section 6 holds what is left, measured.
+**E8 and E11 ran on 2026-08-01, both failed, and most of what they found is
+now fixed.** E11's flagship ERD stopped rendering between 100 and 250 tables;
+`src/render.js` gained budget-driven chunking. E8 found no incremental cache at
+all, so **D1** built one (`src/cache.js`) — the 100k warm check went 9.66s →
+2.23s. E8 then found 1M LOC dying on a constant output cap, so **D2** made that
+cap input-proportional — **1M LOC now completes**, CLEAN, 38,047 surfaces,
+914 MB, warm check 8.9s. Three of R10's four budgets now pass at every size
+including a million lines. E8 as a whole still does not pass: warm p50 at 1M is
+8.9s against 5s, and a one-file edit costs 6.2s at 100k and 39.7s at 1M — all
+of it D4, which is now the only thing standing between here and the gate.
 
 This is the single tracking document. It reconciles three things that had been
 living in separate places: the original design brief's deliverables, the phased
@@ -35,7 +37,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. Thirty-four providers across ten
-capabilities feed eight document recipes. The engine has 130 unit tests, 39
+capabilities feed eight document recipes. The engine has 137 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
@@ -44,8 +46,8 @@ accurate receipts across four hardening rounds. What is *not* done splits
 cleanly into three piles: a short list of owner actions that gate publication
 and therefore gate every adoption metric; a set of features deliberately
 refused until their evidence arrives; and — new as of 2026-08-01, from running
-E8 — a short list of measured scale items, because the loop that is correct and
-now fast at 100k lines of code still does not complete at a million.
+E8 — one measured scale item, because a loop that is correct and fast on an
+unchanged tree still re-parses far too much when a single file changes.
 
 ---
 
@@ -200,17 +202,18 @@ Created by E8 on 2026-08-01, all with measured baselines rather than estimates.
 
 | # | Item | Status | Measurement |
 |---|---|---|---|
-| D1 | **Incremental extraction** — cache the provider subprocess, keyed on the exact resolved input set by content hash | **Done** (`src/cache.js`, 20 unit tests, harness gate) | warm check 5.61s → **1.40s** @10k, 9.66s → **2.23s** @100k; one-file edit 9.97s → **6.32s** @100k; overhead 33ms (3% of a warm run) |
-| D2 | **Provider output sharding / streaming** | **Open** | `ts-imports` buffers one JSON blob and hits the 5 MB ADR-002 cap at 5,402 files. The cap is correct and stays; the provider must stop needing it. 1M LOC exits 2 with no documents written. Target: completes |
-| D4 | **Per-file work inside a provider** | **Open** — new, found by re-running E8 after D1 | One `.ts` edit at 100k invalidates 12 providers because 12 manifests declare a glob matching it, and each re-parses all 1,400 declared files. react-router is the most expensive at 1,890ms and emits **35 bytes**. Needs a contract change (per-file results, or an engine-supplied changed-file list), not an engine change. Target: 6.32s → under the 5s p50 |
+| D1 | **Incremental extraction** — cache the provider subprocess, keyed on the exact resolved input set by content hash | **Done** (`src/cache.js`, 20 unit tests, harness gate) | warm check 5.61s → **1.40s** @10k, 9.66s → **2.23s** @100k; overhead 33ms (3% of a warm run) |
+| D2 | **Input-proportional output cap** — `clamp(6 × declared input bytes, 5MB, 256MB)` | **Done** (`src/facts.js`, 7 unit tests, harness gate) | **1M LOC completes**: rc 0, CLEAN, 38,047 surfaces, 914 MB, warm check **8.9s** (was exit 2). The roadmap's named remedy — sharding — was measured and rejected as *unsound*: ts-imports resolves imports against the walked file set, so a shard boundary silently turns 1,000 internal edges external. The provider's 46.9 MB is 2.02× its own declared input; the constant was the defect |
+| D4 | **Per-file work inside a provider** | **Open** — the only thing left between here and R10's gate | One `.ts` edit invalidates 12 providers because 12 manifests declare a glob matching it, and each re-parses every file it declared: **6.24s @100k, 39.70s @1M**. react-router is the most expensive single provider at 1,890ms and emits **35 bytes**. Needs a contract change (per-file results, or an engine-supplied changed-file list), not an engine change. Target: under the 5s p50 |
 | D3 | **`--affected`** | **Open, and demoted** | Skips providers a diff cannot have affected. D4's measurement shows this is the smaller half of the remaining cost — the expensive providers genuinely do read the changed file |
+| D5 | **Streaming provider output** | **Deferred on evidence, not forgotten** | D2's 256 MB ceiling binds at ~42.7 MB of declared input (~1.9M LOC), so the wall moved rather than vanished. NDJSON on a spooled descriptor would remove it, but RSS is 914 MB against a 2 GB budget across a 100× size range — memory is not the binding constraint at any size being asked about today |
 
-Re-run E8 after each; `experiments/e8-scale/RESULTS.md` holds both the
-pre-D1 baseline and the current numbers, and the R10 budgets are unchanged.
-The honest statement of what keeldocs handles is now **~100k LOC / 200
-packages at a ~2s warm check** — most repositories, and the size the beta
-cohort will bring — but still not the 1M-LOC monorepo the design gate was
-written against, which needs D2. No public material should imply otherwise.
+Re-run E8 after each; `experiments/e8-scale/RESULTS.md` holds the pre-D1
+baseline, the post-D1 numbers and the post-D2 numbers, and the R10 budgets have
+never been touched. The honest statement of what keeldocs handles is now **a
+million lines / 200 packages, at a 2.5s warm check at 100k and 8.9s at 1M** —
+with the caveat that a single-file edit still costs 6.2s and 39.7s respectively,
+which is D4. No public material should claim the p50 budget until it does.
 
 Two sandbox residuals are recorded rather than open, because closing them buys
 nothing at the current threat model: `/proc`, `/sys` and `/dev` stay the host's
@@ -235,7 +238,7 @@ alongside the build rather than after.
 | E5 determinism goldens | "byte-identical output across OSes" | **Passed, permanent** — runs every CI push |
 | E6 redaction adversarial corpus | "the write barrier catches realistic leaks" | **Passed** |
 | E7 agent adapter smoke matrix | the distribution bet | **Blocked (you)** — needs a published package |
-| E8 scale benchmark (1M LOC) | "warm check ≤5s p50" | **Run 2026-08-01 → FAILED; re-run after D1 → PASSES at 10k and 100k, still fails at 1M.** Root cause of the original failure was that no incremental cache existed; D1 built one and the 100k warm check went 9.66s → 2.23s. Remaining failures are named and sized: 1M exits 2 on the ADR-002 output cap (D2), and a one-file edit at 100k is 6.32s against the 5s p50 (D4). Budgets never moved |
+| E8 scale benchmark (1M LOC) | "warm check ≤5s p50" | **Run 2026-08-01 → FAILED; D1 and D2 built and re-measured after each → 3 of 4 budgets now pass at every size including 1M LOC.** No incremental cache existed (D1 built one: 100k warm 9.66s → 2.23s); then 1M LOC died on a constant output cap (D2 made it input-proportional: 1M now completes CLEAN at 8.9s warm, 914 MB). One budget still fails — warm p50 at 1M — and the one-file-edit case (6.24s @100k, 39.70s @1M) is D4. Budgets never moved. Both fixes departed from the mitigation the register named, on measurement, and both departures are recorded in the ADRs |
 | E9 noise SLO field trial | the adoption bet | **Four rounds run** on a real production repo; the 4-week accept-rate number still needs a cohort |
 | E10 injection red-team | "artifact-borne injection cannot reach an action" | **Passed, permanent CI gate** |
 | E11 ERD scale rendering | "the flagship diagram survives 500 tables" | **Run 2026-08-01 → FAILED, REDESIGNED, PASSES.** The flat ERD crossed `maxTextSize` between 100 and 250 tables — real Supabase and Rails schemas live there, and the failure renders *nothing*. Chunking shipped; 1,000 tables now render with every table drawn. Gated by 8 unit tests against Mermaid's real ceilings plus a 260-table end-to-end harness check |

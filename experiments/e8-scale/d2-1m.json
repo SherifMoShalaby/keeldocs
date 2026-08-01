@@ -1,0 +1,32 @@
+{
+ "label": "1m",
+ "repo": "(synthetic, see RESULTS.md#reproduce)",
+ "init": {
+  "seconds": 46.35,
+  "peak_rss_mb": 906.7,
+  "rc": 0,
+  "summary": "0 doc lie(s) found with receipts; 4 starter doc(s) written; coverage 0% -> 100% of 38047 surfaces; drift tripwire armed"
+ },
+ "check_cold": {
+  "seconds": 41.97,
+  "peak_rss_mb": 913.6,
+  "rc": 0
+ },
+ "check1": {
+  "seconds": 8.82,
+  "peak_rss_mb": 913.6,
+  "rc": 0,
+  "code": "CLEAN"
+ },
+ "check2": {
+  "seconds": 8.91,
+  "peak_rss_mb": 913.6,
+  "rc": 0,
+  "code": "CLEAN"
+ },
+ "check_after_1_file_edit": {
+  "seconds": 39.7,
+  "peak_rss_mb": 913.6,
+  "rc": 1
+ }
+}

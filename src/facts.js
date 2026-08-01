@@ -75,7 +75,60 @@ function detect(reg, repoRoot, allFiles) {
 
 // timeout classes from the provider contract - C is the heavy code tier
 const TIMEOUTS = { A: 10_000, B: 30_000, C: 120_000, D: 60_000 };
-const OUTPUT_CAP = 5 * 1024 * 1024; // ADR-002: 5MB provider output cap
+
+// D2 (risk R10). ADR-002's output cap was the constant 5MB, and E8 found the
+// 1M-LOC monorepo dying on it: `ts-imports` emitted 46.9MB and the run exited 2
+// with no documents written.
+//
+// The measurement is what decided the fix. 46.9MB is not bloat - it is
+// **2.02x the provider's own declared input**, which for a symbol extractor
+// emitting a signature per declaration is exactly proportional. Across every
+// provider at 1M LOC the largest ratio on a non-trivial input is that same
+// 2.02x. So the provider was behaving correctly and the CONSTANT was the
+// defect: a fixed byte count cannot express "do not let a provider run away",
+// because what counts as runaway depends entirely on how much it was given.
+//
+// The roadmap's named remedy - shard the provider's input - was measured and
+// REJECTED as unsound rather than merely awkward. ts-imports resolves import
+// specifiers against the walked file set (1,000 of 1,400 modules in the 100k
+// tree carry a resolved cross-file edge), so a shard boundary silently
+// reclassifies an internal edge as external. A module graph that quietly loses
+// a thousand edges is the exact failure this project exists to refuse, and it
+// would pass every test that only checks the run completed.
+//
+// So the bound becomes a function of the input:
+//   * FLOOR is the old constant, so nothing that passes today can fail
+//     tomorrow, and a provider whose input the engine cannot size (a directory
+//     grant like git-log's `.git/`) keeps precisely today's behaviour.
+//   * RATIO 6 is three times the largest ratio measured at scale.
+//   * CEIL comes from the memory this actually costs: capturing 46.9MB moved
+//     RSS by 94MB and parsing it by a further 50MB, so ~3x the output. Against
+//     R10's 2GB budget with ~900MB already in use, 256MB of output is ~2x
+//     inside the headroom.
+// The kill MECHANISM is unchanged - maxBuffer still terminates the child - so
+// runaway protection is not weakened, only expressed against the right scale.
+const OUTPUT_CAP_FLOOR = 5 * 1024 * 1024;
+const OUTPUT_CAP_RATIO = 6;
+const OUTPUT_CAP_CEIL = 256 * 1024 * 1024;
+const mb = (n) => `${(n / 1048576).toFixed(1)}MB`;
+
+export const outputCapFor = (inputBytes) =>
+  Math.min(OUTPUT_CAP_CEIL, Math.max(OUTPUT_CAP_FLOOR, OUTPUT_CAP_RATIO * inputBytes));
+
+// WHICH of the three rules bound, in words. A message that says only "cap
+// exceeded (5MB)" leaves a user on a large monorepo with nothing to act on,
+// and - worse - naming the ratio when the FLOOR is what actually bound would
+// be an explanation that is not true.
+export function capRule(inputBytes) {
+  const proportional = OUTPUT_CAP_RATIO * inputBytes;
+  if (proportional <= OUTPUT_CAP_FLOOR) {
+    return `the ${mb(OUTPUT_CAP_FLOOR)} floor - ${mb(inputBytes)} of declared input would allow less`;
+  }
+  if (proportional >= OUTPUT_CAP_CEIL) {
+    return `the ${mb(OUTPUT_CAP_CEIL)} absolute ceiling (memory), reached at ${mb(OUTPUT_CAP_CEIL / OUTPUT_CAP_RATIO)} of input`;
+  }
+  return `${OUTPUT_CAP_RATIO}x its ${mb(inputBytes)} of declared input`;
+}
 
 // ADR-002 sandbox (R2 + its FS slice), best-effort in three honest tiers:
 //   "rofs"  linux + user/mount namespaces: NETWORK deny-all AND the repo
@@ -264,7 +317,8 @@ function argsFor(reg, repoRoot, detectInfo, allFiles) {
   return [repoRoot];
 }
 
-function runProvider(reg, repoRoot, args, factEnv = {}, scope = null, resolved = null) {
+function runProvider(reg, repoRoot, args, factEnv = {}, scope = null, resolved = null, inputBytes = 0) {
+  const cap = outputCapFor(inputBytes);
   // externals resolve from their installed dir (absEntry); first-party from the engine tree
   const entryPath = reg.absEntry ?? join(ENGINE_ROOT, reg.entry);
   const tier = reg.live ? "none" : SANDBOX; // live keeps its declared network:db
@@ -289,7 +343,7 @@ function runProvider(reg, repoRoot, args, factEnv = {}, scope = null, resolved =
     : [bin, [entryPath, ...args]];
   const spawnWith = (bin) => spawnSync(...wrap(bin), {
     cwd: repoRoot, timeout: TIMEOUTS[reg.timeoutClass] ?? TIMEOUTS.D,
-    maxBuffer: OUTPUT_CAP, encoding: "utf8",
+    maxBuffer: cap, encoding: "utf8",
     env: childEnv(factEnv),
   });
   try {
@@ -301,8 +355,12 @@ function runProvider(reg, repoRoot, args, factEnv = {}, scope = null, resolved =
       if (r.error?.code === "ENOENT") r = spawnWith("python"); // Windows installs often lack a python3 shim
     }
     if (r.status !== 0 || r.error) {
+      // Name the bound AND where it came from. "output cap exceeded (5MB)" told
+      // a user on a large monorepo nothing they could act on; this says how big
+      // the allowance was and what set it, so an over-cap provider is either
+      // obviously runaway or obviously worth a manifest conversation.
       const reason = r.error?.code === "ENOBUFS"
-        ? "output cap exceeded (5MB, ADR-002)"
+        ? `output cap exceeded (${mb(cap)}, ADR-002: ${capRule(inputBytes)})`
         : r.error ? String(r.error.message) : `rc=${r.status}`;
       return { status: "failed", reason, stderr: (r.stderr || "").slice(-400) };
     }
@@ -744,6 +802,14 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
   const cacheStats = { hits: 0, misses: 0, uncacheable: 0, enabled: useCache, reasons: {} };
   // one hash pass for the whole run, shared by every provider's key
   const digests = useCache ? hashAll(repoRoot, allFiles) : null;
+  // D2: how many bytes each provider was actually handed. One stat pass over
+  // the same walk (~10ms at 1M LOC) - it must run whether or not the cache is
+  // on, because the output cap is not a caching concern.
+  const sizes = new Map();
+  for (const rel of allFiles) {
+    try { sizes.set(rel, statSync(join(repoRoot, rel)).size); } catch { sizes.set(rel, 0); }
+  }
+  const declaredBytes = (files) => files.reduce((n, rel) => n + (sizes.get(rel) ?? 0), 0);
   const writeCapFile = (cap) => {
     const list = [...factsById.values()].filter((f) => capOf(f.id) === cap)
       .sort((a, b) => a.id.localeCompare(b.id));
@@ -810,7 +876,7 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
       } else {
         if (why) { cacheStats.uncacheable++; cacheStats.reasons[reg.id] = why; }
         else cacheStats.misses++;
-        run = runProvider(reg, repoRoot, args, factEnv, scope, resolved);
+        run = runProvider(reg, repoRoot, args, factEnv, scope, resolved, declaredBytes(resolved.files));
         // Only a clean run is worth remembering. A failure is a state of the
         // world right now, not a property of these inputs - caching it would
         // make a transient timeout permanent until something unrelated changed.

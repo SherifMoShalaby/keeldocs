@@ -222,3 +222,124 @@ results (RAM, cold) have enough margin that lumpiness will not flip them; the
 p50 result is already failing and cannot get better on a harder tree. The real
 monorepo pass is still owed, and belongs after sharding rather than before —
 it would only re-measure the same missing cache.
+
+---
+
+# Re-run after D2 (input-proportional output cap) — 2026-08-01
+
+**1M LOC completes.** `rc=0`, `CLEAN`, 38,047 surfaces documented, 914 MB peak
+RSS. That was D2's entire target and it is met.
+
+## What the measurement said, before anything was built
+
+The roadmap's D2 read *"provider output sharding / streaming — `ts-imports`
+must stream or shard rather than buffer one JSON blob into the 5 MB cap."*
+That framing blamed the provider. Measuring first said otherwise, twice.
+
+**The output is not bloat; it is proportional.** At 1M LOC `ts-imports` emits
+46.9 MB — from **23.24 MB of declared input**, a ratio of **2.02×**. For a
+symbol extractor emitting one signature per declaration (190,400 symbols across
+5,400 files), that is what correct looks like. Across every provider at that
+size, 2.02× is the largest ratio on any non-trivial input:
+
+| provider | declared files | input | output | out/in |
+|---|---|---|---|---|
+| ts-imports | 5,400 | 23.24 MB | **46.86 MB** | **2.02×** |
+| express | 5,400 | 23.24 MB | 4.03 MB | 0.17× |
+| env-readers | 5,401 | 23.25 MB | 0.49 MB | 0.02× |
+| every other provider | — | — | < 0.03 MB | — |
+
+Only one provider ever crossed the constant. The constant was the defect: a
+fixed byte count cannot express "do not let a provider run away", because what
+counts as runaway depends on how much the provider was handed. 5 MB from a
+ten-file repo is obviously runaway; 5 MB from a million lines obviously is not.
+
+**And sharding would have been unsound, not merely awkward.** `ts-imports`
+resolves import specifiers against the walked file set — in the 100k tree,
+**1,000 of 1,400 modules carry a resolved cross-file edge**. Any shard boundary
+silently reclassifies an internal edge as external. The run would complete, the
+exit code would be 0, and the module graph would quietly be missing a thousand
+edges. That passes every test that only asks whether the run finished, which is
+exactly the class of failure this project exists to refuse. The same objection
+applies to `express`, whose mount-graph resolution is why E1 put it in the code
+tier in the first place.
+
+## What was built
+
+`clamp(6 × declaredInputBytes, 5MB, 256MB)`, with the declared input set taken
+from the same per-provider resolution the sandbox and the D1 cache already use.
+
+- **Floor 5 MB** — the old constant. Nothing that passes today can fail
+  tomorrow, and a provider whose input cannot be sized (git-log's `.git/`
+  directory grant) keeps precisely today's behaviour.
+- **Ratio 6×** — three times the largest ratio measured at scale.
+- **Ceiling 256 MB** — derived, not chosen. Capturing 46.9 MB moved RSS by
+  94 MB and parsing it by 50 MB more (~3× the output), so 256 MB of output is
+  ~750 MB of RSS, about 2× inside R10's 2 GB budget.
+
+The kill *mechanism* is unchanged — `maxBuffer` still terminates the child — so
+runaway protection is rescaled, not weakened. The failure message now names
+which of the three rules bound, because claiming the ratio when the floor is
+what actually bound would be an explanation that is not true:
+
+```
+flood-schema: output cap exceeded (5.0MB, ADR-002: the 5.0MB floor
+              - 0.0MB of declared input would allow less)
+```
+
+## Results
+
+| size | init | cold (`--no-cache`) | warm #1 | warm #2 | after 1-file edit | peak RSS | exit |
+|---|---|---|---|---|---|---|---|
+| 10k | 10.53s | 7.40s | 1.31s | 1.25s | 1.93s | 893 MB | 0 |
+| 100k | 11.14s | 10.59s | 2.14s | 2.45s | 6.24s | 895 MB | 0 |
+| 1M | 46.35s | 41.97s | **8.82s** | **8.91s** | 39.70s | 914 MB | **0 / CLEAN** |
+
+The 1M row is the whole point: it was `2 / TOOL_ERROR` in both previous runs.
+Born-clean also survives a million lines — `init` wrote four documents covering
+38,047 surfaces and the immediately following `check` was CLEAN.
+
+## Verdict against the four budgets
+
+| budget | 10k | 100k | 1M |
+|---|---|---|---|
+| RAM ≤ 2 GB | PASS 893 MB | PASS 895 MB | PASS 914 MB |
+| cold ≤ 10 min | PASS | PASS | PASS 46s |
+| completes at all | PASS | PASS | **PASS** (was FAIL) |
+| warm p95 ≤ 15s | PASS | PASS | **PASS 8.91s** (was FAIL) |
+| warm p50 ≤ 5s, unchanged tree | PASS 1.25s | PASS 2.45s | **FAIL 8.91s** |
+| warm p50 ≤ 5s, one-file edit | PASS 1.93s | MISS 6.24s | FAIL 39.70s |
+
+**E8 still does not fully pass.** Three of the four R10 budgets now pass at
+every size including 1M LOC. The one that does not is warm p50 at 1M, and the
+one-file-edit case misses at 100k and fails badly at 1M — 39.7s, because twelve
+providers declare a glob matching the changed file and each re-parses all 5,400
+of its declared files. That is D4, unchanged and now measured at the size where
+it hurts most: **D2 did not improve the edit case at all, and was never going
+to.** The budgets have not been touched.
+
+## Residual: the wall moved, it did not vanish
+
+The 256 MB ceiling binds at ~42.7 MB of declared input — roughly **1.9M LOC**
+for a provider of `ts-imports'` shape. Past that, a well-behaved provider is
+killed by a memory limit rather than by an arbitrary constant, which is better
+but still a wall. The real fix is streaming output (NDJSON on a spooled
+descriptor, so engine memory stops tracking provider output at all); that is a
+provider-contract change and belongs designed rather than improvised. A unit
+test pins the knee, so changing any of the three constants surfaces as a test
+failure rather than as a quietly different wall.
+
+Streaming was considered now and rejected on evidence: RSS is 914 MB against a
+2 GB budget across a 100× size range, so **memory is not the binding
+constraint** at any size this tool is being asked about today. Building a
+zero-dependency streaming JSON path to solve a problem the measurements say we
+do not have would be the wrong trade.
+
+## Reproduce
+
+```
+python3 experiments/e8-scale/gen.py  /tmp/e8-1m 200 26 192
+python3 experiments/e8-scale/bench.py /tmp/e8-1m  1m
+```
+
+`baseline-*.json` pre-D1 · `d1-*.json` after D1 · `d2-*.json` after D2.
