@@ -10,7 +10,7 @@ Updated 2026-07-30: the owner answered every decision-shaped open question (all 
 4. **Mongo → ODM-declared models only** (Mongoose/Prisma as declared facts); the opt-in shape sampler waits for the v0.3 pilot's noise data. → ADR-005.
 5. **Windows → reduced trust, documented.** All provider tiers run with best-effort isolation and a plainly stated weaker guarantee; AppContainer/Job Object hardening is a later prototype, not a launch blocker. → ADR-013.
 6. **Cross-repo DB identity → user-declared resource IDs** (`db.resource: "acme-main-pg"` in `docsmith.toml`); fingerprint clustering rejected as primary (silently-wrong heuristic joins are the failure class the tool exists to prevent) but may later *suggest* declarations. → ADR-011.
-7. **Coverage denominator → concrete surfaces only** (endpoints, tables, env vars, services — natural keys, objective existence); exported-symbol coverage excluded from the metric and the ratchet. → ADR-012.
+7. **Coverage denominator → concrete surfaces only** (endpoints, tables, env vars, services — natural keys, objective existence); exported-symbol coverage excluded from the metric and the ratchet. → ADR-012. *(Widened 2026-08-01: client routes and messaging channels added — same natural-key test — with a screens recipe shipped so routes are documentable, not merely counted. Symbols still excluded.)*
 8. **Interview batch cap → 5 cards/session**, calibrated against the v0.2 beta's ≥50% completion gate.
 
 ## Still open — empirical, with the evidence that resolves each

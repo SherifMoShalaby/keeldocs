@@ -181,11 +181,13 @@ lens exists to prevent.
 repo, and the 5MB cap all ship and are CI-proven; per-glob READ scoping
 (bubblewrap-class minimal root) and permission-manifest display remain.
 
-**Coverage denominator — an open owner question.** Client routes and
-messaging channels are extracted, bindable, and drift-checked, but stay OUT
-of the coverage percentage, which remains the owner's fixed set (endpoints,
-tables, env vars, services). Widening it would change every existing
-repo's number, so it is deliberately not done unilaterally.
+**Coverage denominator — RESOLVED (owner decision 2026-08-01): widened.**
+Client routes and messaging channels now count, and a screens inventory
+recipe shipped with the change so routes are documentable rather than
+merely counted. Existing repos re-baseline once on upgrade (a React app's
+denominator grows by its route count); the ratchet compares against the
+base branch and `provider_set_hash` already invalidates cross-version
+comparisons, so this is a re-baseline, not drift. Symbols stay excluded.
 
 ## 3. Sequencing
 

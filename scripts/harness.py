@@ -1138,6 +1138,10 @@ def main():
         env_ = json.loads(r.stdout)
         assert r.returncode == 0 and env_["code"] == "INITIALIZED", r.stdout[:200]
         assert env_["data"]["docs"]["written"] == ["docs/architecture/data-flow.md"]
+        # channels joined the denominator (owner decision) and the data-flow
+        # recipe documents them, so init still lands at 100%
+        cov = env_["data"]["coverage"]["after"]
+        assert cov["perCapability"]["async-messaging"]["total"] == 10 and cov["pct"] == 100, cov
         assert sorted(env_["data"]["card"]["capabilities"]["async-messaging"]["providers"]) == [
             "kafka@0.3.0", "rabbitmq@0.3.0", "redis-pubsub@0.3.0", "sqs-sns@0.3.0",
             "supabase-realtime@0.3.0"], "all five transports resolve into ONE capability"
@@ -1178,6 +1182,7 @@ def main():
         files = [f for f in os.listdir(os.path.join(ns, "out")) if f.startswith("check-")]
         rep = json.load(open(os.path.join(ns, "out", files[0])))
         assert rep["capabilities"]["client-routes"]["providers"] == ["next-routes@0.3.0"]
+        assert rep["coverage"]["perCapability"]["client-routes"]["total"] == 5, rep["coverage"]
         assert "supabase-functions@0.3.0" in rep["capabilities"]["http-endpoints"]["providers"]
         cr = open(os.path.join(ns, "cache", "facts", "client-routes.jsonl")).read()
         assert cr.count('"fact:client-routes/') == 5 and '"/owners/[ownerId]/edit"' in cr
@@ -1201,8 +1206,10 @@ def main():
         cache = open(os.path.join(rs, "cache", "facts", "client-routes.jsonl")).read()
         assert cache.count('"fact:client-routes/') == 9, "both idioms, composed and deduped"
         assert '"/owners/:ownerId/edit"' in cache and '"/admin/users/:uid"' in cache
-        assert "client-routes" not in rep["coverage"].get("perCapability", {}), \
-            "routes must stay OUT of the coverage denominator (owner decision)"
+        # owner decision 2026-08-01: routes COUNT, and the screens inventory
+        # makes them documentable - a counted-but-undocumentable surface would
+        # be an unreachable metric
+        assert rep["coverage"]["perCapability"]["client-routes"]["total"] == 9, rep["coverage"]
         assert any(g["kind"] == "non-literal Route path" for g in rep["extractionGaps"]), \
             "the computed path must be an honest gap"
         print("  PASS  client-routes: react-router idioms extracted, coverage denominator untouched")

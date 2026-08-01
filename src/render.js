@@ -182,6 +182,7 @@ export function renderRegionBody(regionId, boundIds, factsById) {
   if (regionId === "sys.map.services") return servicesTableBody(factsById);
   if (regionId === "sys.map.packages") return packagesTableBody(factsById);
   if (regionId === "db.policies") return policiesBody(factsById);
+  if (regionId === "ui.screens.table") return screensTableBody(factsById);
   if (regionId === "flow.diagram") return dataFlowDiagramBody(factsById);
   if (regionId === "flow.channels") return channelsTableBody(factsById);
   // module-guide regions (R3) were unrenderable at sync time until now: a
@@ -266,6 +267,42 @@ export function channelsTableBody(factsById) {
     return `| \`${a2.name}\`${a2.pattern ? " ⟨pattern⟩" : ""} | ${a2.kind} | ${a2.transport} | ${a2.role} | ${sites} |`;
   });
   return ["| channel | kind | transport | role | sites |", "|---|---|---|---|---|", ...rows].join("\n");
+}
+
+// Screens/route inventory: the client-side analogue of the endpoint
+// inventory, added when routes joined the coverage denominator - counting a
+// surface the tool gives you no way to document would be an unreachable
+// metric, which is worse than not counting it.
+function routeFacts(factsById) {
+  return [...factsById.values()].filter((f) => f.payload.type === "route")
+    .sort((a, b) => a.payload.attrs.path.localeCompare(b.payload.attrs.path));
+}
+
+export function screensTableBody(factsById) {
+  const rows = routeFacts(factsById).map((f) => {
+    const src = f.provenance?.source?.[0]?.file ?? "";
+    return `| \`${f.payload.attrs.path}\` | ${src} |`;
+  });
+  return ["| route | source |", "|---|---|", ...rows].join("\n");
+}
+
+export function renderScreensDoc(factsById, sink) {
+  const routes = routeFacts(factsById);
+  if (routes.length === 0) return null;
+  const content = [
+    "# Screens and routes",
+    "<!-- keeldocs: id=ui.screens recipe=screen-inventory@1 binds=fact:client-routes/* hash-kind=fact -->",
+    "",
+    "<!-- keeldocs:slot id=ui.screens.overview binds=fact:client-routes/* max-words=120 -->",
+    "<!-- /keeldocs:slot -->",
+    "",
+    genBlock("ui.screens.table", "fact:client-routes/*", routes.map((f) => f.id),
+      factsById, screensTableBody(factsById), sink),
+    "",
+    "<!-- Human notes below this line are never touched by keeldocs. -->",
+    "",
+  ].join("\n");
+  return { path: "docs/reference/screens.md", content };
 }
 
 export function renderDataFlowDoc(factsById, sink) {
@@ -447,6 +484,6 @@ export function renderSystemMapDoc(factsById, sink) {
 
 export function renderAll(factsById, sink) {
   return [renderEndpointsDoc(factsById, sink), renderDataModelDoc(factsById, sink),
-    renderDataFlowDoc(factsById, sink),
+    renderDataFlowDoc(factsById, sink), renderScreensDoc(factsById, sink),
           renderConfigDoc(factsById, sink), renderSystemMapDoc(factsById, sink)].filter(Boolean);
 }

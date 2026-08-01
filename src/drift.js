@@ -188,14 +188,14 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
 }
 
 // Coverage denominator = CONCRETE surfaces only (owner decision 2026-07-30):
-// endpoints, tables, env vars, owned services. Packages are containers, not
+// endpoints, tables, env vars, owned services, CLIENT ROUTES and MESSAGING
+// CHANNELS (owner decision 2026-08-01 - all six carry natural keys and
+// objective existence, the ADR-012 test). Packages are containers, not
 // surfaces; external services (postgres:16) are someone else's architecture.
 export function isCoverageSurface(f) {
   const t = f.payload.type;
   if (t === "package" || t === "module" || t === "symbol" || t === "churn") return false;
   if (t === "rls") return false; // an attribute of a table, not a surface; policies DO count
-  if (t === "route") return false; // client routes: owner decision fixed the denominator to endpoints/tables/env/services
-  if (t === "channel") return false; // async-messaging: same denominator decision - widening it is an owner call
   if (t === "service" && f.payload.attrs.kind === "external") return false;
   return true;
 }

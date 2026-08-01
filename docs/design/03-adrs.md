@@ -177,6 +177,8 @@ Every entry is a projection of existing facts; endpoint/topic *descriptions* are
 
 **Coverage denominator — resolved by owner decision (2026-07-30): concrete surfaces only.** The coverage metric counts entities with natural keys and objective existence — endpoints, tables, env vars, services — documented ∕ total, per capability. Exported-symbol coverage is excluded from the metric (gameable by doc-spam, noisy denominator — the DX warning); module-level coverage may render as informational context but never enters the ratchet.
 
+*(Widened by owner decision 2026-08-01: **client routes and messaging channels join the denominator.** Both pass this ADR's own test — a route path and a topic name are natural keys with objective existence, no more inventable than an endpoint — and both were already extracted, bindable, and drift-checked while sitting outside the number, which made the metric quietly understate a modern app's documented surface. Two consequences were handled with the change rather than after it: (1) a **screens inventory** recipe ships alongside, because counting a surface the tool gives you no way to document would be an unreachable metric — worse than not counting it; channels were already documentable via data-flow. (2) Existing repos' percentages MOVE — a React or Next app's denominator grows by its route count on first run after upgrade. That is a deliberate one-time re-baseline, not drift: the ratchet compares against the base branch, and ADR-002's `provider_set_hash` already makes cross-version comparisons invalid by definition. Exported symbols remain excluded, unchanged.)*
+
 ---
 
 ## ADR-013 — Security posture: write barrier, credential rules, sandbox, local-first honesty, injection hardening

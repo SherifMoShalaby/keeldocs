@@ -8,11 +8,11 @@
 import { mkdirSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { extractAll } from "./facts.js";
-import { renderEndpointsDoc, renderModuleGuideDoc, renderDataFlowDoc, renderDataModelDoc, renderConfigDoc, renderSystemMapDoc } from "./render.js";
+import { renderEndpointsDoc, renderModuleGuideDoc, renderDataFlowDoc, renderScreensDoc, renderDataModelDoc, renderConfigDoc, renderSystemMapDoc } from "./render.js";
 import { loadConfig } from "./config.js";
 import { redact } from "./redact.js";
 
-const TYPES = ["erd", "endpoint-inventory", "adr", "system-map", "config-reference", "module-guide", "data-flow"];
+const TYPES = ["erd", "endpoint-inventory", "adr", "system-map", "config-reference", "module-guide", "data-flow", "screens"];
 
 function emit(json, exit, envelope) {
   process.stdout.write(json ? JSON.stringify(envelope) + "\n"
@@ -86,6 +86,7 @@ export function runNew({ root, json, args }) {
       : type === "system-map" ? renderSystemMapDoc(factsById, sink)
       : type === "module-guide" ? renderModuleGuideDoc(factsById, sink, pIdx !== -1 ? args[pIdx + 1] : null)
       : type === "data-flow" ? renderDataFlowDoc(factsById, sink)
+      : type === "screens" ? renderScreensDoc(factsById, sink)
       : renderEndpointsDoc(factsById, sink);
     if (!rendered) {
       const why = type === "erd" ? "no db-schema facts extracted from this repo"
@@ -93,6 +94,7 @@ export function runNew({ root, json, args }) {
         : type === "system-map" ? "no owned services (compose) and no multi-package workspace found - a one-node map would be noise"
         : type === "module-guide" ? "no unambiguous package - pass --package <name> (workspace repos have several)"
         : type === "data-flow" ? "no async-messaging facts extracted from this repo (no declared topics, queues, or channels)"
+        : type === "screens" ? "no client-routes facts extracted from this repo (no router declarations found)"
         : "no http-endpoints facts extracted from this repo";
       return emit(json, 2, { v: 1, ok: false, code: "NOT_AVAILABLE",
         summary: `${why} - nothing true to render`, data: {}, next: [] });
