@@ -1925,6 +1925,56 @@ def main():
     except Exception:
         failures.append(f"CLI envelope smoke: rc={r.returncode} stdout={r.stdout[:200]!r}")
 
+    # ---- ERD scale (E11 / R13): a database past Mermaid's ceiling still ships
+    # a document that RENDERS, is born clean, and loses no table. The unit
+    # tests cover the plan; this covers the loop - init writes it, the content
+    # hash covers the chunked bytes, check agrees, sync reproduces them.
+    try:
+        import re as _re8, shutil as _shs, tempfile as _tfs
+        N = 260  # past the measured break: flat is ~65k chars / ~520 edges here
+        tmp = _tfs.mkdtemp(prefix="keeldocs-erdscale-")
+        dst = os.path.join(tmp, "repo")
+        os.makedirs(os.path.join(dst, "prisma"))
+        models = ['datasource db {\n  provider = "postgresql"\n  url = env("DATABASE_URL")\n}\n']
+        for i in range(N):
+            models.append(
+                f"model T{i:04d} {{\n  id Int @id @default(autoincrement())\n"
+                f"  name String\n  slug String\n  body String?\n  amount Int\n  active Boolean\n"
+                f"  peer T{(i + 1) % N:04d} @relation(fields: [peerId], references: [id])\n  peerId Int\n"
+                f"  backrefs T{(i - 1) % N:04d}[]\n}}\n")
+        W(os.path.join(dst, "prisma", "schema.prisma"), "\n".join(models))
+        W(os.path.join(dst, "package.json"), '{"name":"erdscale","version":"1.0.0"}\n')
+        ri = subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js"), "init", "--yes", "--json"],
+                            cwd=dst, capture_output=True, text=True, timeout=600)
+        assert ri.returncode == 0, f"init rc={ri.returncode} {ri.stdout[:300]}"
+        doc_path = os.path.join(dst, "docs", "architecture", "data-model.md")
+        doc = open(doc_path).read()
+        diagram = doc.split("<!-- keeldocs:gen id=db.root.diagram")[1].split("<!-- /keeldocs:gen -->")[0]
+        fences = diagram.count("```mermaid")
+        assert fences > 1, f"{N} tables must split; got {fences} diagram(s)"
+        # every table reaches the reader - the whole point
+        drawn = set(_re8.findall(r"^  (T\d{4}) \{$", diagram, _re8.M))
+        assert len(drawn) == N, f"{len(drawn)} of {N} tables drawn - {N - len(drawn)} silently lost"
+        # every fenced diagram is one Mermaid will parse (its SHIPPED ceilings)
+        for j, chunk in enumerate(diagram.split("```mermaid")[1:]):
+            body = chunk.split("```")[0]
+            assert len(body) <= 50_000, f"chunk {j}: {len(body)} chars over maxTextSize"
+            assert body.count("}o--||") <= 500, f"chunk {j}: {body.count('}o--||')} edges over maxEdges"
+        # born clean: the content hash covers the chunked bytes actually written
+        rc = subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js"), "check", "--json"],
+                            cwd=dst, capture_output=True, text=True, timeout=600)
+        ce = json.loads(rc.stdout)
+        assert rc.returncode == 0 and ce["code"] == "CLEAN", f"not born clean: rc={rc.returncode} {rc.stdout[:300]}"
+        # and sync regenerates the chunked region identically (repair loop closed)
+        rs = subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js"), "sync", "--apply-all", "--json"],
+                            cwd=dst, capture_output=True, text=True, timeout=600)
+        assert rs.returncode == 0, f"sync rc={rs.returncode} {rs.stdout[:300]}"
+        assert open(doc_path).read() == doc, "sync rewrote a clean chunked diagram - init and sync disagree"
+        print(f"  PASS  ERD scale (E11/R13): {N} tables -> {fences} renderable diagrams, all drawn, born clean, sync-stable")
+        rmtree(tmp)
+    except Exception as e:
+        failures.append(f"ERD scale: {why(e)}")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:

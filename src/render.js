@@ -64,9 +64,22 @@ function pkColumnsByTable(factsById) {
   return m;
 }
 
-export function diagramBody(factsById) {
-  const tables = tableFacts(factsById);
-  const pks = pkColumnsByTable(factsById);
+// Mermaid's shipped ceilings (E11, risk R13). One flat diagram crosses the
+// 50,000-character limit at roughly 200 tables and the 500-edge limit at ~250,
+// after which the flagship artifact does not render AT ALL - the worst possible
+// failure for the first thing a reader looks at. The budget here sits under
+// both with margin; ERD_SLICE is the design's readability ceiling and applies
+// only once a split is already necessary.
+const ERD_MAX_CHARS = 40_000;
+const ERD_MAX_EDGES = 400;
+const ERD_SLICE = 25;
+
+const schemaOf = (name) => (name.includes(".") ? name.slice(0, name.indexOf(".")) : "");
+
+// One diagram's worth of tables. `within` filters edges to the chunk, because a
+// dangling edge makes Mermaid materialise a ghost entity - which would put the
+// entity count straight back over the ceiling the split exists to respect.
+function erdChunkBody(tables, pks, within) {
   const lines = ["```mermaid", "erDiagram"];
   for (const t of tables) {
     const key = pks.get(t.payload.attrs.name) ?? new Set();
@@ -77,15 +90,104 @@ export function diagramBody(factsById) {
     }
     lines.push("  }");
   }
-  const edges = [];
+  const edges = [], outside = new Set();
   for (const t of tables) {
     for (const r of t.payload.attrs.relations) {
+      if (within && !within.has(r.target)) { outside.add(`${t.payload.attrs.name}->${r.target}`); continue; }
       edges.push(`  ${t.payload.attrs.name} }o--|| ${r.target} : "${r.field}"`);
     }
   }
   lines.push(...edges.sort());
   lines.push("```");
-  return lines.join("\n");
+  // Never let an omission pass as completeness: say how many relationships
+  // leave this view, in the view itself.
+  if (outside.size) {
+    lines.push("", `_${outside.size} relationship(s) to tables outside this view are not drawn._`);
+  }
+  return { body: lines.join("\n"), edges: edges.length };
+}
+
+const fits = (drawn) => drawn.body.length <= ERD_MAX_CHARS && drawn.edges <= ERD_MAX_EDGES;
+
+// Greedy pack in name order: grow a picture until the next table would break a
+// budget, then start the next one. Adaptive by construction - a schema of wide
+// tables splits sooner than one of narrow tables, and neither is decided by a
+// fixed count guessed in advance.
+const nameSet = (ts) => new Set(ts.map((t) => t.payload.attrs.name));
+
+function packSchema(group, pks) {
+  const out = [];
+  let cur = [];
+  for (const t of group) {
+    if (cur.length === 0) { cur = [t]; continue; }
+    const trial = [...cur, t];
+    // measured against the pack's OWN names, which is what the pack will be
+    // rendered with - measuring against the whole schema would count edges
+    // this picture never draws
+    if (trial.length > ERD_SLICE || !fits(erdChunkBody(trial, pks, nameSet(trial)))) {
+      out.push(cur); cur = [t];
+    } else cur = trial;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+// The chunk plan. A database that fits stays ONE picture - so every repository
+// under the ceiling renders byte-identically to before this existed. Splitting
+// is by schema first (a real boundary a reader recognises), then by
+// name-ordered packing, which is stable under insertion everywhere except at a
+// pack edge.
+export function erdChunks(factsById) {
+  const tables = tableFacts(factsById);
+  const pks = pkColumnsByTable(factsById);
+  const whole = erdChunkBody(tables, pks, null);
+  if (fits(whole)) return [{ id: null, title: null, body: whole.body, tables: tables.length }];
+
+  const bySchema = new Map();
+  for (const t of tables) {
+    const k = schemaOf(t.payload.attrs.name);
+    if (!bySchema.has(k)) bySchema.set(k, []);
+    bySchema.get(k).push(t);
+  }
+  const chunks = [];
+  for (const [schema, group] of [...bySchema].sort((a, b) => a[0].localeCompare(b[0]))) {
+    // an unqualified name set (Prisma, Drizzle) has no schema concept - do not
+    // invent one in a heading a human reads
+    const label = schema ? `Schema \`${schema}\`` : "Tables";
+    const drawn = erdChunkBody(group, pks, nameSet(group));
+    if (fits(drawn)) {
+      chunks.push({ id: schema || "default", title: label, body: drawn.body, tables: group.length });
+      continue;
+    }
+    const packs = packSchema(group, pks);
+    packs.forEach((pack, i) => {
+      const packDrawn = erdChunkBody(pack, pks, nameSet(pack));
+      // A single table wider than the whole budget cannot be split further.
+      // Say so in the artifact rather than shipping a picture that silently
+      // refuses to render.
+      const over = fits(packDrawn) ? "" :
+        `\n\n_This diagram is ${packDrawn.body.length} characters and ${packDrawn.edges} edges,` +
+        ` past Mermaid's ceiling; \`${pack[0].payload.attrs.name}\` is too wide to split further and may not render._`;
+      chunks.push({
+        id: `${schema || "default"}-${i + 1}`,
+        title: `${label} — part ${i + 1} of ${packs.length}` +
+          ` (\`${pack[0].payload.attrs.name}\` … \`${pack[pack.length - 1].payload.attrs.name}\`)`,
+        body: packDrawn.body + over,
+        tables: pack.length,
+      });
+    });
+  }
+  return chunks;
+}
+
+// Every chunk, in one region. Mermaid's ceilings are per fenced diagram, not
+// per document, so N pictures under one region id keeps the whole database
+// visible AND keeps sync's repair loop closed - a region id that only exists
+// at some table counts would be reported stale and never repairable.
+export function diagramBody(factsById) {
+  const chunks = erdChunks(factsById);
+  if (chunks.length === 1 && chunks[0].id === null) return chunks[0].body;
+  return chunks.map((c) => `### ${c.title}\n\n${c.body}`).join("\n\n");
 }
 
 export function tableColumnsBody(tableFact, key = null) {

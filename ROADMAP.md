@@ -1,13 +1,17 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-01.** `main` at `33810c6` · 66 commits · engine `0.2.0-dev.0` ·
+**As of 2026-08-01.** `main` at `517a2ac` · 67 commits · engine `0.2.0-dev.0` ·
 tagged `v0.1.0-rc.1` at `927b4cb` · 3-OS CI green (Windows non-blocking) ·
-102 unit tests · 39 extractor goldens · 74 harness checks.
+110 unit tests · 39 extractor goldens · 75 harness checks.
 
-**The engineering backlog is empty.** Every item this roadmap ever listed as
-buildable is built. What is left divides into exactly two kinds of thing:
-actions only the owner can take, and features deliberately refused until their
-evidence arrives. Section 4 is now the whole critical path.
+**The backlog was empty; running E8 and E11 refilled it — which is what
+experiments are for.** Both never-run validation experiments were executed on
+2026-08-01. **E11 failed and was fixed the same day**: the flagship ERD stopped
+rendering between 100 and 250 tables, so `src/render.js` gained budget-driven
+chunking and a permanent gate. **E8 failed and cannot be fixed the same day**:
+two of four scale budgets are missed and 1M LOC does not complete, because the
+incremental cache R10's mitigation column has always promised was never built.
+Section 6 is no longer empty — it holds three measured, sized items.
 
 This is the single tracking document. It reconciles three things that had been
 living in separate places: the original design brief's deliverables, the phased
@@ -31,7 +35,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. Thirty-four providers across ten
-capabilities feed eight document recipes. The engine has 102 unit tests, 39
+capabilities feed eight document recipes. The engine has 110 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
@@ -39,7 +43,9 @@ a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
 accurate receipts across four hardening rounds. What is *not* done splits
 cleanly into three piles: a short list of owner actions that gate publication
 and therefore gate every adoption metric; a set of features deliberately
-refused until their evidence arrives; and no remaining engineering debt that a build environment can close.
+refused until their evidence arrives; and — new as of 2026-08-01, from running
+E8 — three measured scale items, because the loop that is correct at 100k lines
+of code does not complete at a million.
 
 ---
 
@@ -190,9 +196,22 @@ into committed artifacts.
 
 ## 6. Open engineering debt — buildable now
 
-**None.** Every item that was buildable from a build environment is built. What
-remains is the two piles above: owner actions that gate publication, and
-features deliberately refused until their evidence arrives.
+Three items, all created by E8 on 2026-08-01, all with measured baselines
+rather than estimates. They are ordered by dependency: each one is worth less
+until the one above it lands.
+
+| # | Item | Why | Baseline to beat |
+|---|---|---|---|
+| D1 | **Incremental extraction keyed on git blob hashes** | There is no cache. "Warm" and "cold" are the same operation, so a one-file edit re-extracts the entire repository. This is the single cause of the p50 miss at every size | one-file-edit check: 5.72s @10k, 9.97s @100k, 31.8s @1M — indistinguishable from a full run. Target: re-extract one file |
+| D2 | **Provider output sharding / streaming** | `ts-imports` buffers one JSON blob and hits the 5 MB ADR-002 cap at 5,402 files. The cap is correct and stays; the provider must stop needing it | 1M LOC exits 2, `TOOL_ERROR`, no documents written. Target: completes |
+| D3 | **`--affected`** | Scope a check to what a diff touched. The shortest path from a 10s p50 to a sub-second one — but pointless before D1 | 9.66s @100k full check. Target: proportional to the diff |
+
+Re-run E8 after each; the numbers in `experiments/e8-scale/RESULTS.md` are the
+baseline, and the R10 budgets are unchanged. Until D1–D3 land, the honest
+statement of what keeldocs handles is **~100k LOC / 200 packages at a ~10s
+check** — most repositories, and the size the beta cohort will bring, but not
+the 1M-LOC monorepo the design gate was written against. No public material
+should imply otherwise.
 
 Two sandbox residuals are recorded rather than open, because closing them buys
 nothing at the current threat model: `/proc`, `/sys` and `/dev` stay the host's
@@ -217,10 +236,10 @@ alongside the build rather than after.
 | E5 determinism goldens | "byte-identical output across OSes" | **Passed, permanent** — runs every CI push |
 | E6 redaction adversarial corpus | "the write barrier catches realistic leaks" | **Passed** |
 | E7 agent adapter smoke matrix | the distribution bet | **Blocked (you)** — needs a published package |
-| E8 scale benchmark (1M LOC) | "warm check ≤5s p50" | **Not run** |
+| E8 scale benchmark (1M LOC) | "warm check ≤5s p50" | **Run 2026-08-01 → FAILED.** RAM (900 MB flat) and cold (≤34s) pass with room; p50 fails at every size and 1M LOC exits 2 on the ADR-002 output cap. Root cause: no incremental cache exists. Budgets held, debt filed as D1–D3 |
 | E9 noise SLO field trial | the adoption bet | **Four rounds run** on a real production repo; the 4-week accept-rate number still needs a cohort |
 | E10 injection red-team | "artifact-borne injection cannot reach an action" | **Passed, permanent CI gate** |
-| E11 ERD scale rendering | "the flagship diagram survives 500 tables" | **Not run** |
+| E11 ERD scale rendering | "the flagship diagram survives 500 tables" | **Run 2026-08-01 → FAILED, REDESIGNED, PASSES.** The flat ERD crossed `maxTextSize` between 100 and 250 tables — real Supabase and Rails schemas live there, and the failure renders *nothing*. Chunking shipped; 1,000 tables now render with every table drawn. Gated by 8 unit tests against Mermaid's real ceilings plus a 260-table end-to-end harness check |
 | E12 study full-text verification | the ~46% positioning claim | **Not run** — must happen before that number appears in any public material |
 | E13 replay vs live equivalence | "WASM Postgres matches real DDL semantics" | **Passed** — 10/10 byte-identical to PostgreSQL 16 |
 | E14 JVM/Go probes | tier choice per framework | **Passed** — spring 17/17, gin 15/15 |
@@ -228,20 +247,33 @@ alongside the build rather than after.
 
 ---
 
-**Validation debt, precisely.** Three experiments have never run, and each is a
-different kind of blocked. **E7** (cross-agent smoke) needs a published package —
-owner-blocked, on the critical path. **E8** (1M-LOC scale benchmark) and **E11**
-(ERD at 500 tables) need only a synthetic corpus and an afternoon; they are the
-one place where more engine work would still buy something, and neither gates a
-release. **E12** (full text of the ~46% study) must happen before that number
+**Validation debt, precisely.** Two experiments have never run. **E7**
+(cross-agent smoke) needs a published package — owner-blocked, on the critical
+path. **E12** (full text of the ~46% study) must happen before that number
 appears in any public positioning material — a writing gate, not a build one.
+
+E8 and E11 came off this list on 2026-08-01, and they are worth reading as a
+pair, because they are the two ways an experiment pays. E11 found a defect that
+no amount of code review would have surfaced — the renderer was correct, the
+*budget* was absent — and it was fixable in an afternoon, so the fix shipped
+with the finding. E8 found that a mitigation the risk register has listed since
+day one was never implemented, and no afternoon closes that. The tempting move
+was to relax a budget nobody outside this repo would ever check. Doc 08's rule
+is explicit that the correct move is redesign, not adjustment of the threshold,
+so the budgets stand, the failure is written down with its numbers, and section
+6 carries the work. An experiment that only ever confirms is not an experiment.
+
+E8's residual is also named rather than quietly dropped: the R10 gate says
+*"1M-LOC synthetic + 2 real monorepos"*, and the two real monorepos were not
+run. They belong after D1–D3, not before — on today's engine they would
+re-measure the same missing cache on a lumpier tree.
 
 ## 8. Inventory, for orientation
 
 34 shipped providers across 10 capabilities (workspace-layout, module-graph,
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
-agent skills · 102 unit tests · 39 byte-compared extractor goldens · ~24
+agent skills · 110 unit tests · 39 byte-compared extractor goldens · ~25
 end-to-end integration blocks · 13 ADRs · 15 experiments.
 
 Field deployment: one real production application (Next.js App Router +
