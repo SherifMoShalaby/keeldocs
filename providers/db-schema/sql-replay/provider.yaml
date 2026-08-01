@@ -1,6 +1,6 @@
 id: sql-replay
 capability: db-schema
-semver: 0.3.0
+semver: 0.4.0
 tier: code            # the v0.2-promised replay engine (design doc 11 R1): SQL
                       # migration chains executed in-order against an ephemeral
                       # in-process Postgres (pglite, WASM - E13: 10/10 chains
@@ -15,4 +15,4 @@ detect: { dirs: ["supabase/migrations", "migrations", "db/migrations", "db/migra
 inputs: ["supabase/migrations/*.sql", "migrations/*.sql", "db/migrations/*.sql", "db/migration/*.sql", "sql/migrations/*.sql", "prisma/migrations/*/migration.sql"]
 requires: ["@electric-sql/pglite"]
 timeout_class: C
-emits: [table, enum, function, extraction-gap]
+emits: [table, enum, function, pk, view, extraction-gap]

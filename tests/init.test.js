@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { detectLies } from "../src/lies.js";
 import { renderAll, renderRegionBody, endpointsTableBody } from "../src/render.js";
 import { parseDoc } from "../src/anchors.js";
-import { evaluate, resolveBindIds } from "../src/drift.js";
+import { evaluate, resolveBindIds, isCoverageSurface } from "../src/drift.js";
 import { factHash } from "../src/hash.js";
 
 function mkFacts(defs) {
@@ -251,4 +251,47 @@ test("database functions render, and the region can be regenerated", () => {
   // regenerated is reportable-but-unrepairable, which is half a loop
   assert.equal(renderRegionBody("db.functions", resolveBindIds(region.binds, facts), facts),
     region.body.trim(), "regeneration reproduces the rendered body");
+});
+
+test("PostgREST verbs are read from the catalog, never assumed", () => {
+  const facts = mkFacts([
+    ["fact:db-schema/public.orders", "table",
+      { name: "public.orders", relations: [],
+        columns: [{ name: "id", type: "int8", optional: false, list: false, attrs: "" },
+                  { name: "total", type: "numeric", optional: true, list: false, attrs: "" }] }],
+    ["fact:db-schema/pk.public.orders", "pk",
+      { table: "public.orders", constraint: "orders_pkey", columns: ["id"] }],
+    ["fact:db-schema/view.public.open_orders", "view",
+      { name: "public.open_orders", materialized: false,
+        columns: [{ name: "id", type: "int8", optional: true, list: false, attrs: "" }],
+        insertable: true, updatable: true, deletable: true }],
+    ["fact:db-schema/view.public.order_stats", "view",
+      { name: "public.order_stats", materialized: true,
+        columns: [{ name: "n", type: "int8", optional: true, list: false, attrs: "" }],
+        insertable: false, updatable: false, deletable: false }],
+  ]);
+  const doc = renderAll(facts).find((d) => d.path === "docs/architecture/data-model.md");
+  // a view is a DERIVED relation - its own section, not an entity box
+  assert.match(doc.content, /## Views/);
+  assert.match(doc.content, /`public\.open_orders` \| view \| `id` \| GET, POST, PATCH, DELETE/);
+  assert.match(doc.content, /`public\.order_stats` \| materialized \| `n` \| GET \|/,
+    "a materialized view is never writable through PostgREST");
+  // the primary key is its OWN fact, and it renders where a reader needs it
+  assert.match(doc.content, /int8 id PK/, "the ER diagram marks keys");
+  assert.match(doc.content, /\| id \| int8 \| primary key \|/, "so does the column table");
+  const region = parseDoc(doc.content, doc.path).regions.find((r) => r.id === "db.views");
+  assert.equal(renderRegionBody("db.views", resolveBindIds(region.binds, facts), facts),
+    region.body.trim(), "the views region regenerates - reportable AND repairable");
+});
+
+test("a primary key is an attribute of a table, not a countable surface", () => {
+  const facts = mkFacts([
+    ["fact:db-schema/public.orders", "table", { name: "public.orders", columns: [], relations: [] }],
+    ["fact:db-schema/pk.public.orders", "pk", { table: "public.orders", constraint: "p", columns: ["id"] }],
+    ["fact:db-schema/view.public.v", "view",
+      { name: "public.v", materialized: false, columns: [], insertable: false, updatable: false, deletable: false }],
+  ]);
+  const counted = [...facts.values()].filter(isCoverageSurface).map((f) => f.payload.type).sort();
+  assert.deepEqual(counted, ["table", "view"],
+    "a view IS an exposed surface and counts; a key is not, exactly like rls");
 });

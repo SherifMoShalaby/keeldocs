@@ -806,7 +806,7 @@ def main():
         want = open(os.path.join(ROOT, "fixtures", "rls-scenario", "golden", "docs", "data-model.md")).read()
         assert got == want, "data-model.md differs from golden"
         caps = env_["data"]["card"]["capabilities"]
-        assert caps["db-schema"]["providers"] == ["sql-replay@0.3.0"], caps["db-schema"]
+        assert caps["db-schema"]["providers"] == ["sql-replay@0.4.0"], caps["db-schema"]
         dm = open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
         assert "notes_all" not in dm, "dropped policy must not survive the replay"
         assert "notes_owner_rw" in dm and "RLS enabled on `public.orders`" in dm
@@ -1049,7 +1049,7 @@ def main():
         r = kd(dst, "init", "--yes", "--json")
         env_ = json.loads(r.stdout)
         assert r.returncode == 0 and env_["code"] == "INITIALIZED", r.stdout[:200]
-        assert env_["data"]["card"]["capabilities"]["db-schema"]["providers"] == ["sql-replay@0.3.0"]
+        assert env_["data"]["card"]["capabilities"]["db-schema"]["providers"] == ["sql-replay@0.4.0"]
         dm = open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
         assert "public.users" in dm and "public.posts" in dm and "public.orders" in dm, "replayed tables must render"
         assert "order_status" in dm, "replayed enum must render"
@@ -1067,8 +1067,14 @@ def main():
         rep = json.load(open([os.path.join(dst, ".keeldocs", "out", f)
                               for f in os.listdir(os.path.join(dst, ".keeldocs", "out"))
                               if f.startswith("init-")][0]))
-        kinds = {g["kind"] for g in rep.get("extractionGaps", [])}
-        assert "view-unmodeled" in kinds, "an exposed surface we do not model must read as a hole, not as none"
+        assert "## Views" in dm and "public.order_totals" in dm, "views are modeled, not a gap"
+        assert "PK" in dm, "the ER diagram marks primary keys"
+        assert "| PUT | `/rest/v1/orders`" in ep, "a KEYED table answers PUT"
+        assert "| PUT | `/rest/v1/event_log`" not in ep, "a table with no primary key does not"
+        assert "| GET | `/rest/v1/order_stats`" in ep and \
+               "| POST | `/rest/v1/order_stats`" not in ep, "a materialized view is read-only"
+        assert "| POST | `/rest/v1/order_totals`" not in ep, "an aggregate view is not auto-updatable"
+        assert "| POST | `/rest/v1/open_orders`" in ep, "...but a simple one is, and the catalog says so"
         rc = kd(dst, "check", "--json")
         assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", "born-clean invariant violated"
         # the derived surface closes its own drift loop: a new function is a new
@@ -1115,7 +1121,11 @@ def main():
         ep = open(os.path.join(dst, "docs", "reference", "endpoints.md")).read()
         for verb in ("GET", "POST", "PATCH", "DELETE"):
             assert f"| {verb} | `/rest/v1/profiles`" in ep, f"exposed tables answer {verb}"
-        assert "| PUT | " not in ep, "PUT needs primary-key knowledge the catalog facts do not carry"
+        assert "| PUT | `/rest/v1/profiles`" in ep, "a keyed table answers PUT"
+        assert "| PUT | `/rest/v1/ride_events`" not in ep, "a keyless one does not"
+        assert "| GET | `/rest/v1/ride_counts`" in ep and \
+               "| PATCH | `/rest/v1/ride_counts`" not in ep, "an aggregate view is GET-only"
+        assert "| PATCH | `/rest/v1/active_rides`" in ep, "an auto-updatable view is writable"
         assert "| GET | `/rest/v1/rpc/search_rides`" in ep and \
                "| POST | `/rest/v1/rpc/search_rides`" in ep, "a STABLE rpc answers both"
         assert "| GET | `/rest/v1/rpc/claim_ride`" not in ep, "a VOLATILE rpc is POST-only"

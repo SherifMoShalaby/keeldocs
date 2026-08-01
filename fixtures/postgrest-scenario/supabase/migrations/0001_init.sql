@@ -53,3 +53,11 @@ begin
   perform 1;
 end;
 $$;
+
+-- an auto-updatable view (write verbs), an aggregate view (GET only), and a
+-- keyless table (no PUT) - the three catalog-decided branches
+create view active_rides as select id, driver, seats from public.rides;
+
+create view ride_counts as select driver, count(*) as n from public.rides group by driver;
+
+create table public.ride_events (at timestamptz default now(), note text);

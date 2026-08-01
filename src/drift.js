@@ -209,7 +209,8 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
 export function isCoverageSurface(f) {
   const t = f.payload.type;
   if (t === "package" || t === "module" || t === "symbol" || t === "churn") return false;
-  if (t === "rls") return false; // an attribute of a table, not a surface; policies DO count
+  // attributes OF a table, not surfaces of their own; policies and views DO count
+  if (t === "rls" || t === "pk") return false;
   if (t === "service" && f.payload.attrs.kind === "external") return false;
   return true;
 }

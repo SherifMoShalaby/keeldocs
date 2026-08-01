@@ -5,16 +5,16 @@
 <!-- /keeldocs:slot -->
 
 ## Diagram
-<!-- keeldocs:gen id=db.root.diagram hash=h1:a12783d370bf5520 content=h1:01230ee4e87e64d0 -->
+<!-- keeldocs:gen id=db.root.diagram hash=h1:da0e658b6f6ea1bc content=h1:e5693182ad8e3b8c -->
 ```mermaid
 erDiagram
   public.notes {
-    int4 id
+    int4 id PK
     text body "nullable"
     uuid owner "nullable"
   }
   public.orders {
-    int4 id
+    int4 id PK
     uuid user_id "nullable"
     int4 total "nullable"
   }
@@ -24,10 +24,10 @@ erDiagram
 ## public.notes
 <!-- keeldocs: id=db.public.notes recipe=erd@1 binds=fact:db-schema/public.notes hash-kind=fact -->
 
-<!-- keeldocs:gen id=db.public.notes.columns hash=h1:e1b235a6b4ef0973 content=h1:6717085eb2a697d3 -->
+<!-- keeldocs:gen id=db.public.notes.columns hash=h1:e1b235a6b4ef0973 content=h1:1f30a7fd5d890163 -->
 | column | type | attributes |
 |---|---|---|
-| id | int4 | default nextval('notes_id_seq'::regclass) |
+| id | int4 | primary key, default nextval('notes_id_seq'::regclass) |
 | body | text? |  |
 | owner | uuid? |  |
 <!-- /keeldocs:gen -->
@@ -35,10 +35,10 @@ erDiagram
 ## public.orders
 <!-- keeldocs: id=db.public.orders recipe=erd@1 binds=fact:db-schema/public.orders hash-kind=fact -->
 
-<!-- keeldocs:gen id=db.public.orders.columns hash=h1:eeba8aa281ab263e content=h1:74a9bb217cf2d91d -->
+<!-- keeldocs:gen id=db.public.orders.columns hash=h1:eeba8aa281ab263e content=h1:352fc5c79b85ed54 -->
 | column | type | attributes |
 |---|---|---|
-| id | int4 | default nextval('orders_id_seq'::regclass) |
+| id | int4 | primary key, default nextval('orders_id_seq'::regclass) |
 | user_id | uuid? |  |
 | total | int4? |  |
 <!-- /keeldocs:gen -->

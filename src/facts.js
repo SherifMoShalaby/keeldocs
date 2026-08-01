@@ -332,6 +332,35 @@ function replayFacts(raw, provenanceBase, declaredTables, declaredEnums) {
       provenance: { ...provenanceBase, source: [{ kind: "migration-replay" }] },
     });
   }
+  // Primary keys are their OWN fact, not a table attribute. Folding them into
+  // the table payload would change every table hash on upgrade and stale every
+  // ERD in existence for information that is an attribute OF a table rather
+  // than a surface of its own - exactly the shape `rls` already has.
+  for (const pk of raw.primary_keys ?? []) {
+    if (!pk?.table) continue;
+    facts.push({
+      id: `fact:db-schema/pk.${pk.table}`,
+      payload: { schema_version: 1, type: "pk",
+        attrs: { table: pk.table, constraint: pk.constraint ?? "",
+                 columns: pk.columns ?? [] } },
+      provenance: { ...provenanceBase, source: [{ kind: "migration-replay" }] },
+    });
+  }
+  // Views and materialized views. A view IS a surface - PostgREST answers on
+  // it - so it counts, and its WRITABILITY comes from the catalog rather than
+  // from an assumption: a matview is never writable, and a plain view only
+  // when it is auto-updatable or carries INSTEAD OF triggers.
+  for (const v of raw.views ?? []) {
+    facts.push({
+      id: `fact:db-schema/view.${v.name}`,
+      payload: { schema_version: 1, type: "view",
+        attrs: { name: v.name, materialized: !!v.materialized,
+          columns: (v.columns ?? []).map((c) => ({
+            name: c.name, type: c.type, optional: !!c.nullable, list: false, attrs: "" })),
+          insertable: !!v.insertable, updatable: !!v.updatable, deletable: !!v.deletable } },
+      provenance: { ...provenanceBase, source: [{ kind: "migration-replay" }] },
+    });
+  }
   const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? "unknown", file: w.file ?? null }));
   return { facts, gaps };
 }

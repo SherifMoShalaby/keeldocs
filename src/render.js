@@ -54,13 +54,26 @@ function enumFacts(factsById) {
     .sort((a, b) => a.payload.attrs.name.localeCompare(b.payload.attrs.name));
 }
 
+// Primary keys are their own fact type (never a table attribute - see
+// src/facts.js), so the renderers look them up by table name.
+function pkColumnsByTable(factsById) {
+  const m = new Map();
+  for (const f of factsById.values()) {
+    if (f.payload.type === "pk") m.set(f.payload.attrs.table, new Set(f.payload.attrs.columns));
+  }
+  return m;
+}
+
 export function diagramBody(factsById) {
   const tables = tableFacts(factsById);
+  const pks = pkColumnsByTable(factsById);
   const lines = ["```mermaid", "erDiagram"];
   for (const t of tables) {
+    const key = pks.get(t.payload.attrs.name) ?? new Set();
     lines.push(`  ${t.payload.attrs.name} {`);
     for (const c of t.payload.attrs.columns) {
-      lines.push(`    ${c.type.replace(/\W/g, "")} ${c.name}${c.optional ? " \"nullable\"" : ""}`);
+      const marks = [...(key.has(c.name) ? ["PK"] : []), ...(c.optional ? ["\"nullable\""] : [])];
+      lines.push(`    ${c.type.replace(/\W/g, "")} ${c.name}${marks.length ? " " + marks.join(" ") : ""}`);
     }
     lines.push("  }");
   }
@@ -75,10 +88,31 @@ export function diagramBody(factsById) {
   return lines.join("\n");
 }
 
-export function tableColumnsBody(tableFact) {
-  const rows = tableFact.payload.attrs.columns.map((c) =>
-    `| ${c.name} | ${c.type}${c.list ? "[]" : ""}${c.optional ? "?" : ""} | ${c.attrs || ""} |`);
+export function tableColumnsBody(tableFact, key = null) {
+  const rows = tableFact.payload.attrs.columns.map((c) => {
+    const attrs = [...(key?.has(c.name) ? ["primary key"] : []), ...(c.attrs ? [c.attrs] : [])].join(", ");
+    return `| ${c.name} | ${c.type}${c.list ? "[]" : ""}${c.optional ? "?" : ""} | ${attrs} |`;
+  });
   return ["| column | type | attributes |", "|---|---|---|", ...rows].join("\n");
+}
+
+function viewFactsOf(factsById) {
+  return [...factsById.values()].filter((f) => f.payload.type === "view")
+    .sort((a, b) => a.payload.attrs.name.localeCompare(b.payload.attrs.name));
+}
+
+// A view is a DERIVED relation, so it gets its own section rather than an
+// entity box in the ER diagram - and the verbs column states what PostgREST
+// will actually accept on it, read from the catalog, never assumed.
+export function viewsBody(factsById) {
+  const rows = viewFactsOf(factsById).map((f) => {
+    const a = f.payload.attrs;
+    const verbs = ["GET", ...(a.insertable ? ["POST"] : []), ...(a.updatable ? ["PATCH"] : []),
+                   ...(a.deletable ? ["DELETE"] : [])].join(", ");
+    const cols = a.columns.map((c) => `\`${c.name}\``).join(", ");
+    return `| \`${a.name}\` | ${a.materialized ? "materialized" : "view"} | ${cols} | ${verbs} |`;
+  });
+  return ["| relation | kind | columns | REST verbs |", "|---|---|---|---|", ...rows].join("\n");
 }
 
 function envVarFacts(factsById) {
@@ -207,6 +241,7 @@ export function renderRegionBody(regionId, boundIds, factsById) {
   if (regionId === "sys.map.packages") return packagesTableBody(factsById);
   if (regionId === "db.policies") return policiesBody(factsById);
   if (regionId === "db.functions") return functionsBody(factsById);
+  if (regionId === "db.views") return viewsBody(factsById);
   if (regionId === "ui.screens.table") return screensTableBody(factsById);
   if (regionId === "flow.diagram") return dataFlowDiagramBody(factsById);
   if (regionId === "flow.channels") return channelsTableBody(factsById);
@@ -217,9 +252,12 @@ export function renderRegionBody(regionId, boundIds, factsById) {
   if (/^mod\..+\.deps$/.test(regionId)) return moduleDepsBody(factsById, new Set(boundIds));
   const m = regionId.match(/^db\..+\.columns$/);
   if (m) {
-    const tableId = boundIds.find((id) => id.startsWith("fact:db-schema/") && !id.includes("/enum."));
+    const tableId = boundIds.find((id) => {
+      const f = factsById.get(id);
+      return f && f.payload.type === "table";
+    });
     const fact = tableId ? factsById.get(tableId) : null;
-    return fact ? tableColumnsBody(fact) : null;
+    return fact ? tableColumnsBody(fact, pkColumnsByTable(factsById).get(fact.payload.attrs.name)) : null;
   }
   return null;
 }
@@ -434,6 +472,7 @@ export function renderDataModelDoc(factsById, sink) {
     genBlock("db.root.diagram", null, diagramIds, factsById, diagramBody(factsById), sink),
     "",
   ];
+  const keyOf = pkColumnsByTable(factsById);
   for (const t of tables) {
     const name = t.payload.attrs.name;
     const idSlug = `db.${name.toLowerCase()}`;
@@ -441,7 +480,8 @@ export function renderDataModelDoc(factsById, sink) {
       `## ${name}`,
       `<!-- keeldocs: id=${idSlug} recipe=erd@1 binds=${t.id} hash-kind=fact -->`,
       "",
-      genBlock(`${idSlug}.columns`, null, [t.id], factsById, tableColumnsBody(t), sink),
+      genBlock(`${idSlug}.columns`, null, [t.id], factsById,
+        tableColumnsBody(t, keyOf.get(name)), sink),
       "",
     );
   }
@@ -449,6 +489,15 @@ export function renderDataModelDoc(factsById, sink) {
     parts.push(
       "## Enums",
       genBlock("db.enums", enums.map((e) => e.id).sort().join(","), enums.map((e) => e.id), factsById, enumsBody(factsById), sink),
+      "",
+    );
+  }
+  const views = viewFactsOf(factsById);
+  if (views.length) {
+    parts.push(
+      "## Views",
+      genBlock("db.views", "fact:db-schema/view.*", views.map((v) => v.id).sort(),
+        factsById, viewsBody(factsById), sink),
       "",
     );
   }

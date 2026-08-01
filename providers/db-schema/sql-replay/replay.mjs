@@ -210,7 +210,8 @@ const BASELINE = `select coalesce(json_agg(json_build_object(
 
 const fnKey = (f) => `${f.name}(${f.signature})`;
 
-const emptyOut = () => JSON.stringify({ tables: [], enums: [], functions: [], warnings }) + "\n";
+const emptyOut = () => JSON.stringify(
+  { tables: [], enums: [], functions: [], primary_keys: [], views: [], warnings }) + "\n";
 
 async function main() {
   const chain = chainOf();
@@ -286,11 +287,9 @@ async function main() {
   const out = r.rows[0].result;
   const functions = (out.functions ?? [])
     .filter((f) => baseline.get(fnKey(f)) !== f.body_digest);
-  // views/matviews are a real PostgREST surface this version does not model;
-  // naming each one keeps "unmodeled" from reading as "not there"
-  for (const v of out.views ?? []) warnings.push({ kind: "view-unmodeled", file: v });
   process.stdout.write(JSON.stringify({
-    tables: out.tables ?? [], enums: out.enums ?? [], functions, warnings,
+    tables: out.tables ?? [], enums: out.enums ?? [], functions,
+    primary_keys: out.primary_keys ?? [], views: out.views ?? [], warnings,
   }) + "\n");
   await db.close();
 }

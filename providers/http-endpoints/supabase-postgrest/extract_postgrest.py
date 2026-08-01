@@ -13,14 +13,16 @@ This is a pure function of two inputs, both already in hand:
   2. supabase/config.toml [api], which decides whether the API is on at all
      and which schemas it exposes (default: public)
 
-What it deliberately does NOT claim:
+Everything it claims is read from the catalog, never assumed:
 
-  * PUT. PostgREST supports single-row upsert via PUT, but only for tables with
-    a primary key, and the catalog facts carry no key information. An endpoint
-    we cannot verify is one we do not emit.
-  * Views and materialized views. A real exposed surface, not modeled in this
-    version - sql-replay names each one as a `view-unmodeled` gap so the hole
-    reads as a hole.
+  * PUT is single-row upsert and exists only for a KEYED relation, so it is
+    emitted for a table exactly when a `pk` fact names its primary key.
+  * Views answer GET always; the write verbs appear only when the catalog says
+    the view is auto-updatable or carries INSTEAD OF triggers. A materialized
+    view is never writable through PostgREST and gets GET alone.
+
+What it still does NOT claim:
+
   * Procedures. CALL-able through PostgREST, but the invocation shape differs
     enough that guessing would be worse than a named gap.
   * Authorization. The endpoint EXISTS; whether a given role gets rows is
@@ -34,6 +36,9 @@ import json, os, re, sys
 
 REST = "/rest/v1"
 TABLE_VERBS = ("DELETE", "GET", "PATCH", "POST")
+# PUT is single-row upsert: PostgREST requires every primary-key column in
+# the query string, so the verb exists only where a primary key does.
+KEYED_VERB = "PUT"
 # functions PostgREST cannot expose however they are declared
 UNEXPOSED_RETURNS = {"trigger", "event_trigger"}
 
@@ -139,15 +144,25 @@ def main(root):
     # order, which is sorted by id and would otherwise hand `api` the path
     # simply for sorting ahead of `public`.
     tables, functions, gettable = {}, {}, set()
+    views, keyed = {}, set()
 
     for f in facts:
         payload = f.get("payload") or {}
         attrs = payload.get("attrs") or {}
         kind = payload.get("type")
+        if kind == "pk":
+            schema, rel = split_qualified(attrs.get("table") or "")
+            if schema in rank and (attrs.get("columns") or []):
+                keyed.add((schema, rel))
+            continue
         schema, rel = split_qualified(attrs.get("name") or "")
         if not schema or schema not in rank:
             continue
-        if kind == "table":
+        if kind == "view":
+            views.setdefault(rel, {}).setdefault(schema, []).append(
+                (f.get("id"), attrs.get("materialized"), attrs.get("insertable"),
+                 attrs.get("updatable"), attrs.get("deletable")))
+        elif kind == "table":
             tables.setdefault(rel, {}).setdefault(schema, []).append(f.get("id"))
         elif kind == "function":
             if attrs.get("kind") == "procedure":
@@ -174,7 +189,26 @@ def main(root):
         schema, fact_id, collided = winner(by_schema)
         if collided:
             ambiguous.add(rel)
-        for verb in TABLE_VERBS:
+        verbs = list(TABLE_VERBS) + ([KEYED_VERB] if (schema, rel) in keyed else [])
+        for verb in verbs:
+            endpoints.append({"method": verb, "path": f"{REST}/{rel}",
+                              "kind": "postgrest-catalog", "derived_from": fact_id})
+    # a view shares the table path space: same URL shape, catalog-decided verbs
+    for rel, by_schema in views.items():
+        schema = min(by_schema, key=lambda x: rank[x])
+        if len(by_schema) > 1 or rel in tables:
+            ambiguous.add(rel)
+        entry = sorted(by_schema[schema])[0]
+        fact_id, materialized, insertable, updatable, deletable = entry
+        verbs = ["GET"]
+        if not materialized:
+            if insertable:
+                verbs.append("POST")
+            if updatable:
+                verbs.append("PATCH")
+            if deletable:
+                verbs.append("DELETE")
+        for verb in sorted(verbs):
             endpoints.append({"method": verb, "path": f"{REST}/{rel}",
                               "kind": "postgrest-catalog", "derived_from": fact_id})
     for name, by_schema in functions.items():
