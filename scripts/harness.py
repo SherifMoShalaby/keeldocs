@@ -1198,7 +1198,8 @@ def main():
             if sys.platform == "linux" else False
         wired = subprocess.run(["node", "-e",
             "import(process.argv[1]).then(m=>console.log(JSON.stringify(m.sandboxState())))",
-            os.path.join(ROOT, "src", "facts.js")], capture_output=True, text=True)
+            # file:// URL, not a path: import() rejects C:\ paths on Windows
+            __import__("pathlib").Path(ROOT, "src", "facts.js").as_uri()], capture_output=True, text=True)
         assert wired.returncode == 0 and json.loads(wired.stdout)["netns"] == probe, \
             f"engine sandbox wiring disagrees with the probe: {wired.stdout!r} vs {probe}"
         if probe:
