@@ -1,7 +1,13 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-01.** `main` at `97c53ac` · 57 commits · engine `0.2.0-dev.0` ·
-tagged `v0.1.0-rc.1` at `927b4cb` · 3-OS CI green (Windows non-blocking).
+**As of 2026-08-01.** `main` at `33810c6` · 66 commits · engine `0.2.0-dev.0` ·
+tagged `v0.1.0-rc.1` at `927b4cb` · 3-OS CI green (Windows non-blocking) ·
+102 unit tests · 39 extractor goldens · 74 harness checks.
+
+**The engineering backlog is empty.** Every item this roadmap ever listed as
+buildable is built. What is left divides into exactly two kinds of thing:
+actions only the owner can take, and features deliberately refused until their
+evidence arrives. Section 4 is now the whole critical path.
 
 This is the single tracking document. It reconciles three things that had been
 living in separate places: the original design brief's deliverables, the phased
@@ -28,7 +34,7 @@ proven on a real production repo**. Thirty-four providers across ten
 capabilities feed eight document recipes. The engine has 102 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
-a real 30-table Supabase/Next.js application end to end: 438 concrete surfaces,
+a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
 100% documented, `check` CLEAN, and 249 → 113 documentation lies found with
 accurate receipts across four hardening rounds. What is *not* done splits
 cleanly into three piles: a short list of owner actions that gate publication
@@ -117,8 +123,9 @@ not been promoted to `v0.1.0` only because publication is blocked.
 
 ### v1.0 — the gates that are not about features
 
-None of these can be met from a build environment. They are the honest reason
-v1.0 is not close, regardless of how much engine exists.
+None of these can be met from a build environment. **They are now the only
+reason v1.0 is not close**: the engine side of v0.3 is complete, and every
+remaining v1.0 gate is about people, publication or elapsed time.
 
 | Gate | Status |
 |---|---|
@@ -141,15 +148,23 @@ chain of three.
    cannot run; until E7 passes on two agents, `0.2.0` should not cut; until
    there is a published package, every adoption and contribution-economics
    number stays unmeasurable.
-2. **Merge the three open Tareeqna PRs** — `keeldocs/ci-drift-gate` (report-only
-   CI gate), `keeldocs/tsd-search-rides-fix` (the RPC correction plus the
-   overload note), `keeldocs/postgrest-surface` (regenerated REST + routine
-   docs).
+2. **Merge the four open Tareeqna branches**, in this order because the last
+   two stack: `keeldocs/ci-drift-gate` (report-only CI gate),
+   `keeldocs/tsd-search-rides-fix` (the RPC correction plus the two-overload
+   note), `keeldocs/postgrest-surface` (REST + routine docs), then
+   `keeldocs/views-and-put` (views, PUT, PK markers — branched off the
+   previous one).
 3. **Recruit an interview beta cohort** — the ≥50% card-completion gate has no
    data.
 4. **Windows promotion to a blocking lane** — a scheduled task fires 2026-08-29
    to check the four-week green streak and remind you it is a one-line deletion
    in `ci.yml`.
+
+Two things worth deciding while you are in there, both cheap: whether to **cut
+`0.2.0` on E7's evidence or on your own judgement** (the gate was yours, and the
+tree has moved a long way past what `0.2.0` originally meant), and whether the
+**`users_public` view being writable through PostgREST** is intended — keeldocs
+surfaced it, but it is a schema decision, not a docs one.
 
 ---
 
@@ -213,6 +228,14 @@ alongside the build rather than after.
 
 ---
 
+**Validation debt, precisely.** Three experiments have never run, and each is a
+different kind of blocked. **E7** (cross-agent smoke) needs a published package —
+owner-blocked, on the critical path. **E8** (1M-LOC scale benchmark) and **E11**
+(ERD at 500 tables) need only a synthetic corpus and an afternoon; they are the
+one place where more engine work would still buy something, and neither gates a
+release. **E12** (full text of the ~46% study) must happen before that number
+appears in any public positioning material — a writing gate, not a build one.
+
 ## 8. Inventory, for orientation
 
 34 shipped providers across 10 capabilities (workspace-layout, module-graph,
@@ -222,8 +245,14 @@ agent skills · 102 unit tests · 39 byte-compared extractor goldens · ~24
 end-to-end integration blocks · 13 ADRs · 15 experiments.
 
 Field deployment: one real production application (Next.js App Router +
-Supabase, 19-file migration chain, 30 tables) running the full loop, with three
-documentation pull requests open.
+Supabase, 19-file migration chain, 30 tables, 4 views) running the full loop —
+482 concrete surfaces at 100% coverage, `check` CLEAN — with four documentation
+branches open.
+
+Sandbox on Linux: network denied, repository read-only, readable set equal to
+the provider's declared globs minus a security exclusion set, and the rest of
+the host masked. Each tier probed per host and reported honestly when it
+degrades.
 
 ---
 
