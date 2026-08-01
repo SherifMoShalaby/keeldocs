@@ -6,6 +6,11 @@
 //   --reject <id>      journal a rejection (identical proposal never re-proposed)
 //   --snooze <id>      journal a snooze (--days N, default 21)
 //   --tombstone <id>   journal tombstones for a dead proposal's missing facts
+//   --upgrade          RECIPE MIGRATION: insert sections a recipe grew after
+//                      this document was generated (src/upgrade.js). A separate
+//                      mode on purpose - inserting structure is a different act
+//                      from regenerating a body, and nobody should get it by
+//                      accident from --apply-all.
 //   TTY, no flags      minimal y/n/s/w/q loop per finding
 // Journal writes are interactive/explicit-local only - hard-guarded off in CI.
 // Exit: 0 success | 1 proposals remain (preview with pending work) | 2 tool error.
@@ -20,6 +25,7 @@ import { extractAll } from "./facts.js";
 import { evaluate, classifySelfCaused } from "./drift.js";
 import { buildProposals } from "./proposals.js";
 import { patchRegion, patchBind } from "./patch.js";
+import { planUpgrade, applyInsertion } from "./upgrade.js";
 import { loadConfig, docPathsOf } from "./config.js";
 import { changedFilesSince, changedFactsSince, extractAtBase, renamesSince } from "./gitx.js";
 import { renameMapFromStatus } from "./reanchor.js";
@@ -91,7 +97,77 @@ function collectState(root, config, selfScope = null) {
     const self = new Set(findings.filter((f) => f.selfCaused).map((f) => `${f.id}\x00${f.doc}`));
     proposals = proposals.filter((p) => self.has(`${p.id}\x00${p.doc}`));
   }
-  return { factsById, findings, proposals, anchors, regions, docTexts };
+  return { factsById, findings, proposals, anchors, regions, docTexts, journal };
+}
+
+// ---------- recipe migration (--upgrade) ----------
+//
+// Applies run in RECIPE ORDER and re-read the file each time, which is what
+// lets a run of consecutive new sections chain their anchors onto each other.
+// Out-of-order single applies do not corrupt anything: the anchor simply is
+// not there yet and applyInsertion throws naming the section to do first.
+function runUpgrade({ root, json, args, state, flag }) {
+  const sink = [];
+  const { proposals, missingDocs, skipped } =
+    planUpgrade({ root, factsById: state.factsById, journal: state.journal, sink });
+  const applied = [], errors = [];
+  const only = flag("--apply");
+  try {
+    if (args.includes("--apply-all") || typeof only === "string") {
+      const chosen = typeof only === "string" ? proposals.filter((p) => p.id === only) : proposals;
+      if (typeof only === "string" && chosen.length === 0) {
+        throw new Error(`no upgrade proposal with id ${only}`);
+      }
+      for (const p of chosen) {
+        const text = readFileSync(join(root, p.doc), "utf8");
+        writeFileSync(join(root, p.doc), applyInsertion(text, p.doc, p));
+        applied.push({ id: p.id, action: "insert-section", doc: p.doc });
+      }
+    } else if (flag("--reject")) {
+      const p = proposals.find((x) => x.id === flag("--reject"));
+      if (!p) throw new Error(`no upgrade proposal with id ${flag("--reject")}`);
+      // no content hash to hold on - a rejected SECTION stays rejected until
+      // the decision is revoked, which is what "I do not want this" means
+      appendDecisions(root, [{ at: new Date().toISOString(), actor: actor(),
+        type: "rejection", target: p.id }]);
+      return emit(json, 0, { v: 1, ok: true, code: "DECISION_RECORDED",
+        summary: `rejection recorded for section ${p.id}; it will not be proposed again`,
+        data: { id: p.id }, next: [] });
+    }
+  } catch (err) {
+    errors.push(String(err.message));
+  }
+  try { journalApplied(root, applied); } catch { /* stats-only; inserts already landed */ }
+
+  const remaining = errors.length ? proposals
+    : planUpgrade({ root, factsById: state.factsById, journal: state.journal }).proposals;
+  const code = errors.length ? "TOOL_ERROR"
+    : applied.length ? "UPGRADED"
+    : remaining.length ? "UPGRADES_AVAILABLE" : "NOTHING_TO_UPGRADE";
+  const summary = (errors.length ? `upgrade error: ${errors[0]}`
+    : applied.length ? `${applied.length} section(s) inserted; ${remaining.length} remaining` +
+        " - run keeldocs check to confirm clean"
+    : remaining.length ? `${remaining.length} recipe section(s) missing from generated docs`
+    : skipped.length ? `nothing to insert; ${skipped.length} section(s) held (${skipped[0].reason})`
+    : "every generated doc carries the current recipe's sections"
+  ).slice(0, 300) + (missingDocs.length && !applied.length
+    ? `; ${missingDocs.length} doc(s) not generated yet (keeldocs init)` : "");
+
+  return emit(json, errors.length ? 2 : remaining.length && !applied.length ? 1 : 0, {
+    v: 1, ok: !errors.length, code, summary,
+    data: {
+      applied,
+      proposals: remaining.slice(0, 10).map((p) => ({
+        id: p.id, kind: p.kind, doc: p.doc, line: p.line, evidence: p.evidence.slice(0, 200) })),
+      ...(missingDocs.length ? { missingDocs } : {}),
+      ...(skipped.length ? { skipped } : {}),
+      ...(sink.length ? { redactions: sink.length } : {}),
+    },
+    truncated: remaining.length > 10,
+    next: remaining.length
+      ? ["keeldocs sync --upgrade --apply-all", "keeldocs sync --upgrade --reject <id>"]
+      : ["keeldocs check"],
+  });
 }
 
 // Applies are journaled locally as accept-rate signal (ADR-012 self-throttle);
@@ -184,6 +260,8 @@ export function runSync({ root, json, args }) {
     return emit(json, 2, { v: 1, ok: false, code: "TOOL_ERROR",
       summary: String(err.message).slice(0, 300), data: {}, next: [] });
   }
+  if (args.includes("--upgrade")) return runUpgrade({ root, json, args, state, flag });
+
   const { proposals, findings, docTexts } = state;
 
   const applied = [], errors = [];

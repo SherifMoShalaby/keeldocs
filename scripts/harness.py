@@ -1140,6 +1140,72 @@ def main():
     except Exception as e:
         failures.append(f"postgrest integration: {e}")
 
+    # ---- recipe migration: a doc that predates a section gets it, losslessly ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-upgrade-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "replay-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        assert kd(dst, "init", "--yes", "--json").returncode == 0
+        dm_path = os.path.join(dst, "docs", "architecture", "data-model.md")
+
+        def strip_functions_section():
+            """Rewind the doc to what an EARLIER recipe would have produced, and
+            leave the two kinds of human byte a delete-and-regenerate destroys."""
+            t = open(dm_path).read()
+            i = t.index("## Database functions")
+            j = t.index("<!-- /keeldocs:gen -->", i) + len("<!-- /keeldocs:gen -->\n\n")
+            t = t[:i] + t[j:]
+            t = t.replace("<!-- /keeldocs:slot -->", "HUMAN SLOT PROSE.\n<!-- /keeldocs:slot -->", 1)
+            t = t.replace("<!-- Human notes below this line are never touched by keeldocs. -->",
+                          "<!-- Human notes below this line are never touched by keeldocs. -->"
+                          "\n\n## Field notes\n\nHUMAN TAIL PROSE.", 1)
+            W(dm_path, t)
+
+        strip_functions_section()
+        # DISCOVERY, not a verdict: an older doc is not stale, not lying, not
+        # drift - check must stay green and still make the fix findable
+        r = kd(dst, "check", "--json")
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and env_["code"] == "CLEAN", "a doc older than the recipe is NOT drift"
+        assert [u["id"] for u in env_["data"]["upgrades"]] == ["db.functions"], env_["data"]
+        assert "keeldocs sync --upgrade" in env_["next"], "the fix must be findable from check"
+
+        r = kd(dst, "sync", "--upgrade", "--json")
+        assert r.returncode == 1 and json.loads(r.stdout)["code"] == "UPGRADES_AVAILABLE"
+        r = kd(dst, "sync", "--upgrade", "--apply-all", "--json")
+        assert r.returncode == 0 and json.loads(r.stdout)["code"] == "UPGRADED", r.stdout[:300]
+        after = open(dm_path).read()
+        assert "## Database functions" in after and "public.nearby_pickup_points" in after
+        assert "HUMAN SLOT PROSE." in after and "HUMAN TAIL PROSE." in after, \
+            "the whole point: not one human byte is lost"
+        assert after.index("## Enums") < after.index("## Database functions") \
+            < after.index("## Access control (RLS)"), "inserted in RECIPE order, not appended"
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN", \
+            "an inserted section is born clean"
+        assert json.loads(kd(dst, "sync", "--upgrade", "--json").stdout)["code"] == "NOTHING_TO_UPGRADE"
+
+        # a recorded decision not to have the section is respected
+        strip_functions_section()
+        assert kd(dst, "sync", "--upgrade", "--reject", "db.functions", "--json",
+                  env=local_env).returncode == 0
+        r = kd(dst, "sync", "--upgrade", "--apply-all", "--json")
+        assert json.loads(r.stdout)["code"] == "NOTHING_TO_UPGRADE", r.stdout[:200]
+        assert "## Database functions" not in open(dm_path).read(), "a rejection holds"
+
+        # a same-path document keeldocs did not generate is never written to
+        os.remove(os.path.join(dst, ".keeldocs", "decisions.jsonl"))
+        hand = "# Data model\n\nSomebody else wrote this. No markers anywhere.\n"
+        W(dm_path, hand)
+        r = kd(dst, "sync", "--upgrade", "--apply-all", "--json")
+        assert json.loads(r.stdout)["code"] == "NOTHING_TO_UPGRADE"
+        assert open(dm_path).read() == hand, "ownership proof is the root anchor, and it refuses"
+        rmtree(tmp)
+        print("  PASS  recipe migration: older doc gains the section in recipe order, zero human bytes lost")
+    except Exception as e:
+        failures.append(f"upgrade integration: {e}")
+
     # ---- N2: java + go end-to-end (born clean, drift loop closes) ----
     try:
         import shutil, tempfile

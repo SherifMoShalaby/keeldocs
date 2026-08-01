@@ -207,10 +207,22 @@ overwrites an existing file and `sync` only regenerates regions that already
 exist, so the new section reaches an existing repo only by deleting the
 generated file and re-running `init`. That workaround is lossless today only
 because the field repo had written no prose into its slots — which is
-precisely the content a delete-and-regenerate destroys. The fix is a
-`sync --upgrade`-class pass that inserts missing recipe sections in place
-and leaves every human byte alone. Until it exists, a recipe that adds a
-section must say so in its release notes.
+precisely the content a delete-and-regenerate destroys.
+
+**Recipe migration — SHIPPED (2026-08-01), same day it was named.**
+`keeldocs sync --upgrade` inserts missing recipe sections in place; the
+normative rules are doc 05 §7. It is a separate mode, never something
+`--apply-all` reaches by accident, because inserting structure is a different
+act from regenerating a body. `check` reports `data.upgrades` for
+discoverability and does NOT move the exit code — a document older than its
+recipe is not stale, not lying, and not drift. Insertion is pure addition
+with semantic anchors, so consecutive new sections chain in recipe order and
+an out-of-order apply fails loudly; a file without the recipe's root anchor
+is refused rather than repaired; a section a human rejects is held by the
+existing decisions journal. Pinned by 7 unit tests (including a byte-for-byte
+restoration assertion against a document carrying slot prose and human notes)
+and an end-to-end harness block. The release-notes workaround this paragraph
+used to require is retired.
 
 ## 3. Sequencing
 

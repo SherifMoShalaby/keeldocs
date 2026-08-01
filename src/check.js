@@ -11,6 +11,7 @@ import { parseDoc } from "./anchors.js";
 import { loadJournal, effective, noiseStats } from "./journal.js";
 import { extractAll } from "./facts.js";
 import { evaluate, coverage, classifySelfCaused } from "./drift.js";
+import { planUpgrade } from "./upgrade.js";
 import { loadConfig, docPathsOf } from "./config.js";
 import { toPosix } from "./paths.js";
 import { changedFilesSince, changedFactsSince } from "./gitx.js";
@@ -55,7 +56,7 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   mkdirSync(outDir, { recursive: true });
   const outName = `check-${report.meta.head ? report.meta.head.slice(0, 8) : "nogit"}.json`;
   const outPath = join(outDir, outName);
-  const { noise, ...spill } = report;
+  const { noise, upgrades, ...spill } = report;
   writeFileSync(outPath, JSON.stringify(spill, null, 1) + "\n");
 
   const c = report.counts;
@@ -73,10 +74,12 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
 
   const envelope = {
     v: 1, ok: exit === 0, code, summary,
-    data: { counts: c, coverage: report.coverage, noise: report.noise, top },
+    data: { counts: c, coverage: report.coverage, noise: report.noise, top,
+            ...(upgrades?.length ? { upgrades } : {}) },
     truncated: report.findings.length > top.length,
     full: toPosix(relative(repoRoot, outPath)),
-    next: exit === 1 ? ["keeldocs sync"] : [],
+    next: [...(exit === 1 ? ["keeldocs sync"] : []),
+           ...(upgrades?.length ? ["keeldocs sync --upgrade"] : [])],
   };
   return emit(json, exit, envelope, report);
 }
@@ -106,6 +109,17 @@ function buildReport(repoRoot, ci, config, since, live = false) {
   const { findings, documented } = evaluate({ anchors, regions, factsById, capabilities, journal });
   const cov = coverage(factsById, documented);
 
+  // Recipe migration is DISCOVERY, never a verdict: a document that predates a
+  // section is not stale, not lying, and not drift - it is merely older than
+  // the recipe. It rides the envelope so `sync --upgrade` is findable, and it
+  // can never move the exit code. Envelope-only, like `noise`, so the
+  // golden-compared spill stays byte-stable.
+  let upgrades = [];
+  try {
+    upgrades = planUpgrade({ root: repoRoot, factsById, journal }).proposals
+      .map((p) => ({ id: p.id, doc: p.doc }));
+  } catch { /* discovery must never fail a check */ }
+
   let sinceInfo = null;
   if (since) {
     const { changed, base } = changedFilesSince(repoRoot, since);
@@ -130,7 +144,7 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     // CLEAN while db-schema was failed; caught by the live DSN-missing test)
     ...(toolError ? { toolError } : {}),
     capabilities, counts, findings, coverage: cov,
-    noise: noiseStats(rawJournal, nowIso),
+    noise: noiseStats(rawJournal, nowIso), upgrades,
     quarantined, extractionGaps: gaps,
     // ADR-003 conflict records ride the full report; absent when empty so
     // conflict-free goldens stay byte-stable

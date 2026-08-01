@@ -15,6 +15,25 @@ disable-model-invocation: true
    Rebind proposals name their evidence signals (S1 file-rename, S2 signature exact/near, S1b unique same-name). `--apply-all` auto-applies a rebind ONLY when marked auto-qualified (one candidate, S1+S2-exact - a file move); everything else is the human's call via `--apply <id> [--to <fact-id>]`.
 4. After applying, run `keeldocs check` to confirm the loop closed clean. Journal writes are disabled in CI by design; decisions happen locally.
 
+## Recipe migration (`--upgrade`)
+
+When `check` reports `data.upgrades`, a generated doc predates a section the
+current recipe renders (e.g. a new `## Database functions` block). That is NOT
+drift - nothing is stale or wrong - so it never fails a check, and it is a
+separate mode you must ask for:
+
+- `keeldocs sync --upgrade --json` previews `insert-section` proposals
+- `keeldocs sync --upgrade --apply-all` inserts them in recipe order
+- `keeldocs sync --upgrade --reject <id>` holds one permanently
+
+Insertion is pure addition: no existing region is rewritten, nothing is
+reordered, and prose in slots or below the human-notes line is untouched. A
+document without the recipe's root anchor is refused, not repaired. Never
+suggest deleting a generated doc and re-running `init` to pick up a new
+section - that is what destroys human writing, and it is what this mode
+exists to replace. Run plain `keeldocs sync` afterwards if the new facts also
+staled existing regions.
+
 ## Post-edit nudge (the retention loop - strict protocol)
 
 After YOU edit code in a keeldocs-managed repo, run
