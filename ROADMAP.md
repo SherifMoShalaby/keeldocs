@@ -25,7 +25,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. Thirty-four providers across ten
-capabilities feed eight document recipes. The engine has 80 unit tests, 39
+capabilities feed eight document recipes. The engine has 86 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 438 concrete surfaces,
@@ -33,8 +33,7 @@ a real 30-table Supabase/Next.js application end to end: 438 concrete surfaces,
 accurate receipts across four hardening rounds. What is *not* done splits
 cleanly into three piles: a short list of owner actions that gate publication
 and therefore gate every adoption metric; a set of features deliberately
-refused until their evidence arrives; and about four items of real engineering
-debt, one of which is half-built on a branch.
+refused until their evidence arrives; and three items of real engineering debt.
 
 ---
 
@@ -106,7 +105,7 @@ not been promoted to `v0.1.0` only because publication is blocked.
 | client-routes capability + screens recipe | **Done** | react-router, next-routes, angular-router, vue-router |
 | PostgREST derived surface + database routines | **Done** | E9 round 4: route claims 5 → 0 on the field repo |
 | Recipe migration (`sync --upgrade`) | **Done** | validated retroactively: byte-identical to a delete-and-regenerate, without the delete |
-| Per-glob read scoping | **Partial — on a branch** | see §6 |
+| Per-glob read scoping | **Done** | `inputs` is now an enforced contract; undeclared files do not exist inside a provider's namespace |
 | Permission-manifest display at `provider trust` | **Open** | |
 | N5 MySQL / Mongo live | **Gated** | needs a real MySQL + a 3-repo OBSERVED pilot at FP <10% |
 | N6 Headless prose (BYO key / Ollama) | **Gated** | needs slot-write rejection <20% with a 7B local model |
@@ -173,38 +172,24 @@ into committed artifacts.
 
 ## 6. Open engineering debt — buildable now, ranked
 
-**1. Per-glob read scoping — half-built, shelved on `keeldocs/scope-per-glob`.**
-This is ADR-002's last sandbox promise: the `rofs` tier makes the repository
-read-only but leaves it *wholly readable*, so a hostile provider can still read
-any file it was never granted. The branch builds a per-provider view (hardlinks
-of exactly the declared globs, minus a security exclusion set for `.env`,
-private keys and credential stores) and bind-mounts it over the repository path
-inside the provider's namespace, so undeclared files do not exist rather than
-being merely denied. The mechanism is proven in a namespace — declared files
-readable, `.git/` carried through by `--rbind`, undeclared paths absent even by
-absolute path, writes still refused, cwd re-entered so relative reads cannot
-escape. It already paid for itself: turning `inputs` into an enforced contract
-immediately surfaced three real under-declarations (`env-readers` reads
-`.py`/`.go`/`.java`/`.dart` and declared only the JS family; `nestjs` and
-`spring` declared nothing at all). **It is not merged because of one defect:**
-the view is materialised inside the repository so hardlinks stay on one
-filesystem, and it is not torn down after the run, so extractors that walk
-without skipping `.keeldocs` see view files as repo files and corrupt goldens.
-The fix is a `finally`-scoped teardown plus a same-filesystem location outside
-the walked tree, then a re-run of three integration blocks.
+**1. Permission-manifest display at `provider trust` time.** The last ADR-002
+line. A human approving a third-party provider should see what it is asking to
+read before approving it — the read scope is now enforced, so the manifest is
+worth showing.
 
-**2. Permission-manifest display at `provider trust` time.** The other half of
-the same ADR-002 line. A human approving a third-party provider should see what
-it is asking to read before approving it. Small, and it composes with item 1.
-
-**3. Package-scoped fact identity.** Blocks the module guide's per-package
+**2. Package-scoped fact identity.** Blocks the module guide's per-package
 region binds: endpoint identity carries no package, and bind values cap at 200
 characters. This is a spec decision, not a patch.
 
-**4. PostgREST increment: views and `PUT`.** Views and materialized views are a
+**3. PostgREST increment: views and `PUT`.** Views and materialized views are a
 real exposed surface currently reported as `view-unmodeled` gaps (four of them
 on the field repo). `PUT` stays unclaimed until primary keys are in the
 extracted payload — an endpoint that cannot be verified is one not to emit.
+
+**4. Sandbox minimal root.** The scoping slice confines REPOSITORY reads; the
+rest of the host filesystem is still visible to a provider. A full minimal root
+(no `/home`, no `/etc`) is a further step and is named here rather than implied
+by the word "sandbox".
 
 ---
 
@@ -239,7 +224,7 @@ alongside the build rather than after.
 34 shipped providers across 10 capabilities (workspace-layout, module-graph,
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
-agent skills · 80 unit tests · 39 byte-compared extractor goldens · ~24
+agent skills · 86 unit tests · 39 byte-compared extractor goldens · ~24
 end-to-end integration blocks · 13 ADRs · 15 experiments.
 
 Field deployment: one real production application (Next.js App Router +

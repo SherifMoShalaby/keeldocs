@@ -17,7 +17,10 @@ from tree_sitter import Language, Parser
 TS = Language(tst.language_typescript())
 JS = Language(tsj.language())
 METHODS = {"get", "post", "put", "patch", "delete", "all"}
-SKIP_DIRS = {"node_modules", "dist", ".git", "test", "tests", "coverage", "public", "views", "migrations"}
+SKIP_DIRS = {"node_modules", "dist", ".git", ".keeldocs", "test", "tests",
+             "coverage", "public", "views", "migrations"}
+# `.keeldocs` is engine-owned cache (fact files, sandbox views). An extractor
+# that reads it would report the engine's own scratch space as repository code.
 
 files = {}          # abs -> {"imports": {local: absfile}, "default": nodeid|None}
 node_kind = {}      # nodeid -> "app"|"router"

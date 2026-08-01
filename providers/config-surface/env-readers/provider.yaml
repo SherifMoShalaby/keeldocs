@@ -4,7 +4,7 @@ semver: 0.1.0
 tier: code            # value-blind by construction: the output schema has no value
 entry: ./extract_env.py
 detect: { always: true }
-inputs: ["**/*.{js,mjs,cjs,ts,tsx,jsx,prisma,py,go,java,dart}", ".env.example", ".env.schema", ".env.sample"]
+inputs: ["**/*.{js,mjs,cjs,ts,tsx,jsx,prisma,py,go,java,dart}", "**/.env.example", "**/.env.schema", "**/.env.sample"]
                       # CODE_EXT in the extractor is the contract - under-declaring
                       # here now means the file is not in the sandbox view at all
 requires: []

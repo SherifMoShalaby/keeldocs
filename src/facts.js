@@ -164,23 +164,33 @@ function runProvider(reg, repoRoot, detectInfo, factEnv = {}, scope = null) {
     maxBuffer: OUTPUT_CAP, encoding: "utf8",
     env: { ...process.env, ...factEnv },
   });
-  let r;
-  if (reg.exec === "node") {
-    r = spawnWith(process.execPath); // the running node - no PATH guessing
-  } else {
-    r = spawnWith("python3");
-    if (r.error?.code === "ENOENT") r = spawnWith("python"); // Windows installs often lack a python3 shim
-  }
-  if (r.status !== 0 || r.error) {
-    const reason = r.error?.code === "ENOBUFS"
-      ? "output cap exceeded (5MB, ADR-002)"
-      : r.error ? String(r.error.message) : `rc=${r.status}`;
-    return { status: "failed", reason, stderr: (r.stderr || "").slice(-400) };
-  }
   try {
-    return { status: "ok", raw: JSON.parse(r.stdout) };
-  } catch {
-    return { status: "failed", reason: "bad-json-output" };
+    let r;
+    if (reg.exec === "node") {
+      r = spawnWith(process.execPath); // the running node - no PATH guessing
+    } else {
+      r = spawnWith("python3");
+      if (r.error?.code === "ENOENT") r = spawnWith("python"); // Windows installs often lack a python3 shim
+    }
+    if (r.status !== 0 || r.error) {
+      const reason = r.error?.code === "ENOBUFS"
+        ? "output cap exceeded (5MB, ADR-002)"
+        : r.error ? String(r.error.message) : `rc=${r.status}`;
+      return { status: "failed", reason, stderr: (r.stderr || "").slice(-400) };
+    }
+    try {
+      return { status: "ok", raw: JSON.parse(r.stdout) };
+    } catch {
+      return { status: "failed", reason: "bad-json-output" };
+    }
+  } finally {
+    // The view is torn down on EVERY path out, including a crashing provider.
+    // It lives inside the repository (hardlinks need one filesystem), so a
+    // leaked view is not merely litter: any tool that walks without skipping
+    // `.keeldocs` would read the engine's own scratch space as repository
+    // source. Teardown is the guarantee; extractors skipping `.keeldocs` is
+    // the belt to its braces.
+    if (view) rmSync(view.dir, { recursive: true, force: true });
   }
 }
 
@@ -668,6 +678,11 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
     if (cap.status !== "failed") cap.status = "ok";
     flushGroup();
   }
+  // Second teardown, deliberately redundant with the per-provider one: the
+  // scope directory must not outlive the extraction that created it under any
+  // exit path, because a leaked view inside the repository is indistinguishable
+  // from repository content to anything that walks it.
+  if (scope) rmSync(scope.dir, { recursive: true, force: true });
 
   // Disagreeing claims become conflict records: every claim, the winner, the
   // deciding rule (ADR-003 - "conflicts as facts", so silent averaging is

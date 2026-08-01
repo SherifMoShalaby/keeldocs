@@ -17,7 +17,7 @@
 //     subtracted from every match, so `.env`, private keys and credential
 //     stores are unreachable from inside a provider by construction.
 
-import { readdirSync, statSync, mkdirSync, linkSync, copyFileSync, existsSync } from "node:fs";
+import { readdirSync, statSync, mkdirSync, linkSync, copyFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { toPosix } from "./paths.js";
 
@@ -115,7 +115,15 @@ export function resolveInputs(root, inputs, allFiles) {
     const glob = raw.replace(/^\.\//, "");
     if (glob.endsWith("/")) {
       const d = glob.slice(0, -1);
-      if (d && !d.includes("*") && existsSync(join(root, d))) { dirs.add(d); continue; }
+      // A directory grant becomes a bind MOUNT, so the source has to really be
+      // a directory. In a linked worktree `.git` is a FILE holding `gitdir: …`,
+      // and binding a file onto a directory fails at the kernel - so that case
+      // falls through to the file matcher and is hardlinked instead, which is
+      // both correct and what lets base-revision extraction work at all.
+      let isDir = false;
+      try { isDir = !!d && !d.includes("*") && statSync(join(root, d)).isDirectory(); }
+      catch { isDir = false; }
+      if (isDir) { dirs.add(d); continue; }
     }
     const re = globToRegExp(glob);
     const base = baseOf(glob);
@@ -127,6 +135,13 @@ export function resolveInputs(root, inputs, allFiles) {
     for (const rel of pool) {
       if (base && !(rel === base || rel.startsWith(base + "/"))) continue;
       if (re.test(rel) && !isExcluded(rel)) files.add(rel);
+    }
+    // a bare-file grant whose source is a plain file at the root of the glob
+    // (the worktree `.git` case) is not reachable through the cached walk,
+    // because the walk skips that name by default
+    if (glob.endsWith("/")) {
+      const d = glob.slice(0, -1);
+      try { if (statSync(join(root, d)).isFile()) files.add(d); } catch { /* absent */ }
     }
   }
   return { files: [...files].sort(), dirs: [...dirs].sort() };
