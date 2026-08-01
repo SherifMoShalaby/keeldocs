@@ -1,0 +1,15 @@
+id: kustomize
+capability: services-topology
+semver: 0.3.0
+tier: declarative     # kustomize bases are PLAIN manifests - no templating, so
+                      # the base workload set is a static YAML parse. Overlays
+                      # are variants by definition: this provider reads the
+                      # BASE only and names every overlay as a gap rather than
+                      # silently picking one (the Platform veto).
+confidence: PARSED
+entry: ./extract_kustomize.py
+detect: { files: ["kustomization.yaml", "kustomization.yml"] }
+inputs: ["**/kustomization.{yaml,yml}", "**/*.yaml"]
+requires: ["pyyaml"]
+timeout_class: B
+emits: [service, extraction-gap]

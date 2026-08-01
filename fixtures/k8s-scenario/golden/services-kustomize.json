@@ -1,0 +1,19 @@
+{
+ "services": [
+  {
+   "name": "notifier",
+   "kind": "owned",
+   "image": "ghcr.io/acme/notifier:2.1.0",
+   "build": "k8s/base",
+   "ports": [],
+   "depends_on": []
+  }
+ ],
+ "file": null,
+ "warnings": [
+  {
+   "file": "k8s/overlays/prod/kustomization.yaml",
+   "reason": "overlay (bases/patches) - variant not rendered, base only"
+  }
+ ]
+}

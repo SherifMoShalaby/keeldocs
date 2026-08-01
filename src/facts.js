@@ -345,7 +345,11 @@ function serviceFacts(raw, provenanceBase) {
       provenance: { ...provenanceBase, source: raw.file ? [{ file: raw.file }] : [] },
     });
   }
-  return { facts, gaps: [] };
+  // topology providers report honestly-unknown surface too (helm undeclared
+  // values, kustomize overlays) - a gap dropped here would let a variant-shaped
+  // unknown pass as complete truth
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? w.reason ?? "unknown", file: w.file ?? null }));
+  return { facts, gaps };
 }
 
 function endpointFacts(raw, provenanceBase, repoRoot) {

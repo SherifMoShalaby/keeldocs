@@ -1,0 +1,27 @@
+{
+ "services": [
+  {
+   "name": "rides-api",
+   "kind": "owned",
+   "image": "ghcr.io/acme/rides-api:1.4.0",
+   "build": "chart",
+   "ports": [],
+   "depends_on": []
+  },
+  {
+   "name": "rides-worker",
+   "kind": "owned",
+   "image": "<unknown:.Values.worker.image>",
+   "build": "chart",
+   "ports": [],
+   "depends_on": []
+  }
+ ],
+ "file": null,
+ "warnings": [
+  {
+   "file": "chart/templates/worker.yaml",
+   "reason": "undeclared value .Values.worker.image"
+  }
+ ]
+}

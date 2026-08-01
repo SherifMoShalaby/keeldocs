@@ -204,6 +204,21 @@ MATRIX = [
         "golden": "fixtures/messaging-scenario/golden/async-supabase-realtime.json",
     },
     {
+        # N3 variant topology: helm renders DECLARED values only (undeclared
+        # ones become explicit <unknown:> + a gap), kustomize reads bases and
+        # names overlays as gaps - the Platform veto on silent variants
+        "name": "k8s-scenario / services-topology (helm declared-values render)",
+        "cmd": [sys.executable, "providers/services-topology/helm/extract_helm.py",
+                "fixtures/k8s-scenario"],
+        "golden": "fixtures/k8s-scenario/golden/services-helm.json",
+    },
+    {
+        "name": "k8s-scenario / services-topology (kustomize base)",
+        "cmd": [sys.executable, "providers/services-topology/kustomize/extract_kustomize.py",
+                "fixtures/k8s-scenario"],
+        "golden": "fixtures/k8s-scenario/golden/services-kustomize.json",
+    },
+    {
         "name": "compose-scenario / workspace-layout",
         "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
                 "fixtures/compose-scenario"],
@@ -1050,6 +1065,47 @@ def main():
         print("  PASS  N2 java+go: spring member-mode + gin chains, born-clean, drift loops close")
     except Exception as e:
         failures.append(f"java/go integration: {e}")
+
+    # ---- N3 variant topology: helm + kustomize, unknowns never guessed ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-k8s-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "k8s-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        r = kd(dst, "init", "--yes", "--json")
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and env_["code"] == "INITIALIZED", r.stdout[:200]
+        assert sorted(env_["data"]["card"]["capabilities"]["services-topology"]["providers"]) == \
+            ["helm@0.3.0", "kustomize@0.3.0"]
+        smap = open(os.path.join(dst, "docs", "architecture", "system-map.md")).read()
+        for node in ("rides-api", "rides-worker", "notifier"):
+            assert node in smap, f"{node} must appear in the map"
+        assert "ghcr.io/acme/rides-api:1.4.0" in smap, "declared values must render"
+        assert "<unknown:.Values.worker.image>" in smap, \
+            "an UNDECLARED value must stay explicitly unknown in the doc, never guessed"
+        rep = json.load(open([os.path.join(dst, ".keeldocs", "out", f)
+                              for f in os.listdir(os.path.join(dst, ".keeldocs", "out"))
+                              if f.startswith("init-")][0]))
+        kinds = {g["kind"] for g in rep.get("extractionGaps", [])}
+        assert any("undeclared value" in k for k in kinds), "undeclared values must be named gaps"
+        assert any("overlay" in k for k in kinds), "overlays must be named, never silently rendered"
+        rc = kd(dst, "check", "--json")
+        assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", "born-clean violated"
+        # declaring the missing value resolves the unknown and drifts the map
+        W(os.path.join(dst, "chart", "values.yaml"),
+          open(os.path.join(dst, "chart", "values.yaml")).read().replace(
+              "worker:\n  enabled: true", "worker:\n  enabled: true\n  image: ghcr.io/acme/worker:9.9.9"))
+        r = kd(dst, "check", "--json")
+        assert r.returncode == 1, "declaring a value must drift the rendered map"
+        assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
+        smap = open(os.path.join(dst, "docs", "architecture", "system-map.md")).read()
+        assert "ghcr.io/acme/worker:9.9.9" in smap and "<unknown:.Values.worker.image>" not in smap
+        rmtree(tmp)
+        print("  PASS  N3 variant topology: helm declared-values render, kustomize base, unknowns explicit")
+    except Exception as e:
+        failures.append(f"variant topology integration: {e}")
 
     # ---- async-messaging + data-flow recipe: labeled corpus, born clean ----
     try:

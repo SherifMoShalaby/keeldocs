@@ -1,0 +1,17 @@
+id: helm
+capability: services-topology
+semver: 0.3.0
+tier: code            # Helm charts are TEMPLATED k8s manifests: the workload
+                      # set is knowable from templates + DECLARED values, but
+                      # arbitrary template logic is not. Rendering with the
+                      # chart's own values.yaml (never a guessed environment)
+                      # and schema-ing every unresolved reference as unknown
+                      # is the Platform veto satisfied: a silently-chosen
+                      # variant would poison "diagrams are always accurate".
+confidence: PATTERN   # declared-values render, not a cluster read
+entry: ./extract_helm.py
+detect: { files: ["Chart.yaml", "Chart.yml"] }
+inputs: ["**/Chart.yaml", "**/values.yaml", "**/templates/*.yaml"]
+requires: ["pyyaml"]
+timeout_class: C
+emits: [service, extraction-gap]
