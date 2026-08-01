@@ -1,0 +1,11 @@
+id: redis-pubsub
+capability: async-messaging
+semver: 0.3.0
+tier: code            # redis publish/subscribe channel names; receiver-hinted
+                      # so unrelated publish() calls never masquerade as redis.
+entry: ./extract_redis.py
+detect: { deps: ["redis", "ioredis"] }
+inputs: ["**/*.{ts,js,py}"]
+requires: ["tree-sitter"]
+timeout_class: C
+emits: [channel, extraction-gap]

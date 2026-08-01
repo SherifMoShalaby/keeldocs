@@ -1,0 +1,25 @@
+{
+ "channels": [
+  {
+   "name": "email-outbox",
+   "kind": "queue",
+   "transport": "sqs-sns",
+   "role": "both",
+   "pattern": false,
+   "files": [
+    "src/queues.ts"
+   ]
+  },
+  {
+   "name": "driver-alerts",
+   "kind": "topic",
+   "transport": "sqs-sns",
+   "role": "produces",
+   "pattern": false,
+   "files": [
+    "src/queues.ts"
+   ]
+  }
+ ],
+ "warnings": []
+}

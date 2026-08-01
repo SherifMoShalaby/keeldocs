@@ -8,6 +8,10 @@
   "mode": "local"
  },
  "capabilities": {
+  "async-messaging": {
+   "status": "absent",
+   "providers": []
+  },
   "client-routes": {
    "status": "absent",
    "providers": []

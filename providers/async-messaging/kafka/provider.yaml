@@ -1,0 +1,15 @@
+id: kafka
+capability: async-messaging
+semver: 0.3.0
+tier: code            # topic names live in call arguments across three
+                      # ecosystems (kafkajs objects, confluent/kafka-python
+                      # positionals, spring @KafkaListener/kafkaTemplate) -
+                      # a shared scanner runtime owns the parsing so each
+                      # transport costs a RULES table, not a parser.
+                      # Literal names only; anything computed is a named gap.
+entry: ./extract_kafka.py
+detect: { deps: ["kafkajs", "@confluentinc/kafka-javascript", "node-rdkafka", "kafka-python", "confluent-kafka"], files: ["KafkaTemplate.java"] }
+inputs: ["**/*.{ts,js,py,java}"]
+requires: ["tree-sitter"]
+timeout_class: C
+emits: [channel, extraction-gap]

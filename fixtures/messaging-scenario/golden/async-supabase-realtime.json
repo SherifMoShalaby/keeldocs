@@ -1,0 +1,25 @@
+{
+ "channels": [
+  {
+   "name": "driver-notes",
+   "kind": "channel",
+   "transport": "supabase-realtime",
+   "role": "both",
+   "pattern": false,
+   "files": [
+    "app/realtime.ts"
+   ]
+  },
+  {
+   "name": "ride-tracking",
+   "kind": "channel",
+   "transport": "supabase-realtime",
+   "role": "both",
+   "pattern": false,
+   "files": [
+    "app/realtime.ts"
+   ]
+  }
+ ],
+ "warnings": []
+}

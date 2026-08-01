@@ -1,0 +1,12 @@
+id: supabase-realtime
+capability: async-messaging
+semver: 0.3.0
+tier: code            # supabase realtime channels: supabase.channel("name").
+                      # Complements the db-schema/rls picture for supabase
+                      # apps - the realtime surface is architecture too.
+entry: ./extract_supabase_rt.py
+detect: { deps: ["@supabase/supabase-js", "@supabase/realtime-js"] }
+inputs: ["**/*.{ts,js}"]
+requires: ["tree-sitter"]
+timeout_class: C
+emits: [channel, extraction-gap]

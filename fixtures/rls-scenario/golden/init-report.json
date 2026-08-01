@@ -9,6 +9,10 @@
  "card": {
   "package": "rls-scenario-fixture",
   "capabilities": {
+   "async-messaging": {
+    "status": "absent",
+    "providers": []
+   },
    "client-routes": {
     "status": "absent",
     "providers": []

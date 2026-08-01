@@ -1,0 +1,15 @@
+{
+ "channels": [
+  {
+   "name": "image-thumbnails",
+   "kind": "queue",
+   "transport": "rabbitmq",
+   "role": "both",
+   "pattern": false,
+   "files": [
+    "src/broker.js"
+   ]
+  }
+ ],
+ "warnings": []
+}

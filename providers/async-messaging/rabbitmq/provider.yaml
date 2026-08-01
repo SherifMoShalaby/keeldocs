@@ -1,0 +1,11 @@
+id: rabbitmq
+capability: async-messaging
+semver: 0.3.0
+tier: code            # amqplib/pika: queues and exchanges are declared by
+                      # name in assert/declare/publish/consume calls.
+entry: ./extract_rabbit.py
+detect: { deps: ["amqplib", "amqp-connection-manager", "pika", "kombu"] }
+inputs: ["**/*.{ts,js,py}"]
+requires: ["tree-sitter"]
+timeout_class: C
+emits: [channel, extraction-gap]

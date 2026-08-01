@@ -182,6 +182,13 @@ export function renderRegionBody(regionId, boundIds, factsById) {
   if (regionId === "sys.map.services") return servicesTableBody(factsById);
   if (regionId === "sys.map.packages") return packagesTableBody(factsById);
   if (regionId === "db.policies") return policiesBody(factsById);
+  if (regionId === "flow.diagram") return dataFlowDiagramBody(factsById);
+  if (regionId === "flow.channels") return channelsTableBody(factsById);
+  // module-guide regions (R3) were unrenderable at sync time until now: a
+  // stale guide could be REPORTED but never repaired, which is exactly the
+  // half-loop the design forbids
+  if (/^mod\..+\.surface$/.test(regionId)) return endpointsTableBody(factsById);
+  if (/^mod\..+\.deps$/.test(regionId)) return moduleDepsBody(factsById);
   const m = regionId.match(/^db\..+\.columns$/);
   if (m) {
     const tableId = boundIds.find((id) => id.startsWith("fact:db-schema/") && !id.includes("/enum."));
@@ -215,6 +222,88 @@ export function renderEndpointsDoc(factsById, sink) {
 // Module guide (doc 11 R3): deterministic skeleton + ONE labeled prose slot.
 // Reference-tier semantics: the dependency section binds module-graph facts,
 // so import changes make the guide honestly stale (sync regenerates it).
+// Data-flow recipe (brief 3.4): the repo's async surface as a deterministic
+// diagram + table. Body content comes ONLY from hashed payload attrs (name,
+// kind, transport, role) so what the diagram shows is exactly what drift
+// watches; call sites ride the table's Sites column from provenance, the same
+// convention the endpoint inventory uses.
+function channelFacts(factsById) {
+  return [...factsById.values()].filter((f) => f.payload.type === "channel")
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export function dataFlowDiagramBody(factsById) {
+  const chans = channelFacts(factsById);
+  const byTransport = new Map();
+  for (const c of chans) {
+    const t = c.payload.attrs.transport;
+    if (!byTransport.has(t)) byTransport.set(t, []);
+    byTransport.get(t).push(c);
+  }
+  const lines = ["```mermaid", "flowchart LR", '  svc[["this service"]]'];
+  for (const [transport, list] of [...byTransport.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    lines.push(`  subgraph ${mermaidId(transport)}["${transport}"]`);
+    for (const c of list) {
+      const a2 = c.payload.attrs;
+      lines.push(`    ${mermaidId(a2.kind + "_" + a2.name)}(["${a2.name}${a2.pattern ? " (pattern)" : ""}"])`);
+    }
+    lines.push("  end");
+  }
+  for (const c of chans) {
+    const a2 = c.payload.attrs;
+    const id = mermaidId(a2.kind + "_" + a2.name);
+    if (a2.role === "produces" || a2.role === "both") lines.push(`  svc -->|publishes| ${id}`);
+    if (a2.role === "consumes" || a2.role === "both") lines.push(`  ${id} -->|delivers| svc`);
+  }
+  lines.push("```");
+  return lines.join("\n");
+}
+
+export function channelsTableBody(factsById) {
+  const rows = channelFacts(factsById).map((f) => {
+    const a2 = f.payload.attrs;
+    const sites = (f.provenance?.source ?? []).map((s) => s.file).slice(0, 3).join(", ") || "-";
+    return `| \`${a2.name}\`${a2.pattern ? " ⟨pattern⟩" : ""} | ${a2.kind} | ${a2.transport} | ${a2.role} | ${sites} |`;
+  });
+  return ["| channel | kind | transport | role | sites |", "|---|---|---|---|---|", ...rows].join("\n");
+}
+
+export function renderDataFlowDoc(factsById, sink) {
+  if (channelFacts(factsById).length === 0) return null;
+  const content = [
+    "# Data flow",
+    "<!-- keeldocs: id=flow.root recipe=data-flow@1 binds=fact:async-messaging/* hash-kind=fact -->",
+    "",
+    "<!-- keeldocs:slot id=flow.overview binds=fact:async-messaging/* max-words=120 -->",
+    "<!-- /keeldocs:slot -->",
+    "",
+    "## Diagram",
+    genBlock("flow.diagram", "fact:async-messaging/*", channelFacts(factsById).map((f) => f.id),
+      factsById, dataFlowDiagramBody(factsById), sink),
+    "",
+    "## Channels",
+    genBlock("flow.channels", "fact:async-messaging/*", channelFacts(factsById).map((f) => f.id),
+      factsById, channelsTableBody(factsById), sink),
+    "",
+    "<!-- Human notes below this line are never touched by keeldocs. -->",
+    "",
+  ].join("\n");
+  return { path: "docs/architecture/data-flow.md", content };
+}
+
+export function moduleDepsBody(factsById) {
+  const mods = [...factsById.values()].filter((f) => f.payload.type === "module")
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const fan = new Map();
+  for (const m of mods) {
+    for (const imp of m.payload.attrs.imports) fan.set(imp, (fan.get(imp) ?? 0) + 1);
+  }
+  const top = [...fan.entries()].filter(([p]) => mods.some((m) => m.payload.attrs.path === p))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5);
+  return [`${mods.length} module(s).` + (top.length ? " Highest fan-in:" : ""),
+    ...top.map(([p, n]) => `- \`${p}\` (imported by ${n})`)].join("\n");
+}
+
 export function renderModuleGuideDoc(factsById, sink, pkgName) {
   const pkgs = [...factsById.values()].filter((f) => f.payload.type === "package");
   const pkg = pkgName ? pkgs.find((p) => p.payload.attrs.name === pkgName) : (pkgs.length === 1 ? pkgs[0] : null);
@@ -241,16 +330,9 @@ export function renderModuleGuideDoc(factsById, sink, pkgName) {
         factsById, endpointsTableBody(factsById), sink));
   }
   if (allMods.length) {
-    const allFan = new Map();
-    for (const m of allMods) {
-      for (const imp of m.payload.attrs.imports) allFan.set(imp, (allFan.get(imp) ?? 0) + 1);
-    }
-    const top = [...allFan.entries()].filter(([p]) => allMods.some((m) => m.payload.attrs.path === p))
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5);
-    const body = [`${allMods.length} module(s).` + (top.length ? " Highest fan-in:" : ""),
-      ...top.map(([p, n]) => `- \`${p}\` (imported by ${n})`)].join("\n");
     parts.push("", "## Module dependencies",
-      genBlock(`mod.${slug}.deps`, "fact:module-graph/*", allMods.map((f) => f.id), factsById, body, sink));
+      genBlock(`mod.${slug}.deps`, "fact:module-graph/*", allMods.map((f) => f.id),
+        factsById, moduleDepsBody(factsById), sink));
   }
   parts.push("", "<!-- Human notes below this line are never touched by keeldocs. -->", "");
   return { path: `docs/reference/modules/${slug}.md`, content: parts.join("\n") };
@@ -365,5 +447,6 @@ export function renderSystemMapDoc(factsById, sink) {
 
 export function renderAll(factsById, sink) {
   return [renderEndpointsDoc(factsById, sink), renderDataModelDoc(factsById, sink),
+    renderDataFlowDoc(factsById, sink),
           renderConfigDoc(factsById, sink), renderSystemMapDoc(factsById, sink)].filter(Boolean);
 }

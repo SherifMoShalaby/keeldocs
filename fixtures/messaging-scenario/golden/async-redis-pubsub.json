@@ -1,0 +1,15 @@
+{
+ "channels": [
+  {
+   "name": "presence",
+   "kind": "channel",
+   "transport": "redis-pubsub",
+   "role": "both",
+   "pattern": false,
+   "files": [
+    "src/broker.js"
+   ]
+  }
+ ],
+ "warnings": []
+}

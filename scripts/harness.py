@@ -171,6 +171,39 @@ MATRIX = [
         "golden": "fixtures/flutter-scenario/golden/env-readers.json",
     },
     {
+        # async-messaging (brief 3.1): five transports, one shared scanner
+        # runtime - E15 measured 10/10 declared channels on the labeled
+        # fixture corpus with the one computed topic held as a gap
+        "name": "messaging-scenario / async-messaging (kafka)",
+        "cmd": [sys.executable, "providers/async-messaging/kafka/extract_kafka.py",
+                "fixtures/messaging-scenario"],
+        "golden": "fixtures/messaging-scenario/golden/async-kafka.json",
+    },
+    {
+        "name": "messaging-scenario / async-messaging (sqs-sns)",
+        "cmd": [sys.executable, "providers/async-messaging/sqs-sns/extract_sqs.py",
+                "fixtures/messaging-scenario"],
+        "golden": "fixtures/messaging-scenario/golden/async-sqs-sns.json",
+    },
+    {
+        "name": "messaging-scenario / async-messaging (rabbitmq)",
+        "cmd": [sys.executable, "providers/async-messaging/rabbitmq/extract_rabbit.py",
+                "fixtures/messaging-scenario"],
+        "golden": "fixtures/messaging-scenario/golden/async-rabbitmq.json",
+    },
+    {
+        "name": "messaging-scenario / async-messaging (redis-pubsub)",
+        "cmd": [sys.executable, "providers/async-messaging/redis-pubsub/extract_redis.py",
+                "fixtures/messaging-scenario"],
+        "golden": "fixtures/messaging-scenario/golden/async-redis-pubsub.json",
+    },
+    {
+        "name": "messaging-scenario / async-messaging (supabase-realtime)",
+        "cmd": [sys.executable, "providers/async-messaging/supabase-realtime/extract_supabase_rt.py",
+                "fixtures/messaging-scenario"],
+        "golden": "fixtures/messaging-scenario/golden/async-supabase-realtime.json",
+    },
+    {
         "name": "compose-scenario / workspace-layout",
         "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
                 "fixtures/compose-scenario"],
@@ -1018,6 +1051,52 @@ def main():
     except Exception as e:
         failures.append(f"java/go integration: {e}")
 
+    # ---- async-messaging + data-flow recipe: labeled corpus, born clean ----
+    try:
+        import shutil, tempfile
+        # E15 gate against the committed ground truth: every DECLARED channel
+        # found, none invented, the computed one held as a gap
+        truth = open(os.path.join(ROOT, "fixtures", "messaging-scenario", "GROUND_TRUTH.md")).read()
+        expected = {l.split("|")[3].strip() for l in truth.splitlines()
+                    if l.startswith("|") and l.count("|") >= 5 and "---" not in l
+                    and not l.startswith("| transport")}
+        tmp = tempfile.mkdtemp(prefix="keeldocs-msg-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "messaging-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        r = kd(dst, "init", "--yes", "--json")
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and env_["code"] == "INITIALIZED", r.stdout[:200]
+        assert env_["data"]["docs"]["written"] == ["docs/architecture/data-flow.md"]
+        assert sorted(env_["data"]["card"]["capabilities"]["async-messaging"]["providers"]) == [
+            "kafka@0.3.0", "rabbitmq@0.3.0", "redis-pubsub@0.3.0", "sqs-sns@0.3.0",
+            "supabase-realtime@0.3.0"], "all five transports resolve into ONE capability"
+        cache = open(os.path.join(dst, ".keeldocs", "cache", "facts", "async-messaging.jsonl")).read()
+        got = {json.loads(l)["payload"]["attrs"]["name"] for l in cache.splitlines() if l.strip()}
+        assert got == expected, f"recall/precision vs GROUND_TRUTH: missing {expected - got}, invented {got - expected}"
+        rep = json.load(open([os.path.join(dst, ".keeldocs", "out", f)
+                              for f in os.listdir(os.path.join(dst, ".keeldocs", "out"))
+                              if f.startswith("init-")][0]))
+        assert any("non-literal topic" in g["kind"] for g in rep.get("extractionGaps", [])), \
+            "the computed topic must be a named gap, never a guessed name"
+        flow = open(os.path.join(dst, "docs", "architecture", "data-flow.md")).read()
+        assert "```mermaid" in flow and "publishes" in flow and "delivers" in flow
+        rc = kd(dst, "check", "--json")
+        assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", "born-clean violated"
+        # drift loop: a new topic stales ONLY the data-flow regions
+        W(os.path.join(dst, "src", "events.ts"),
+          '\nexport const extra = () => producer.send({ topic: "audit.trail", messages: [] });\n', "a")
+        r = kd(dst, "check", "--json")
+        top = {t["id"] for t in json.loads(r.stdout)["data"]["top"]}
+        assert r.returncode == 1 and top == {"flow.diagram", "flow.channels"}, top
+        assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
+        assert "audit.trail" in open(os.path.join(dst, "docs", "architecture", "data-flow.md")).read()
+        rmtree(tmp)
+        print("  PASS  async-messaging: 10/10 labeled channels, gap held, data-flow born clean, drift loop closes")
+    except Exception as e:
+        failures.append(f"async-messaging integration: {e}")
+
     # ---- next-scenario end-to-end: file-based routes + edge fns land ----
     try:
         import shutil as _shn
@@ -1127,6 +1206,15 @@ def main():
         mg = open(os.path.join(dst, env_["data"]["path"])).read()
         assert "keeldocs:slot" in mg and "## Public surface" in mg and "## Module dependencies" in mg
         assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN", "module guide must be born clean"
+        # a stale guide must be REPAIRABLE, not just reportable (its regions had
+        # no sync-time renderer once - reported stale, never fixable)
+        W(os.path.join(dst, "app", "routers", "extra.py"),
+          "from app.routers import users  # new import edge\n")
+        r = kd(dst, "check", "--json")
+        assert r.returncode == 1, "a new module must stale the guide"
+        assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN", \
+            "module-guide drift loop must CLOSE (regions renderable at sync time)"
         # onboarding-verify: make-claim + version-claim fire with receipts
         W(os.path.join(dst, "Makefile"), "serve:\n\tuvicorn app.main:app\n")
         pj = json.load(open(os.path.join(dst, "package.json"))) if os.path.exists(os.path.join(dst, "package.json")) else {"name": "x", "private": True}

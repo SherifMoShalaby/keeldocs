@@ -1,0 +1,13 @@
+id: sqs-sns
+capability: async-messaging
+semver: 0.3.0
+tier: code            # AWS SDK v3 command objects (QueueUrl/TopicArn) and
+                      # boto3 kwargs; the queue/topic NAME is the last URL or
+                      # ARN segment, which is the stable identity - the account
+                      # id and region are deployment detail, not architecture.
+entry: ./extract_sqs.py
+detect: { deps: ["@aws-sdk/client-sqs", "@aws-sdk/client-sns", "aws-sdk", "boto3"] }
+inputs: ["**/*.{ts,js,py}"]
+requires: ["tree-sitter"]
+timeout_class: C
+emits: [channel, extraction-gap]

@@ -195,6 +195,7 @@ export function isCoverageSurface(f) {
   if (t === "package" || t === "module" || t === "symbol" || t === "churn") return false;
   if (t === "rls") return false; // an attribute of a table, not a surface; policies DO count
   if (t === "route") return false; // client routes: owner decision fixed the denominator to endpoints/tables/env/services
+  if (t === "channel") return false; // async-messaging: same denominator decision - widening it is an owner call
   if (t === "service" && f.payload.attrs.kind === "external") return false;
   return true;
 }

@@ -239,6 +239,26 @@ function replayFacts(raw, provenanceBase, declaredTables, declaredEnums) {
   return { facts, gaps };
 }
 
+function messagingFacts(raw, provenanceBase) {
+  // async-messaging (brief 3.1): the repo's declared topics/queues/channels.
+  // transport IS hashed - migrating a channel redis->kafka is an architecture
+  // change worth flagging; call SITES are provenance (a second publisher is
+  // not documentation drift), same low-noise rule as env vars. `pattern` marks
+  // a template-declared family (`ride:{}`) - honest shape, never a resolved guess.
+  const facts = [];
+  for (const c of raw.channels ?? []) {
+    facts.push({
+      id: `fact:async-messaging/${c.kind}.${c.name}`,
+      payload: { schema_version: 1, type: "channel",
+        attrs: { name: c.name, kind: c.kind, transport: c.transport,
+                 role: c.role, pattern: !!c.pattern } },
+      provenance: { ...provenanceBase, source: (c.files ?? []).slice(0, 20).map((f) => ({ file: f })) },
+    });
+  }
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? w.reason ?? "unknown", file: w.file ?? null }));
+  return { facts, gaps };
+}
+
 function routeFacts(raw, provenanceBase) {
   // client-routes (owner-requested, 2026-08-01): the app's screen inventory.
   // Route facts are NOT coverage surfaces (owner decision fixed the
@@ -499,6 +519,8 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
       ? policyFacts(run.raw, provenanceBase)
       : reg.capability === "client-routes"
       ? routeFacts(run.raw, provenanceBase)
+      : reg.capability === "async-messaging"
+      ? messagingFacts(run.raw, provenanceBase)
       : reg.id === "sql-replay"
       ? replayFacts(run.raw, provenanceBase,
           [...factsById.values()].filter((f) => f.payload.type === "table").map((f) => f.payload.attrs.name),

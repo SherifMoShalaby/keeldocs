@@ -1,0 +1,50 @@
+{
+ "channels": [
+  {
+   "name": "orders.cancelled",
+   "kind": "topic",
+   "transport": "kafka",
+   "role": "consumes",
+   "pattern": false,
+   "files": [
+    "src/events.ts"
+   ]
+  },
+  {
+   "name": "orders.created",
+   "kind": "topic",
+   "transport": "kafka",
+   "role": "both",
+   "pattern": false,
+   "files": [
+    "src/events.ts"
+   ]
+  },
+  {
+   "name": "payments.settled",
+   "kind": "topic",
+   "transport": "kafka",
+   "role": "consumes",
+   "pattern": false,
+   "files": [
+    "src/events.ts"
+   ]
+  },
+  {
+   "name": "telemetry.raw",
+   "kind": "topic",
+   "transport": "kafka",
+   "role": "both",
+   "pattern": false,
+   "files": [
+    "app/worker.py"
+   ]
+  }
+ ],
+ "warnings": [
+  {
+   "file": "src/events.ts",
+   "reason": "non-literal topic name in send()"
+  }
+ ]
+}

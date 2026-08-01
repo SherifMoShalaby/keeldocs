@@ -1,0 +1,4 @@
+{ "name": "messaging-scenario-fixture", "private": true,
+  "dependencies": { "kafkajs": "^2.2.4", "@aws-sdk/client-sqs": "^3.600.0",
+                    "@aws-sdk/client-sns": "^3.600.0", "amqplib": "^0.10.4",
+                    "ioredis": "^5.4.1", "@supabase/supabase-js": "^2.45.0" } }
