@@ -4,9 +4,9 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { detectLies } from "../src/lies.js";
-import { renderAll } from "../src/render.js";
+import { renderAll, renderRegionBody, endpointsTableBody } from "../src/render.js";
 import { parseDoc } from "../src/anchors.js";
-import { evaluate } from "../src/drift.js";
+import { evaluate, resolveBindIds } from "../src/drift.js";
 import { factHash } from "../src/hash.js";
 
 function mkFacts(defs) {
@@ -200,4 +200,55 @@ test("E9 round 3: a section documenting ABSENCE is right to name gone paths", (t
   assert.ok(claims.some((c) => c.includes("/api/other")), "the rule ends when the next heading starts");
   assert.ok(!claims.some((c) => c.includes("/api/v1/legacy")), "a retired-endpoint listing must not flag");
   assert.ok(!claims.some((c) => c.includes("old-handler")), "nor a removed-file listing");
+});
+
+test("E9 round 4: the derived PostgREST surface is a first-class endpoint", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "kd-e9d-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "docs"), { recursive: true });
+  writeFileSync(join(root, "docs", "api.md"), [
+    "# Search", "",
+    "Ride search is `POST /rest/v1/rpc/search_rides`.", "",
+    "Legacy clients called `POST /functions/v1/search-rides`.", "",
+  ].join("\n"));
+  const facts = mkFacts([
+    ["fact:http-endpoints/POST /rest/v1/rpc/search_rides", "endpoint",
+      { method: "POST", path: "/rest/v1/rpc/search_rides" },
+      { provider: "supabase-postgrest@0.3.0", source: [{ kind: "postgrest-catalog",
+        from: "fact:db-schema/fn.public.search_rides(p_origin text)" }] }],
+  ]);
+  const claims = detectLies({ root, docPaths: ["docs/api.md"], factsById: facts, pkg: { name: "x" } })
+    .findings.map((f) => f.claim);
+  assert.ok(!claims.some((c) => c.includes("/rest/v1/rpc/")), "a correctly documented rpc path now verifies");
+  assert.ok(claims.some((c) => c.includes("/functions/v1/search-rides")),
+    "and an edge function that does not exist still flags - precision moved, recall did not");
+  // a surface derived from the catalog has no line of code; the source column
+  // must name the fact it came from rather than invent a file
+  assert.match(endpointsTableBody(facts),
+    /postgrest-catalog: `fact:db-schema\/fn\.public\.search_rides\(p_origin text\)`/);
+});
+
+test("database functions render, and the region can be regenerated", () => {
+  const facts = mkFacts([
+    ["fact:db-schema/public.rides", "table",
+      { name: "public.rides", relations: [],
+        columns: [{ name: "id", type: "int8", optional: false, list: false, attrs: "" }] }],
+    ["fact:db-schema/fn.public.claim_ride(p_ride_id bigint)", "function",
+      { name: "public.claim_ride", signature: "p_ride_id bigint", arguments: "p_ride_id bigint",
+        returns: "boolean", kind: "function", set_returning: false, volatility: "volatile",
+        language: "plpgsql", security_definer: true, body_digest: "abc123abc123" }],
+    ["fact:db-schema/fn.public.search_rides(p_origin text)", "function",
+      { name: "public.search_rides", signature: "p_origin text", arguments: "p_origin text",
+        returns: "SETOF public.rides", kind: "function", set_returning: true, volatility: "stable",
+        language: "sql", security_definer: false, body_digest: "def456def456" }],
+  ]);
+  const doc = renderAll(facts).find((d) => d.path === "docs/architecture/data-model.md");
+  assert.match(doc.content, /## Database functions/);
+  assert.match(doc.content, /`public\.claim_ride` \| `p_ride_id bigint` \| `boolean` \| volatile, plpgsql, security definer/);
+  const region = parseDoc(doc.content, doc.path).regions.find((r) => r.id === "db.functions");
+  assert.ok(region, "the functions region exists");
+  // the module-guide class of latent bug: a region that renders but cannot be
+  // regenerated is reportable-but-unrepairable, which is half a loop
+  assert.equal(renderRegionBody("db.functions", resolveBindIds(region.binds, facts), facts),
+    region.body.trim(), "regeneration reproduces the rendered body");
 });

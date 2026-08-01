@@ -1,0 +1,80 @@
+{
+ "endpoints": [
+  {
+   "method": "DELETE",
+   "path": "/rest/v1/profiles",
+   "kind": "postgrest-catalog",
+   "derived_from": "fact:db-schema/public.profiles"
+  },
+  {
+   "method": "GET",
+   "path": "/rest/v1/profiles",
+   "kind": "postgrest-catalog",
+   "derived_from": "fact:db-schema/public.profiles"
+  },
+  {
+   "method": "PATCH",
+   "path": "/rest/v1/profiles",
+   "kind": "postgrest-catalog",
+   "derived_from": "fact:db-schema/public.profiles"
+  },
+  {
+   "method": "POST",
+   "path": "/rest/v1/profiles",
+   "kind": "postgrest-catalog",
+   "derived_from": "fact:db-schema/public.profiles"
+  },
+  {
+   "method": "DELETE",
+   "path": "/rest/v1/rides",
+   "kind": "postgrest-catalog",
+   "derived_from": "fact:db-schema/public.rides"
+  },
+  {
+   "method": "GET",
+   "path": "/rest/v1/rides",
+   "kind": "postgrest-catalog",
+   "derived_from": "fact:db-schema/public.rides"
+  },
+  {
+   "method": "PATCH",
+   "path": "/rest/v1/rides",
+   "kind": "postgrest-catalog",
+   "derived_from": "fact:db-schema/public.rides"
+  },
+  {
+   "method": "POST",
+   "path": "/rest/v1/rides",
+   "kind": "postgrest-catalog",
+   "derived_from": "fact:db-schema/public.rides"
+  },
+  {
+   "method": "POST",
+   "path": "/rest/v1/rpc/claim_ride",
+   "kind": "postgrest-catalog",
+   "derived_from": "fact:db-schema/fn.public.claim_ride(p_ride_id bigint)"
+  },
+  {
+   "method": "GET",
+   "path": "/rest/v1/rpc/search_rides",
+   "kind": "postgrest-catalog",
+   "derived_from": "fact:db-schema/fn.public.search_rides(p_origin text, p_max_km numeric)"
+  },
+  {
+   "method": "POST",
+   "path": "/rest/v1/rpc/search_rides",
+   "kind": "postgrest-catalog",
+   "derived_from": "fact:db-schema/fn.public.search_rides(p_origin text, p_max_km numeric)"
+  }
+ ],
+ "warnings": [
+  {
+   "kind": "procedure-unmodeled",
+   "file": "public.rebuild_stats"
+  },
+  {
+   "kind": "schema-profile-ambiguous",
+   "file": "rides"
+  }
+ ]
+}

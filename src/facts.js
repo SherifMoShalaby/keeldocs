@@ -249,6 +249,24 @@ function replayFacts(raw, provenanceBase, declaredTables, declaredEnums) {
       provenance: { ...provenanceBase, source: [{ kind: "migration-replay" }] },
     });
   }
+  // Routines. Identity carries the IDENTITY ARGUMENT LIST, so overloads are
+  // separate facts and a parameter RENAME is a new identity - correct for a
+  // PostgREST app, where callers pass arguments by name and a rename breaks
+  // them. body_digest inside the hashed payload is deliberate: a rewritten
+  // body must stale the prose that describes what the function does.
+  for (const fn of raw.functions ?? []) {
+    facts.push({
+      id: `fact:db-schema/fn.${fn.name}(${fn.signature ?? ""})`,
+      payload: { schema_version: 1, type: "function",
+        attrs: { name: fn.name, signature: fn.signature ?? "",
+          arguments: fn.arguments ?? "", returns: fn.returns ?? "",
+          kind: fn.kind ?? "function", set_returning: !!fn.set_returning,
+          volatility: fn.volatility ?? "volatile", language: fn.language ?? "",
+          security_definer: !!fn.security_definer,
+          body_digest: fn.body_digest ?? "" } },
+      provenance: { ...provenanceBase, source: [{ kind: "migration-replay" }] },
+    });
+  }
   const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? "unknown", file: w.file ?? null }));
   return { facts, gaps };
 }
@@ -369,10 +387,17 @@ function serviceFacts(raw, provenanceBase) {
 function endpointFacts(raw, provenanceBase, repoRoot) {
   const facts = [];
   for (const e of raw.endpoints ?? []) {
+    // Most endpoints are registered at a LINE of code. A derived surface
+    // (PostgREST: the API is a total function of the catalog) has no such
+    // line, and inventing a file for it would be a small lie in the one
+    // column a reader trusts most - so it names the fact it derives from.
+    const source = e.file
+      ? [{ file: e.file, ...(e.line ? { line: e.line } : {}) }]
+      : [{ kind: e.kind ?? "derived", ...(e.derived_from ? { from: e.derived_from } : {}) }];
     facts.push({
       id: `fact:http-endpoints/${e.method} ${e.path}`,
       payload: { schema_version: 1, type: "endpoint", attrs: { method: e.method, path: e.path } },
-      provenance: { ...provenanceBase, source: [{ file: e.file, ...(e.line ? { line: e.line } : {}) }] },
+      provenance: { ...provenanceBase, source },
     });
   }
   const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? "unknown", file: w.file ?? null }));

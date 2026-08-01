@@ -32,7 +32,11 @@ export function endpointsTableBody(factsById) {
   const eps = endpointFacts(factsById);
   const rows = eps.map((f) => {
     const src = f.provenance?.source?.[0];
-    return `| ${f.payload.attrs.method} | \`${f.payload.attrs.path}\` | ${src ? src.file + (src.line ? `:${src.line}` : "") : ""} |`;
+    const where = !src ? ""
+      : src.file ? src.file + (src.line ? `:${src.line}` : "")
+      : src.from ? `${src.kind}: \`${src.from}\`` // derived surface - names its origin fact
+      : src.kind ?? "";
+    return `| ${f.payload.attrs.method} | \`${f.payload.attrs.path}\` | ${where} |`;
   });
   return ["| method | path | source |", "|---|---|---|", ...rows].join("\n");
 }
@@ -91,6 +95,23 @@ export function envTableBody(factsById) {
 
 export function enumsBody(factsById) {
   return enumFacts(factsById).map((e) => `- \`${e.payload.attrs.name}\`: ${e.payload.attrs.values.join(", ")}`).join("\n");
+}
+
+function functionFactsOf(factsById) {
+  return [...factsById.values()].filter((f) => f.payload.type === "function")
+    .sort((a, b) => a.payload.attrs.name.localeCompare(b.payload.attrs.name)
+                 || a.payload.attrs.signature.localeCompare(b.payload.attrs.signature));
+}
+
+export function functionsBody(factsById) {
+  const rows = functionFactsOf(factsById).map((f) => {
+    const a = f.payload.attrs;
+    const props = [a.volatility, a.language, ...(a.security_definer ? ["security definer"] : []),
+                   ...(a.kind === "procedure" ? ["procedure"] : [])].filter(Boolean).join(", ");
+    const args = a.arguments ? `\`${a.arguments}\`` : "-";
+    return `| \`${a.name}\` | ${args} | \`${a.returns}\` | ${props} |`;
+  });
+  return ["| routine | arguments | returns | properties |", "|---|---|---|---|", ...rows].join("\n");
 }
 
 function policyFactsOf(factsById) {
@@ -182,6 +203,7 @@ export function renderRegionBody(regionId, boundIds, factsById) {
   if (regionId === "sys.map.services") return servicesTableBody(factsById);
   if (regionId === "sys.map.packages") return packagesTableBody(factsById);
   if (regionId === "db.policies") return policiesBody(factsById);
+  if (regionId === "db.functions") return functionsBody(factsById);
   if (regionId === "ui.screens.table") return screensTableBody(factsById);
   if (regionId === "flow.diagram") return dataFlowDiagramBody(factsById);
   if (regionId === "flow.channels") return channelsTableBody(factsById);
@@ -379,7 +401,17 @@ export function renderDataModelDoc(factsById, sink) {
   const tables = tableFacts(factsById);
   const enums = enumFacts(factsById);
   if (tables.length === 0) return null;
-  const allDbIds = [...tables, ...enums].map((f) => f.id).sort();
+  // The diagram inherits db.root's `fact:db-schema/*`, so its recorded id set
+  // is derived from THAT PREFIX rather than from the facts the body happens to
+  // draw. Two invariants meet here and only this spelling satisfies both:
+  // a generated region must record exactly what its binds resolve to (an
+  // enumerated narrower list is born stale the moment a new fact type joins
+  // the capability - how the R4 routine facts first surfaced), and the diagram
+  // must go stale when a table is ADDED (an enumerated list cannot contain an
+  // id that does not exist yet, so a new table would never reach the ERD).
+  // Cost: a routine change redraws an unchanged diagram. Over-flagging is the
+  // side to err on, and sync repairs it in one pass.
+  const diagramIds = [...factsById.keys()].filter((id) => id.startsWith("fact:db-schema/")).sort();
 
   const parts = [
     "# Data model",
@@ -389,7 +421,7 @@ export function renderDataModelDoc(factsById, sink) {
     "<!-- /keeldocs:slot -->",
     "",
     "## Diagram",
-    genBlock("db.root.diagram", null, allDbIds, factsById, diagramBody(factsById), sink),
+    genBlock("db.root.diagram", null, diagramIds, factsById, diagramBody(factsById), sink),
     "",
   ];
   for (const t of tables) {
@@ -407,6 +439,16 @@ export function renderDataModelDoc(factsById, sink) {
     parts.push(
       "## Enums",
       genBlock("db.enums", enums.map((e) => e.id).sort().join(","), enums.map((e) => e.id), factsById, enumsBody(factsById), sink),
+      "",
+    );
+  }
+  const fns = functionFactsOf(factsById);
+  if (fns.length) {
+    // id-prefix wildcard, like db.policies: table churn can never stale this
+    // region, and however many routines exist the binds attr stays bounded
+    parts.push(
+      "## Database functions",
+      genBlock("db.functions", "fact:db-schema/fn.*", fns.map((f) => f.id).sort(), factsById, functionsBody(factsById), sink),
       "",
     );
   }

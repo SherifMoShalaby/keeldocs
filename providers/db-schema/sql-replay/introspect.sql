@@ -52,5 +52,46 @@ select json_build_object(
       from pg_type t join pg_namespace n on n.oid = t.typnamespace
       where t.typtype = 'e' and n.nspname not in ('pg_catalog', 'information_schema', 'auth', 'storage', 'cron', 'extensions')
     ) sub
+  ),
+  -- Routines. `signature` is the IDENTITY argument list (types only, the
+  -- spelling ALTER/DROP need) so overloads stay distinct facts; `arguments`
+  -- is the documentation spelling (names + defaults), which is also exactly
+  -- the parameter set a PostgREST rpc call takes. body_digest is a CHANGE
+  -- DETECTOR over the stored source, not a signature: it exists so that a
+  -- rewritten function body stales the prose describing what it does.
+  'functions', (
+    select coalesce(json_agg(f order by f->>'name', f->>'signature'), '[]'::json) from (
+      select json_build_object(
+        'schema', n.nspname,
+        'function', p.proname,
+        'name', n.nspname || '.' || p.proname,
+        'signature', pg_get_function_identity_arguments(p.oid),
+        'arguments', pg_get_function_arguments(p.oid),
+        'returns', pg_get_function_result(p.oid),
+        'kind', case p.prokind when 'p' then 'procedure' else 'function' end,
+        'set_returning', p.proretset,
+        'volatility', case p.provolatile when 'i' then 'immutable'
+                                         when 's' then 'stable' else 'volatile' end,
+        'language', l.lanname,
+        'security_definer', p.prosecdef,
+        'body_digest', substr(md5(coalesce(p.prosrc, '')), 1, 12)
+      ) as f
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      join pg_language l on l.oid = p.prolang
+      where p.prokind in ('f', 'p')
+        and n.nspname not in ('pg_catalog', 'information_schema', 'auth', 'storage', 'cron', 'extensions')
+    ) sub
+  ),
+  -- Views are NOT extracted as tables (v1 scope) but they ARE a real
+  -- PostgREST surface, so they are named here and reported as gaps rather
+  -- than silently absent - an unmodeled surface must never read as none.
+  'views', (
+    select coalesce(json_agg(vname order by vname), '[]'::json) from (
+      select n.nspname || '.' || c.relname as vname
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where c.relkind in ('v', 'm')
+        and n.nspname not in ('pg_catalog', 'information_schema', 'auth', 'storage', 'cron', 'extensions')
+    ) sub
   )
 ) as result;

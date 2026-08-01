@@ -195,10 +195,27 @@ function preprocess(sql, stubbed) {
 
 const INTROSPECT = readFileSync(new URL("./introspect.sql", import.meta.url), "utf8");
 
+// Seed and extension stubs create routines in `public` - an unqualified CREATE
+// FUNCTION has no other home - so the schema filter alone cannot keep them out
+// of the emitted catalog, and a stub masquerading as an extracted function is
+// exactly the lie the seed-schema exclusion exists to prevent. This baseline is
+// taken AFTER seeding and BEFORE the chain runs; a routine is dropped only when
+// BOTH its signature and its body digest are unchanged, so a chain that
+// legitimately CREATE OR REPLACEs a stubbed name still reports its own version.
+const BASELINE = `select coalesce(json_agg(json_build_object(
+    'k', n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')',
+    'd', substr(md5(coalesce(p.prosrc, '')), 1, 12)) order by 1), '[]'::json) as result
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where p.prokind in ('f', 'p') and n.nspname not in ('pg_catalog', 'information_schema')`;
+
+const fnKey = (f) => `${f.name}(${f.signature})`;
+
+const emptyOut = () => JSON.stringify({ tables: [], enums: [], functions: [], warnings }) + "\n";
+
 async function main() {
   const chain = chainOf();
   if (!chain) {
-    process.stdout.write(JSON.stringify({ tables: [], enums: [], warnings }) + "\n");
+    process.stdout.write(emptyOut());
     return;
   }
   let PGlite;
@@ -235,6 +252,8 @@ async function main() {
       try { await db.exec(stub); } catch { /* stub collision - fine */ }
     }
   }
+  const baseline = new Map(
+    ((await db.query(BASELINE)).rows[0].result ?? []).map((b) => [b.k, b.d]));
   const texts = rawTexts.map((t) => preprocess(t, stubbed));
   const made = new Set();
   for (let i = 0; i < files.length; i++) {
@@ -257,7 +276,7 @@ async function main() {
         // unreplayable: zero facts + a named gap - never a partial catalog
         warnings.push({ kind: "replay-failed", file: posix(`${chain.rel}/${chain.names[i]}`),
           detail: String(err.message).replace(/\s+/g, " ").slice(0, 140) });
-        process.stdout.write(JSON.stringify({ tables: [], enums: [], warnings }) + "\n");
+        process.stdout.write(emptyOut());
         await db.close();
         return;
       }
@@ -265,8 +284,13 @@ async function main() {
   }
   const r = await db.query(INTROSPECT);
   const out = r.rows[0].result;
+  const functions = (out.functions ?? [])
+    .filter((f) => baseline.get(fnKey(f)) !== f.body_digest);
+  // views/matviews are a real PostgREST surface this version does not model;
+  // naming each one keeps "unmodeled" from reading as "not there"
+  for (const v of out.views ?? []) warnings.push({ kind: "view-unmodeled", file: v });
   process.stdout.write(JSON.stringify({
-    tables: out.tables ?? [], enums: out.enums ?? [], warnings,
+    tables: out.tables ?? [], enums: out.enums ?? [], functions, warnings,
   }) + "\n");
   await db.close();
 }

@@ -146,3 +146,12 @@ test("the real registry loads: nestjs is a query provider, workspace precedes mo
     "needs must order workspace-layout before module-graph");
   assert.ok(!r.some((e) => e.id === "rails-sql"), "stubs stay honestly absent (drizzle graduated in N1)");
 });
+
+test("http-endpoints declares a db-schema read, and the catalog runs first", () => {
+  const r = loadProviders();
+  const pg = r.find((e) => e.id === "supabase-postgrest");
+  assert.deepEqual(pg.factInputs, ["db-schema"], "the PostgREST surface is DERIVED from the catalog");
+  const order = r.map((e) => e.capability);
+  assert.ok(order.lastIndexOf("db-schema") < order.indexOf("http-endpoints"),
+    "every db-schema provider must finish before the derived surface reads their facts");
+});

@@ -70,6 +70,19 @@ MATRIX = [
         "golden": "fixtures/replay-scenario/golden/db-schema-replay.json",
     },
     {
+        # E9 round-4: the DERIVED PostgREST surface. Input is the recorded
+        # upstream db-schema fact file (what the engine hands the provider via
+        # the declared ${facts:db-schema} read) plus supabase/config.toml -
+        # exercising exposed-schema config, the profile-header path collision,
+        # stable-vs-volatile rpc verbs, trigger functions and procedures.
+        "name": "postgrest-scenario / http-endpoints (derived from the catalog)",
+        "cmd": [sys.executable, "providers/http-endpoints/supabase-postgrest/extract_postgrest.py",
+                "fixtures/postgrest-scenario"],
+        "env": {"KEELDOCS_FACTS_DB_SCHEMA":
+                "fixtures/postgrest-scenario/golden/db-schema-facts.jsonl"},
+        "golden": "fixtures/postgrest-scenario/golden/http-endpoints.json",
+    },
+    {
         # N1: second static db-schema provider - drizzle snapshot parsing
         "name": "conflict-scenario / db-schema (drizzle snapshot)",
         "cmd": [sys.executable, "providers/db-schema/drizzle/extract_drizzle.py",
@@ -300,8 +313,20 @@ def canonical(text):
     return json.dumps(json.loads(text), sort_keys=True, separators=(",", ":"))
 
 
-def run(cmd):
-    r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=120)
+def canonical_lines(text):
+    """A JSONL fact file compared key-order-insensitively, line by line."""
+    return [canonical(l) for l in text.splitlines() if l.strip()]
+
+
+def run(cmd, env=None):
+    # `env` supplies the declared cross-capability reads (provider contract 9)
+    # that the engine would otherwise hand the provider - a golden case for a
+    # derived surface has to stand the upstream fact file up itself.
+    child = None
+    if env:
+        child = dict(os.environ)
+        child.update(env)
+    r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=120, env=child)
     if r.returncode != 0:
         raise RuntimeError(f"extractor failed rc={r.returncode}: {r.stderr[-500:]}")
     return r.stdout
@@ -311,7 +336,8 @@ def main():
     failures = []
     for case in MATRIX:
         try:
-            out1, out2 = run(case["cmd"]), run(case["cmd"])
+            env = case.get("env")
+            out1, out2 = run(case["cmd"], env), run(case["cmd"], env)
             if out1 != out2:
                 failures.append(f"{case['name']}: NONDETERMINISTIC (two runs differ)")
                 continue
@@ -1027,8 +1053,36 @@ def main():
         dm = open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
         assert "public.users" in dm and "public.posts" in dm and "public.orders" in dm, "replayed tables must render"
         assert "order_status" in dm, "replayed enum must render"
+        # R4: routines are catalog objects, and the PostgREST surface is DERIVED
+        assert "## Database functions" in dm and "public.nearby_pickup_points" in dm, \
+            "replayed routines must render"
+        ep = open(os.path.join(dst, "docs", "reference", "endpoints.md")).read()
+        assert "`/rest/v1/orders`" in ep, "every exposed table answers at /rest/v1/<relation>"
+        assert "| GET | `/rest/v1/rpc/nearby_pickup_points`" in ep, "a STABLE function is GET-able"
+        assert "| POST | `/rest/v1/rpc/claim_order`" in ep, "a VOLATILE function is POST-only"
+        assert "| GET | `/rest/v1/rpc/claim_order`" not in ep, "...and must not claim GET"
+        assert "/rest/v1/rpc/touch_updated_at" not in ep, "PostgREST never exposes trigger functions"
+        assert "postgrest-catalog: `fact:db-schema/public.orders`" in ep, \
+            "a derived endpoint names the fact it came from instead of inventing a file"
+        rep = json.load(open([os.path.join(dst, ".keeldocs", "out", f)
+                              for f in os.listdir(os.path.join(dst, ".keeldocs", "out"))
+                              if f.startswith("init-")][0]))
+        kinds = {g["kind"] for g in rep.get("extractionGaps", [])}
+        assert "view-unmodeled" in kinds, "an exposed surface we do not model must read as a hole, not as none"
         rc = kd(dst, "check", "--json")
         assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", "born-clean invariant violated"
+        # the derived surface closes its own drift loop: a new function is a new
+        # endpoint AND a new routine row, and sync must repair both
+        W(os.path.join(dst, "supabase", "migrations", "0006_rpc.sql"),
+          "create function public.cancel_order(p_order_id bigint) returns boolean\n"
+          "language sql volatile as $$ select p_order_id > 0 $$;\n")
+        assert kd(dst, "check", "--json").returncode == 1, "a new routine must drift the docs"
+        assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN"
+        assert "| POST | `/rest/v1/rpc/cancel_order`" in \
+            open(os.path.join(dst, "docs", "reference", "endpoints.md")).read()
+        assert "public.cancel_order" in \
+            open(os.path.join(dst, "docs", "architecture", "data-model.md")).read()
         # drift loop: a NEW migration changes the catalog -> db docs stale -> sync -> clean
         W(os.path.join(dst, "supabase", "migrations", "0004_archive.sql"),
           "create table archives (id serial primary key, order_id integer references orders(id));\n")
@@ -1041,6 +1095,50 @@ def main():
         print("  PASS  replay engine: chain -> catalog ERD, born-clean, migration drift loop closes")
     except Exception as e:
         failures.append(f"replay integration: {e}")
+
+    # ---- R4: the derived PostgREST surface, config-driven and honest ----
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-postgrest-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "postgrest-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        r = kd(dst, "init", "--yes", "--json")
+        assert r.returncode == 0 and json.loads(r.stdout)["code"] == "INITIALIZED", r.stdout[:300]
+        # the committed golden fact file IS the provider's contract input; if the
+        # db-schema payload shape moves, this end-to-end run diverges from it
+        live = open(os.path.join(dst, ".keeldocs", "cache", "facts", "db-schema.jsonl")).read()
+        recorded = open(os.path.join(ROOT, "fixtures", "postgrest-scenario",
+                                     "golden", "db-schema-facts.jsonl")).read()
+        assert canonical_lines(live) == canonical_lines(recorded), \
+            "postgrest-scenario/golden/db-schema-facts.jsonl is stale - re-record it"
+        ep = open(os.path.join(dst, "docs", "reference", "endpoints.md")).read()
+        for verb in ("GET", "POST", "PATCH", "DELETE"):
+            assert f"| {verb} | `/rest/v1/profiles`" in ep, f"exposed tables answer {verb}"
+        assert "| PUT | " not in ep, "PUT needs primary-key knowledge the catalog facts do not carry"
+        assert "| GET | `/rest/v1/rpc/search_rides`" in ep and \
+               "| POST | `/rest/v1/rpc/search_rides`" in ep, "a STABLE rpc answers both"
+        assert "| GET | `/rest/v1/rpc/claim_ride`" not in ep, "a VOLATILE rpc is POST-only"
+        assert "/rest/v1/rpc/rebuild_stats" not in ep, "procedures are named as a gap, never guessed"
+        rep = json.load(open([os.path.join(dst, ".keeldocs", "out", f)
+                              for f in os.listdir(os.path.join(dst, ".keeldocs", "out"))
+                              if f.startswith("init-")][0]))
+        kinds = {g["kind"] for g in rep.get("extractionGaps", [])}
+        assert "procedure-unmodeled" in kinds and "schema-profile-ambiguous" in kinds, \
+            "a CALL-able procedure and a two-schema path collision are reported, not resolved by guessing"
+        assert json.loads(kd(dst, "check", "--json").stdout)["code"] == "CLEAN", "born-clean violated"
+        # turning the REST API off in config removes the whole surface
+        W(os.path.join(dst, "supabase", "config.toml"),
+          open(os.path.join(dst, "supabase", "config.toml")).read().replace(
+              "enabled = true", "enabled = false", 1))
+        assert kd(dst, "check", "--json").returncode == 1, "disabling the API must drift the inventory"
+        assert kd(dst, "sync", "--apply-all", "--json", env=local_env).returncode == 0
+        assert "/rest/v1/" not in open(os.path.join(dst, "docs", "reference", "endpoints.md")).read(), \
+            "[api] enabled=false means there is no REST surface to document"
+        rmtree(tmp)
+        print("  PASS  PostgREST surface: derived endpoints, config-driven exposure, gaps named, drift loop closes")
+    except Exception as e:
+        failures.append(f"postgrest integration: {e}")
 
     # ---- N2: java + go end-to-end (born clean, drift loop closes) ----
     try:

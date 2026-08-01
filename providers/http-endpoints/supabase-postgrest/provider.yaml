@@ -1,0 +1,20 @@
+id: supabase-postgrest
+capability: http-endpoints
+semver: 0.3.0
+tier: code            # E9 round-3 gap: for a Supabase app the REST API is
+                      # DERIVED, not registered - every table in an exposed
+                      # schema answers at /rest/v1/<relation> and every
+                      # function at /rest/v1/rpc/<name>. Nothing in the repo
+                      # declares those routes, so documenting one correctly
+                      # used to read as a lie. Pure function of the catalog
+                      # (declared ${facts:db-schema} read, contract 9) and
+                      # supabase/config.toml [api].
+confidence: PARSED    # the catalog upstream is INTROSPECTED; the platform
+                      # ROUTING CONVENTION applied to it is not introspected
+                      # here, so this provider claims the honest lower tier
+entry: ./extract_postgrest.py
+detect: { dirs: ["supabase"] }
+inputs: ["${facts:db-schema}", "supabase/config.toml"]
+requires: []
+timeout_class: A
+emits: [endpoint, extraction-gap]
