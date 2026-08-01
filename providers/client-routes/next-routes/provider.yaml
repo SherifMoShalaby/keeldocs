@@ -1,0 +1,15 @@
+id: next-routes
+capability: client-routes
+semver: 0.3.0
+tier: code            # E9 field gap: Next.js routes ARE the filesystem (App
+                      # Router), so extraction is a pure deterministic walk -
+                      # no parsing at all. page.* segments become the URL
+                      # ((groups) stripped, @parallel slots skipped, [params]
+                      # kept verbatim as the recognizable convention);
+                      # route.* handlers are the app's API URLs and emit too.
+entry: ./extract_next.py
+detect: { files: ["next.config.ts", "next.config.js", "next.config.mjs"] }
+inputs: ["app/**", "src/app/**"]
+requires: []
+timeout_class: B
+emits: [route]

@@ -124,6 +124,19 @@ MATRIX = [
         "golden": "fixtures/react-scenario/golden/client-routes.json",
     },
     {
+        # E9 field gaps closed: Next.js file-based routes + supabase edge fns
+        "name": "next-scenario / client-routes (app router walk)",
+        "cmd": [sys.executable, "providers/client-routes/next-routes/extract_next.py",
+                "fixtures/next-scenario"],
+        "golden": "fixtures/next-scenario/golden/client-routes.json",
+    },
+    {
+        "name": "next-scenario / http-endpoints (supabase edge functions)",
+        "cmd": [sys.executable, "providers/http-endpoints/supabase-functions/extract_supafn.py",
+                "fixtures/next-scenario"],
+        "golden": "fixtures/next-scenario/golden/http-endpoints.json",
+    },
+    {
         "name": "compose-scenario / workspace-layout",
         "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
                 "fixtures/compose-scenario"],
@@ -970,6 +983,26 @@ def main():
         print("  PASS  N2 java+go: spring member-mode + gin chains, born-clean, drift loops close")
     except Exception as e:
         failures.append(f"java/go integration: {e}")
+
+    # ---- next-scenario end-to-end: file-based routes + edge fns land ----
+    try:
+        import shutil as _shn
+        ns = os.path.join(ROOT, "fixtures", "next-scenario", ".keeldocs")
+        _shn.rmtree(ns, ignore_errors=True)
+        r = run_check("next-scenario")
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and env_["code"] == "CLEAN", r.stdout[:200]
+        files = [f for f in os.listdir(os.path.join(ns, "out")) if f.startswith("check-")]
+        rep = json.load(open(os.path.join(ns, "out", files[0])))
+        assert rep["capabilities"]["client-routes"]["providers"] == ["next-routes@0.3.0"]
+        assert "supabase-functions@0.3.0" in rep["capabilities"]["http-endpoints"]["providers"]
+        cr = open(os.path.join(ns, "cache", "facts", "client-routes.jsonl")).read()
+        assert cr.count('"fact:client-routes/') == 5 and '"/owners/[ownerId]/edit"' in cr
+        ep = open(os.path.join(ns, "cache", "facts", "http-endpoints.jsonl")).read()
+        assert '"fact:http-endpoints/POST /functions/v1/accept-ride"' in ep
+        print("  PASS  next-scenario: app-router routes + edge-function endpoints extracted")
+    except Exception as e:
+        failures.append(f"next-scenario integration: {e}")
 
     # ---- client-routes end-to-end: facts land, coverage denominator untouched ----
     try:

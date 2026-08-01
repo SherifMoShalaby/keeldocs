@@ -1,0 +1,13 @@
+id: supabase-functions
+capability: http-endpoints
+semver: 0.3.0
+tier: code            # E9 field gap: Supabase Edge Functions are an endpoint
+                      # surface by DIRECTORY convention - each supabase/
+                      # functions/<name>/ is invocable at
+                      # POST /functions/v1/<name>. Pure deterministic walk.
+entry: ./extract_supafn.py
+detect: { dirs: ["supabase/functions"] }
+inputs: ["supabase/functions/*/index.*"]
+requires: []
+timeout_class: A
+emits: [endpoint]

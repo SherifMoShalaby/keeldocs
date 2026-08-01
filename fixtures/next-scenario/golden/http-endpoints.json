@@ -1,0 +1,10 @@
+{
+ "endpoints": [
+  {
+   "file": "supabase/functions/accept-ride/index.ts",
+   "method": "POST",
+   "path": "/functions/v1/accept-ride"
+  }
+ ],
+ "warnings": []
+}

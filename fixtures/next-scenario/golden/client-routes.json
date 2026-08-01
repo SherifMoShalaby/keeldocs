@@ -1,0 +1,25 @@
+{
+ "routes": [
+  {
+   "file": "app/page.tsx",
+   "path": "/"
+  },
+  {
+   "file": "app/(marketing)/about/page.tsx",
+   "path": "/about"
+  },
+  {
+   "file": "app/api/health/route.ts",
+   "path": "/api/health"
+  },
+  {
+   "file": "app/owners/[ownerId]/page.tsx",
+   "path": "/owners/[ownerId]"
+  },
+  {
+   "file": "app/owners/[ownerId]/edit/page.tsx",
+   "path": "/owners/[ownerId]/edit"
+  }
+ ],
+ "warnings": []
+}
