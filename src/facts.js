@@ -60,21 +60,32 @@ function detect(reg, repoRoot) {
 const TIMEOUTS = { A: 10_000, B: 30_000, C: 120_000, D: 60_000 };
 const OUTPUT_CAP = 5 * 1024 * 1024; // ADR-002: 5MB provider output cap
 
-// ADR-002 sandbox slice (R2 residue): best-effort NETWORK isolation on Linux
-// via a fresh network namespace (unshare -rn) around every NON-live provider -
-// `live` is the sole declared network exception (network:db). Probed once per
-// process; where the probe fails (macOS, Windows, restricted user namespaces)
-// providers run unwrapped - the ADR-013 documented weaker guarantee, now
-// smaller. Note: inside the wrapper a missing interpreter surfaces as the
-// wrapper's exit code + stderr, not ENOENT; the python3->python fallback still
-// covers the platforms where it is actually needed (probe fails there anyway).
-const NETNS = (() => {
-  if (process.platform !== "linux") return false;
-  try {
-    return spawnSync("unshare", ["-rn", "true"], { encoding: "utf8" }).status === 0;
-  } catch { return false; }
+// ADR-002 sandbox (R2 + its FS slice), best-effort in three honest tiers:
+//   "rofs"  linux + user/mount namespaces: NETWORK deny-all AND the repo
+//           bind-mounted READ-ONLY - which also makes the purity rule
+//           mechanical (the contract says providers emit JSON and write
+//           nothing; now the kernel agrees)
+//   "net"   linux with netns but no usable mount namespace: network only
+//   "none"  macOS/Windows/restricted hosts: subprocess+timeout, the
+//           ADR-013 documented weaker guarantee
+// `live` providers keep their declared network:db exception in every tier.
+// Probed ONCE per process against the real primitives, never assumed.
+// Note: inside a wrapper a missing interpreter surfaces as the wrapper's exit
+// code, not ENOENT; the python3->python fallback still covers the platforms
+// that need it (their probe lands on "none" anyway).
+const RO_SCRIPT = 'mount --bind "$1" "$1" && mount -o remount,ro,bind "$1" && shift && exec "$@"';
+
+const SANDBOX = (() => {
+  if (process.platform !== "linux") return "none";
+  const ok = (args) => {
+    try { return spawnSync("unshare", args, { encoding: "utf8" }).status === 0; }
+    catch { return false; }
+  };
+  if (ok(["-rnm", "--", "/bin/sh", "-c", RO_SCRIPT, "sh", "/tmp", "/bin/true"])) return "rofs";
+  if (ok(["-rn", "true"])) return "net";
+  return "none";
 })();
-export const sandboxState = () => ({ netns: NETNS });
+export const sandboxState = () => ({ tier: SANDBOX, netns: SANDBOX !== "none" });
 
 function runProvider(reg, repoRoot, detectInfo, factEnv = {}) {
   let args = [repoRoot];
@@ -87,10 +98,13 @@ function runProvider(reg, repoRoot, detectInfo, factEnv = {}) {
   }
   // externals resolve from their installed dir (absEntry); first-party from the engine tree
   const entryPath = reg.absEntry ?? join(ENGINE_ROOT, reg.entry);
-  const wrapNet = NETNS && !reg.live; // live providers keep their declared network:db
-  const spawnWith = (bin) => spawnSync(
-    wrapNet ? "unshare" : bin,
-    wrapNet ? ["-rn", "--", bin, entryPath, ...args] : [entryPath, ...args], {
+  const tier = reg.live ? "none" : SANDBOX; // live keeps its declared network:db
+  const wrap = (bin) => tier === "rofs"
+    ? ["unshare", ["-rnm", "--", "/bin/sh", "-c", RO_SCRIPT, "sh", repoRoot, bin, entryPath, ...args]]
+    : tier === "net"
+    ? ["unshare", ["-rn", "--", bin, entryPath, ...args]]
+    : [bin, [entryPath, ...args]];
+  const spawnWith = (bin) => spawnSync(...wrap(bin), {
     cwd: repoRoot, timeout: TIMEOUTS[reg.timeoutClass] ?? TIMEOUTS.D,
     maxBuffer: OUTPUT_CAP, encoding: "utf8",
     env: { ...process.env, ...factEnv },

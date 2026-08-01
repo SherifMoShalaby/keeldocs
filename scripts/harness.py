@@ -1433,34 +1433,56 @@ def main():
     except Exception as e:
         failures.append(f"skill lint: {e}")
 
-    # ---- ADR-002 sandbox slice: netns proof (linux) + wiring + output cap ----
+    # ---- ADR-002 sandbox: tier probe + MECHANISM proofs (net and rofs) ----
     try:
-        probe = subprocess.run(["unshare", "-rn", "true"], capture_output=True).returncode == 0 \
-            if sys.platform == "linux" else False
+        RO = 'mount --bind "$1" "$1" && mount -o remount,ro,bind "$1" && shift && exec "$@"'
+        def unshare_ok(args):
+            if sys.platform != "linux":
+                return False
+            try:
+                return subprocess.run(["unshare", *args], capture_output=True).returncode == 0
+            except OSError:
+                return False
+        expect = ("rofs" if unshare_ok(["-rnm", "--", "/bin/sh", "-c", RO, "sh", "/tmp", "/bin/true"])
+                  else "net" if unshare_ok(["-rn", "true"]) else "none")
         wired = subprocess.run(["node", "-e",
             "import(process.argv[1]).then(m=>console.log(JSON.stringify(m.sandboxState())))",
-            # file:// URL, not a path: import() rejects C:\ paths on Windows
             __import__("pathlib").Path(ROOT, "src", "facts.js").as_uri()], capture_output=True, text=True)
-        assert wired.returncode == 0 and json.loads(wired.stdout)["netns"] == probe, \
-            f"engine sandbox wiring disagrees with the probe: {wired.stdout!r} vs {probe}"
-        if probe:
-            # mechanism: a localhost listener reachable directly, unreachable in the netns
+        assert wired.returncode == 0 and json.loads(wired.stdout)["tier"] == expect, \
+            f"engine sandbox tier disagrees with the probe: {wired.stdout!r} vs {expect}"
+        if expect != "none":
+            # network: a live localhost listener is unreachable inside the wrapper
             import socket
             srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(1)
             port = srv.getsockname()[1]
             code = ("import socket,sys\ns=socket.socket()\ns.settimeout(2)\n"
                     f"sys.exit(0 if s.connect_ex((\"127.0.0.1\", {port})) == 0 else 3)")
             direct = subprocess.run([sys.executable, "-c", code], capture_output=True)
-            wrapped = subprocess.run(["unshare", "-rn", "--", sys.executable, "-c", code],
-                                     capture_output=True)
+            wrapped = subprocess.run(["unshare", "-rn", "--", sys.executable, "-c", code], capture_output=True)
             srv.close()
             assert direct.returncode == 0, "control: direct connect must succeed"
             assert wrapped.returncode == 3, "netns must block even localhost"
-            print("  PASS  sandbox: netns wired + proven (localhost blocked inside the namespace)")
+        if expect == "rofs":
+            # filesystem: the same write succeeds outside and fails inside
+            import tempfile as _tf
+            d = _tf.mkdtemp(prefix="keeldocs-ro-")
+            W(os.path.join(d, "seed.txt"), "x")
+            wcode = ("import sys\ntry:\n open(sys.argv[1] + '/written.txt', 'w').write('x')\n"
+                     " sys.exit(0)\nexcept OSError:\n sys.exit(7)")
+            free = subprocess.run([sys.executable, "-c", wcode, d], capture_output=True)
+            caged = subprocess.run(["unshare", "-rnm", "--", "/bin/sh", "-c", RO, "sh", d,
+                                    sys.executable, "-c", wcode, d], capture_output=True)
+            assert free.returncode == 0, "control: the write must succeed unsandboxed"
+            assert caged.returncode == 7, "read-only bind must refuse provider writes"
+            assert open(os.path.join(d, "seed.txt")).read() == "x", "reads must still work"
+            rmtree(d)
+            print("  PASS  sandbox tier rofs: network blocked AND repo read-only (purity enforced by the kernel)")
+        elif expect == "net":
+            print("  PASS  sandbox tier net: network blocked; no usable mount namespace here")
         else:
-            print("  PASS  sandbox: netns unavailable here - wiring agrees, best-effort documented (ADR-013)")
+            print("  PASS  sandbox tier none: wiring agrees, best-effort documented (ADR-013)")
     except Exception as e:
-        failures.append(f"sandbox slice: {e}")
+        failures.append(f"sandbox: {e}")
 
     # CLI envelope smoke: usage error must be exit 2 with a parseable envelope
     r = subprocess.run(["node", "bin/keeldocs.js", "bogus-command", "--json"],
