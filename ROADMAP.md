@@ -1,8 +1,8 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-01.** `main` at `d3e1446` · 68 commits · engine `0.2.0-dev.0` ·
+**As of 2026-08-01.** `main` at `da30ee9` · 69 commits · engine `0.2.0-dev.0` ·
 tagged `v0.1.0-rc.1` at `927b4cb` · 3-OS CI green (Windows non-blocking) ·
-110 unit tests · 39 extractor goldens · 75 harness checks.
+130 unit tests · 39 extractor goldens · 76 harness checks.
 
 **E8 and E11 ran on 2026-08-01, both failed, and the repairable half is
 repaired.** E11's flagship ERD stopped rendering between 100 and 250 tables;
