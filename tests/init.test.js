@@ -124,3 +124,27 @@ test("renderAll is deterministic (byte-identical across calls)", () => {
   const b = renderAll(facts).map((d) => d.content).join("\x00");
   assert.equal(a, b);
 });
+
+test("E9 precision rules: routes, globs, pipes, versions, scoped deps", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "kd-e9-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "docs"), { recursive: true });
+  mkdirSync(join(root, "src"), { recursive: true });
+  writeFileSync(join(root, "src", "real.ts"), "export {}");
+  writeFileSync(join(root, "docs", "spec.md"), [
+    "Call `/api/v1/orders` then open `/admin/drivers`.",
+    "Layout lives in `/src/real.ts` and `/src/gone.ts`.",
+    "Use `@acme/installed` and `@acme/missing` here.",
+    "Try `pkg@1.2.3` and `fs|path|crypto` patterns.",
+    "See `/components/{a,b}` for structure.",
+  ].join("\n"));
+  const pkg = { name: "x", dependencies: { "@acme/installed": "^1.0.0" } };
+  const r = detectLies({ root, docPaths: ["docs/spec.md"], factsById: new Map(), pkg });
+  const claims = r.findings.map((f) => f.claim);
+  assert.ok(claims.includes("/src/gone.ts"), "missing file under a REAL top dir must still flag");
+  assert.ok(claims.includes("@acme/missing"), "an uninstalled scoped package stays a finding");
+  for (const fp of ["/api/v1/orders", "/admin/drivers", "@acme/installed", "pkg@1.2.3", "fs|path|crypto", "/components/{a,b}"]) {
+    assert.ok(!claims.includes(fp), `must suppress: ${fp}`);
+  }
+  assert.ok(!claims.includes("/src/real.ts"), "existing file is clean");
+});

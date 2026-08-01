@@ -100,6 +100,16 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
     .map((id) => id.slice("fact:http-endpoints/".length)));
   const hasEndpoints = endpointPaths.size > 0;
 
+  // E9 field-measured precision rules: spec-heavy docs are full of URL routes
+  // and package names shaped like paths - the receipt was accurate but the
+  // CLASS was wrong. Top-level dirs anchor the route-vs-path call.
+  const topDirs = new Set();
+  try {
+    for (const n of readdirSync(root)) {
+      try { if (statSync(join(root, n)).isDirectory()) topDirs.add(n); } catch { /* ignore */ }
+    }
+  } catch { /* unreadable root - rules degrade to strict */ }
+
   const add = (cls, claim, doc, line, receipt, extra = {}) =>
     findings.push({ class: cls, claim, doc, line, receipt, ...extra });
 
@@ -119,7 +129,20 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
         // key:value snippets, and URLs - not file claims
         if (!pathLike || /^https?:/.test(tok) || tok.includes("=") || tok.includes(":") || tok.startsWith("-")) continue;
         if (PLACEHOLDER.test(tok) || CONVENTIONAL.test(tok) || imperative) { suppressed++; continue; }
+        if (tok.includes("{")) { suppressed++; continue; } // brace-glob shorthand, not a path (E9)
+        if (tok.includes("|")) { suppressed++; continue; } // pipe-separated pattern list, not a path (E9)
+        if (/^@?[\w.-]+(\/[\w.-]+)?@[\w.^~>=<-]+$/.test(tok)) { suppressed++; continue; } // pkg@version spec, not a path (E9)
         if (!tok.includes("/") && tok in deps) { suppressed++; continue; } // dep names like chart.js
+        // scoped npm packages (@scope/name) are path-shaped but package claims;
+        // suppress when installed (E9: @opennextjs/cloudflare flagged wrongly)
+        if (/^@[a-z0-9~-][\w.-]*\/[\w.-]+$/.test(tok) && tok in deps) { suppressed++; continue; }
+        // URL-route-shaped: leading slash, no file extension, first segment is
+        // not a real top-level dir -> an app/API route, not a repo path (E9)
+        if (tok.startsWith("/")) {
+          const segs = tok.slice(1).split("/");
+          const hasExt = /\.[a-z0-9]{1,8}$/i.test(segs[segs.length - 1]);
+          if (!hasExt && !topDirs.has(segs[0])) { suppressed++; continue; }
+        }
         const cands = resolutions(doc, tok);
         if (!cands.some((c) => existsSync(join(root, c)))) {
           add("file-claim", tok, doc, line, missingReceipt(root, cands));
@@ -174,6 +197,7 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
       // D. internal markdown links
       for (const m of lineText.matchAll(/\]\((?!https?:|#|mailto:)([^)\s]+?)(?:#[^)]*)?\)/g)) {
         if (PLACEHOLDER.test(m[1])) { suppressed++; continue; }
+        if (m[1].includes("(")) { suppressed++; continue; } // route-group "(x)" segments truncate the match (E9)
         const cands = resolutions(doc, m[1]);
         if (!cands.some((c) => existsSync(join(root, c)))) {
           add("link-claim", m[1], doc, line, missingReceipt(root, cands));

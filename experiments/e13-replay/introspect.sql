@@ -10,7 +10,7 @@ select json_build_object(
         'columns', (
           select json_agg(json_build_object(
             'name', col.column_name,
-            'type', col.udt_name,
+            'type', coalesce(col.domain_name, col.udt_name),
             'nullable', col.is_nullable = 'YES',
             'default', col.column_default
           ) order by col.ordinal_position)
@@ -39,7 +39,7 @@ select json_build_object(
       ) as t
       from information_schema.tables c
       where c.table_type = 'BASE TABLE'
-        and c.table_schema not in ('pg_catalog', 'information_schema')
+        and c.table_schema not in ('pg_catalog', 'information_schema', 'auth', 'storage', 'cron', 'extensions')
     ) sub
   ),
   'enums', (
@@ -50,7 +50,7 @@ select json_build_object(
                    from pg_enum en where en.enumtypid = t.oid)
       ) as e
       from pg_type t join pg_namespace n on n.oid = t.typnamespace
-      where t.typtype = 'e' and n.nspname not in ('pg_catalog', 'information_schema')
+      where t.typtype = 'e' and n.nspname not in ('pg_catalog', 'information_schema', 'auth', 'storage', 'cron', 'extensions')
     ) sub
   )
 ) as result;

@@ -39,6 +39,49 @@
   },
   {
    "schema": "public",
+   "table": "pickup_points",
+   "name": "public.pickup_points",
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": "gen_random_uuid()"
+    },
+    {
+     "name": "owner",
+     "type": "uuid",
+     "nullable": true,
+     "default": null
+    },
+    {
+     "name": "label",
+     "type": "text",
+     "nullable": false,
+     "default": null
+    },
+    {
+     "name": "geog",
+     "type": "geography",
+     "nullable": true,
+     "default": null
+    },
+    {
+     "name": "updated_at",
+     "type": "timestamptz",
+     "nullable": false,
+     "default": "now()"
+    }
+   ],
+   "relations": [
+    {
+     "field": "owner",
+     "target": "auth.users"
+    }
+   ]
+  },
+  {
+   "schema": "public",
    "table": "posts",
    "name": "public.posts",
    "columns": [
@@ -111,5 +154,18 @@
    ]
   }
  ],
- "warnings": []
+ "warnings": [
+  {
+   "kind": "extension-stubbed",
+   "file": "moddatetime"
+  },
+  {
+   "kind": "extension-stubbed",
+   "file": "pg_cron"
+  },
+  {
+   "kind": "extension-stubbed",
+   "file": "postgis"
+  }
+ ]
 }

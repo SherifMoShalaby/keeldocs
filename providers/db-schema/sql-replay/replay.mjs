@@ -81,13 +81,117 @@ function orderFiles(chain) {
 }
 
 // ---------- deterministic deployment baseline ----------
+//
+// Seed-owned schemas (auth, storage, cron, extensions) are EXCLUDED from
+// introspection: their tables here are shape STUBS so chains parse - emitting
+// a stub's column list as extracted truth would lie about supabase infra.
 
 const SEED = [
   "create role anon", "create role authenticated", "create role service_role",
   "create schema if not exists auth",
   "create schema if not exists extensions",
   "create function auth.uid() returns uuid language sql as 'select null::uuid'",
+  // storage baseline (E9 field finding): functions/policies legitimately read
+  // and delete from storage.objects; a shape stub keeps the chain replayable
+  // auth.users shape stub (E9): FKs and signup triggers legitimately point at
+  // it; PK included so REFERENCES auth.users(id) resolves. Not public schema,
+  // so it never enters the emitted catalog (introspection filters to
+  // non-system schemas but auth IS emitted... it is not: policies/tables in
+  // auth are real supabase infra, and the ERD filter keeps table facts as-is -
+  // auth.users appears as a table fact only if introspection includes it,
+  // which it does; declared-beats-replayed does not apply. Accepted: an
+  // auth.users row in the ERD is TRUE for a supabase app.
+  "create table if not exists auth.users (id uuid primary key, email text, phone text, raw_user_meta_data jsonb, raw_app_meta_data jsonb, created_at timestamptz, last_sign_in_at timestamptz)",
+  "create schema if not exists storage",
+  "create table if not exists storage.objects (id uuid, bucket_id text, name text, owner uuid, metadata jsonb, created_at timestamptz)",
 ];
+
+// pglite's BUNDLED contrib set (dist/contrib/*): these load for real, so their
+// CREATE EXTENSION statements succeed natively. Anything else is stubbed.
+const CONTRIB = new Set(["amcheck", "auto_explain", "bloom", "btree_gin",
+  "btree_gist", "citext", "cube", "dict_int", "dict_xsyn", "earthdistance",
+  "file_fdw", "fuzzystrmatch", "hstore", "intarray", "isn", "lo", "ltree",
+  "pageinspect", "pg_buffercache", "pg_freespacemap", "pg_stat_statements",
+  "pg_surgery", "pg_trgm", "pg_visibility", "pg_walinspect", "pgcrypto",
+  "seg", "tablefunc", "tcn", "tsm_system_rows", "tsm_system_time",
+  "unaccent", "uuid_ossp"]);
+
+// Shape stubs for extensions that carry CATALOG-visible surface but are not
+// in the WASM bundle (E9 field finding: real supabase chains lean on all
+// three). Stubs preserve table SHAPE; they never fake runtime behavior.
+const EXT_STUBS = {
+  moddatetime: [ // both spellings: supabase installs it WITH SCHEMA extensions
+    "create or replace function moddatetime() returns trigger language plpgsql as $kd$ begin return new; end $kd$",
+    "create or replace function extensions.moddatetime() returns trigger language plpgsql as $kd$ begin return new; end $kd$",
+  ],
+  pg_cron: [
+    "create schema if not exists cron",
+    "create function cron.schedule(text, text, text) returns bigint language sql as 'select 1::bigint'",
+    "create function cron.schedule(text, text) returns bigint language sql as 'select 1::bigint'",
+    "create function cron.unschedule(text) returns boolean language sql as 'select true'",
+    "create function cron.unschedule(bigint) returns boolean language sql as 'select true'",
+  ],
+  postgis: [
+    // typmods are stripped in preprocess (domains cannot carry them); the
+    // introspected column type is still truthfully named geography/geometry.
+    // Function stubs cover the family real chains call in generated columns,
+    // constraints, and helper functions (E9 field finding); shape-neutral -
+    // they exist so DDL parses, never to fake spatial math.
+    "create domain geography as bytea",
+    "create domain geometry as bytea",
+    "create function st_x(geometry) returns double precision language sql as 'select 0::double precision'",
+    "create function st_y(geometry) returns double precision language sql as 'select 0::double precision'",
+    "create function st_x(geography) returns double precision language sql as 'select 0::double precision'",
+    "create function st_y(geography) returns double precision language sql as 'select 0::double precision'",
+    "create function st_makepoint(double precision, double precision) returns geometry language sql as 'select ''::bytea::geometry'",
+    "create function st_setsrid(geometry, integer) returns geometry language sql as 'select $1'",
+    "create function st_point(double precision, double precision) returns geometry language sql as 'select ''::bytea::geometry'",
+    "create function st_dwithin(geography, geography, double precision) returns boolean language sql as 'select true'",
+    "create function st_distance(geography, geography) returns double precision language sql as 'select 0::double precision'",
+    "create function st_geogfromtext(text) returns geography language sql as 'select ''::bytea::geography'",
+    "create function st_geographyfromtext(text) returns geography language sql as 'select ''::bytea::geography'",
+    "create function st_asgeojson(geography) returns text language sql as 'select ''::text'",
+    "create function st_astext(geography) returns text language sql as 'select ''::text'",
+    "create function extensions.st_x(geometry) returns double precision language sql as 'select 0::double precision'",
+    "create function extensions.st_y(geometry) returns double precision language sql as 'select 0::double precision'",
+    "create function extensions.st_x(geography) returns double precision language sql as 'select 0::double precision'",
+    "create function extensions.st_y(geography) returns double precision language sql as 'select 0::double precision'",
+    "create function extensions.st_makepoint(double precision, double precision) returns geometry language sql as 'select ''::bytea::geometry'",
+    "create function extensions.st_setsrid(geometry, integer) returns geometry language sql as 'select $1'",
+    "create function extensions.st_point(double precision, double precision) returns geometry language sql as 'select ''::bytea::geometry'",
+    "create function extensions.st_dwithin(geography, geography, double precision) returns boolean language sql as 'select true'",
+    "create function extensions.st_distance(geography, geography) returns double precision language sql as 'select 0::double precision'",
+    "create function extensions.st_geogfromtext(text) returns geography language sql as 'select ''::bytea::geography'",
+    "create function extensions.st_geographyfromtext(text) returns geography language sql as 'select ''::bytea::geography'",
+    "create function extensions.st_asgeojson(geography) returns text language sql as 'select ''::text'",
+    "create function extensions.st_astext(geography) returns text language sql as 'select ''::text'",
+  ],
+};
+
+const extRe = /create\s+extension\s+(?:if\s+not\s+exists\s+)?"?([a-z0-9_-]+)"?[^;]*;/gi;
+
+function scanExtensions(texts) {
+  const names = new Set();
+  for (const t of texts) {
+    for (const m of t.matchAll(extRe)) names.add(m[1].toLowerCase().replace(/-/g, "_"));
+  }
+  return names;
+}
+
+// strip CREATE EXTENSION statements for unavailable extensions; when postgis
+// is stubbed, also strip typmods so the domain stubs can carry the columns
+function preprocess(sql, stubbed) {
+  let out = sql.replace(extRe, (stmt, name) =>
+    stubbed.has(name.toLowerCase().replace(/-/g, "_")) ? "-- [keeldocs] stubbed: " + stmt.replace(/\n/g, " ").slice(0, 60) : stmt);
+  if (stubbed.has("postgis")) {
+    out = out.replace(/(geography|geometry)\s*\([^)]*\)/gi, "$1");
+    // GIST indexes over the domain stubs have no opclass; indexes carry
+    // no ERD surface (tables/columns/FKs/enums), so stripping is shape-neutral
+    out = out.replace(/create\s+(?:unique\s+)?index[^;]*using\s+gist[^;]*;/gis,
+      "-- [keeldocs] stubbed gist index (postgis unavailable);");
+  }
+  return out;
+}
 
 const INTROSPECT = readFileSync(new URL("./introspect.sql", import.meta.url), "utf8");
 
@@ -105,14 +209,36 @@ async function main() {
     process.stderr.write("sql-replay: @electric-sql/pglite is not installed (npm install restores it; it ships as an optionalDependency of keeldocs)\n");
     process.exit(1);
   }
-  const db = new PGlite();
+  const files = orderFiles(chain);
+  const rawTexts = files.map((f) => readFileSync(f, "utf8"));
+  // extension reality (E9): load what the bundle has, stub what it lacks
+  const wanted = scanExtensions(rawTexts);
+  const extensions = {};
+  const stubbed = new Set();
+  for (const name of [...wanted].sort()) {
+    if (CONTRIB.has(name)) {
+      try {
+        const mod = await import(`@electric-sql/pglite/contrib/${name}`);
+        extensions[name] = mod[name];
+        continue;
+      } catch { /* fall through to stub */ }
+    }
+    stubbed.add(name);
+    warnings.push({ kind: "extension-stubbed", file: name });
+  }
+  const db = new PGlite(Object.keys(extensions).length ? { extensions } : undefined);
   for (const s of SEED) {
     try { await db.exec(s); } catch { /* pre-existing on re-entry - fine */ }
   }
-  const files = orderFiles(chain);
+  for (const name of [...stubbed].sort()) {
+    for (const stub of EXT_STUBS[name] ?? []) {
+      try { await db.exec(stub); } catch { /* stub collision - fine */ }
+    }
+  }
+  const texts = rawTexts.map((t) => preprocess(t, stubbed));
   const made = new Set();
   for (let i = 0; i < files.length; i++) {
-    const sql = readFileSync(files[i], "utf8");
+    const sql = texts[i];
     let retries = 10;
     for (;;) {
       try {
@@ -129,7 +255,8 @@ async function main() {
           continue; // whole file rolled back -> safe to retry
         }
         // unreplayable: zero facts + a named gap - never a partial catalog
-        warnings.push({ kind: "replay-failed", file: posix(`${chain.rel}/${chain.names[i]}`) });
+        warnings.push({ kind: "replay-failed", file: posix(`${chain.rel}/${chain.names[i]}`),
+          detail: String(err.message).replace(/\s+/g, " ").slice(0, 140) });
         process.stdout.write(JSON.stringify({ tables: [], enums: [], warnings }) + "\n");
         await db.close();
         return;
