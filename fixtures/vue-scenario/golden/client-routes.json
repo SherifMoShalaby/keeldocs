@@ -1,0 +1,21 @@
+{
+ "routes": [
+  {
+   "file": "src/router/index.ts",
+   "path": "/"
+  },
+  {
+   "file": "src/router/index.ts",
+   "path": "/rides"
+  },
+  {
+   "file": "src/router/index.ts",
+   "path": "/rides/:rideId"
+  },
+  {
+   "file": "src/router/index.ts",
+   "path": "/settings"
+  }
+ ],
+ "warnings": []
+}

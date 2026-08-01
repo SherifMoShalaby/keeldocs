@@ -1,0 +1,14 @@
+id: angular-router
+capability: client-routes
+semver: 0.3.0
+tier: code            # Angular Routes arrays are object literals with `path`
+                      # + nested `children`, and lazy routes carry
+                      # loadChildren/loadComponent - composition across nesting
+                      # again, so code tier. Literal paths only; computed
+                      # entries and cross-file lazy targets are named gaps.
+entry: ./extract_ng.py
+detect: { deps: ["@angular/router", "@angular/core"] }
+inputs: ["src/**/*.ts", "**/*routing*.ts", "**/app.routes.ts"]
+requires: ["tree-sitter", "tree-sitter-typescript"]
+timeout_class: C
+emits: [route, extraction-gap]

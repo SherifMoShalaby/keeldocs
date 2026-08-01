@@ -219,6 +219,20 @@ MATRIX = [
         "golden": "fixtures/k8s-scenario/golden/services-kustomize.json",
     },
     {
+        # client-routes breadth: angular + vue nested route records through one
+        # shared object walker (lazy targets and computed paths stay gaps)
+        "name": "ng-scenario / client-routes (angular nested Routes)",
+        "cmd": [sys.executable, "providers/client-routes/angular-router/extract_ng.py",
+                "fixtures/ng-scenario"],
+        "golden": "fixtures/ng-scenario/golden/client-routes.json",
+    },
+    {
+        "name": "vue-scenario / client-routes (vue-router records)",
+        "cmd": [sys.executable, "providers/client-routes/vue-router/extract_vue.py",
+                "fixtures/vue-scenario"],
+        "golden": "fixtures/vue-scenario/golden/client-routes.json",
+    },
+    {
         "name": "compose-scenario / workspace-layout",
         "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
                 "fixtures/compose-scenario"],

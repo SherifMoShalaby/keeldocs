@@ -1,0 +1,34 @@
+{
+ "routes": [
+  {
+   "file": "src/app/app.routes.ts",
+   "path": "/"
+  },
+  {
+   "file": "src/app/app.routes.ts",
+   "path": "/admin"
+  },
+  {
+   "file": "src/app/app.routes.ts",
+   "path": "/drivers"
+  },
+  {
+   "file": "src/app/app.routes.ts",
+   "path": "/drivers/:id"
+  },
+  {
+   "file": "src/app/app.routes.ts",
+   "path": "/drivers/:id/trips"
+  }
+ ],
+ "warnings": [
+  {
+   "file": "src/app/app.routes.ts",
+   "reason": "lazy loadChildren - child routes live in another file"
+  },
+  {
+   "file": "src/app/app.routes.ts",
+   "reason": "non-literal route path"
+  }
+ ]
+}

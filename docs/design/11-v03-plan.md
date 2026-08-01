@@ -150,6 +150,43 @@ display, output caps. Phase C remains gated as designed; the hygiene bumps
 (action majors, CodeQL v4) are deliberately unbundled from this batch so a
 version guess could not redden a green tree.
 
+## 2c. Phase C status (2026-08-01, gate-by-gate)
+
+**N3 variant topology — SHIPPED.** helm (declared-values render; undeclared
+values become explicit `<unknown:…>` tokens plus named gaps; template
+control flow is itself a gap) and kustomize (bases parsed, overlays named
+rather than rendered). The Platform veto holds mechanically.
+
+**N4 async-messaging + data-flow — SHIPPED, gate met.** E15: 10/10 declared
+channels across five transports, 100% recall/precision on the committed
+labeled corpus, the computed topic held as a gap; the ground truth is
+asserted every CI run. The data-flow recipe unlocked with it.
+
+**N5 MySQL/Mongo live — still gated, correctly.** MySQL live needs the
+per-dialect least-privilege recipe reviewed (Security) and a real MySQL to
+verify against; Mongo ships only after the 3-real-repo OBSERVED pilot shows
+FP <10%. Neither gate can be met from a fixture.
+
+**N6 headless prose — still gated.** The gate is a *measurement* against a
+7B local model on the fixture corpus (rejection rate <20%); no model, no
+number, and shipping the feature without the number would invert the rule
+that made every other decision here defensible.
+
+**N7 portfolio / N8 MCP — untouched by design.** Both are demand gates
+(≥3 real multi-repo users; ≥25 named shell-less users). Building either
+before the gate trips would be the exact scope indiscipline the panel's PM
+lens exists to prevent.
+
+**Sandbox (ADR-002 residue) — one item left.** Network deny-all, read-only
+repo, and the 5MB cap all ship and are CI-proven; per-glob READ scoping
+(bubblewrap-class minimal root) and permission-manifest display remain.
+
+**Coverage denominator — an open owner question.** Client routes and
+messaging channels are extracted, bindable, and drift-checked, but stay OUT
+of the coverage percentage, which remains the owner's fixed set (endpoints,
+tables, env vars, services). Widening it would change every existing
+repo's number, so it is deliberately not done unilaterally.
+
 ## 3. Sequencing
 
 Phase A — *pay the debt that undermines the thesis*: R1 (replay; long pole,

@@ -1,0 +1,12 @@
+id: vue-router
+capability: client-routes
+semver: 0.3.0
+tier: code            # vue-router route records are the same nested object
+                      # shape (path + children), whether passed to
+                      # createRouter({routes}) or exported as a routes array.
+entry: ./extract_vue.py
+detect: { deps: ["vue-router"] }
+inputs: ["src/**/*.{ts,js}", "**/router/**/*.{ts,js}"]
+requires: ["tree-sitter", "tree-sitter-typescript"]
+timeout_class: C
+emits: [route, extraction-gap]
