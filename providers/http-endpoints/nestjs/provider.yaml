@@ -6,6 +6,7 @@ runtime: query        # executed by providers/_runtime/tsq.py
 language: typescript
 query: endpoints.scm
 detect: { deps: ["@nestjs/core"] }
+inputs: ["**/*.ts"]          # the ENFORCED read scope (ADR-002); `files` is the runtime's suffix filter
 files: [".ts"]
 skip-files: [".spec.ts", ".d.ts", ".e2e-spec.ts"]
 verbs: { Get: GET, Post: POST, Put: PUT, Patch: PATCH, Delete: DELETE, All: ALL, Head: HEAD, Options: OPTIONS }
