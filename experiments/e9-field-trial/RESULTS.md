@@ -66,3 +66,32 @@ uncovered endpoint surface. The drift FP <5% roadmap gate needs sustained
 use across edits, not one session — this trial establishes the day-one
 numbers (0 false drift, surgical staleness) that make sustained
 measurement worth running.
+
+## Round 2 (2026-08-01, after the docs merged to the app's main)
+
+Running the detector against the merged tree surfaced three more precision
+bugs and one genuine cross-capability blind spot — all fixed, all
+unit-pinned:
+
+1. **External `curl` hosts.** Route claims fired on any URL inside a curl
+   example, including `vision.googleapis.com` and preview domains. Someone
+   else's API says nothing about this repo's routes; only localhost and
+   variable-shaped hosts (`${BASE_URL}`, `<your-domain>`) are checkable now.
+2. **Prose parentheticals as links.** `[fs|path|crypto](…)` and coordinate
+   tuples matched markdown link syntax; the link class gained the pipe and
+   bare-number guards the file class already had.
+3. **Client routes did not satisfy documented paths.** The route-claim
+   check consulted only `http-endpoints`, so a documented admin PAGE — a
+   real, reachable URL with a `page.tsx` behind it — was reported missing.
+   It now consults `client-routes` as well, normalizing the three param
+   spellings (`[id]`, `{id}`, `:id`). This was a genuine capability blind
+   spot, not tuning: a new capability changed what "this route exists"
+   means, and the older detector never learned.
+
+Route claims went 18 → 5 across the two rounds, and the survivors are all
+TRUE, verified by hand against the repo: a documented edge function
+(`search-rides`) that is not among the eleven that exist, and four
+`DELETE /api/v1/...` endpoints in the TSD against a repo whose only API
+routes are three unrelated handlers. Total findings 249 → 118, with the
+receipts accurate throughout — every round of this trial moved precision,
+never recall.

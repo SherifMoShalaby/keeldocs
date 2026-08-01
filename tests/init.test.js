@@ -148,3 +148,32 @@ test("E9 precision rules: routes, globs, pipes, versions, scoped deps", (t) => {
   }
   assert.ok(!claims.includes("/src/real.ts"), "existing file is clean");
 });
+
+test("E9 round 2: external curl hosts, prose links, and client-route satisfaction", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "kd-e9b-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "docs"), { recursive: true });
+  writeFileSync(join(root, "docs", "spec.md"), [
+    "Vision: `curl https://vision.googleapis.com/v1/images:annotate`",   // someone else's API
+    "Local: `curl http://localhost:3000/api/ghost`",                     // ours, missing
+    "Admin screen: `GET /admin/drivers` and `GET /admin/drivers/{id}`.", // real PAGES
+    "Missing: `POST /api/v1/sos/{id}`.",                                 // truly absent
+    "Node builtins ([fs|path|crypto](x)) and coords ([29.9,31.2](y)).",  // prose, not links
+  ].join("\n"));
+  const facts = new Map();
+  for (const p of ["/admin/drivers", "/admin/drivers/[id]"]) {
+    facts.set(`fact:client-routes/${p}`,
+      { id: `fact:client-routes/${p}`, payload: { schema_version: 1, type: "route", attrs: { path: p } },
+        provenance: { provider: "next-routes@0.3.0", source: [{ file: "app/x/page.tsx" }] } });
+  }
+  facts.set("fact:http-endpoints/GET /api/real",
+    { id: "fact:http-endpoints/GET /api/real", payload: { schema_version: 1, type: "endpoint",
+      attrs: { method: "GET", path: "/api/real" } }, provenance: { provider: "p@1", source: [] } });
+  const r = detectLies({ root, docPaths: ["docs/spec.md"], factsById: facts, pkg: { name: "x" } });
+  const claims = r.findings.map((f) => f.claim);
+  assert.ok(claims.some((c) => c.includes("/api/v1/sos")), "a truly absent route must still flag");
+  assert.ok(claims.some((c) => c.includes("/api/ghost")), "a localhost curl to a missing path must flag");
+  for (const quiet of ["images:annotate", "/admin/drivers", "fs|path|crypto", "29.9,31.2"]) {
+    assert.ok(!claims.some((c) => c.includes(quiet)), `must suppress: ${quiet}`);
+  }
+});

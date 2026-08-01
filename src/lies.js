@@ -98,6 +98,16 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
   const endpointPaths = new Set([...factsById.keys()]
     .filter((id) => id.startsWith("fact:http-endpoints/"))
     .map((id) => id.slice("fact:http-endpoints/".length)));
+  // Client routes satisfy a documented path too (E9 field finding: an admin
+  // PAGE at app/admin/drivers is a real, reachable URL - flagging it as a
+  // missing route because it is not an HTTP handler is a cross-capability
+  // blind spot, and precision outranks recall). Params are normalized across
+  // the three spellings docs and frameworks use: [id], {id}, :id.
+  const normParam = (p) => p.replace(/\[\.\.\.([\w]+)\]/g, ":$1").replace(/\[(\w+)\]/g, ":$1")
+    .replace(/\{(\w+)\}/g, ":$1").replace(/\/+$/, "");
+  const clientRoutes = new Set([...factsById.keys()]
+    .filter((id) => id.startsWith("fact:client-routes/"))
+    .map((id) => normParam(id.slice("fact:client-routes/".length))));
   const hasEndpoints = endpointPaths.size > 0;
 
   // E9 field-measured precision rules: spec-heavy docs are full of URL routes
@@ -198,6 +208,9 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
       for (const m of lineText.matchAll(/\]\((?!https?:|#|mailto:)([^)\s]+?)(?:#[^)]*)?\)/g)) {
         if (PLACEHOLDER.test(m[1])) { suppressed++; continue; }
         if (m[1].includes("(")) { suppressed++; continue; } // route-group "(x)" segments truncate the match (E9)
+        // markdown link syntax also matches prose parentheticals: pipe-lists
+        // and bare number tuples are never paths (E9 second pass)
+        if (m[1].includes("|") || /^[\d.,\s-]+$/.test(m[1])) { suppressed++; continue; }
         const cands = resolutions(doc, m[1]);
         if (!cands.some((c) => existsSync(join(root, c)))) {
           add("link-claim", m[1], doc, line, missingReceipt(root, cands));
@@ -211,15 +224,26 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
           const path = m[2].replace(/[.,;:!?)]+$/, "");
           const key = `${m[1]} ${path.replace(/\{(\w+)\}/g, ":$1")}`;
           if (endpointPaths.has(key)) continue;
+          if (clientRoutes.has(normParam(path))) { suppressed++; continue; } // a real page
           const factId = `fact:http-endpoints/${key}`;
           add("route-claim", `${m[1]} ${path}`, doc, line,
             "no matching route registration in extracted endpoints",
             { candidates: candidatesFor(factId, factsById) });
         }
-        for (const m of lineText.matchAll(/curl[^\n]*?https?:\/\/[^\/\s]+(\/[\w\/:{}.\-]*)/g)) {
-          const p = m[1].replace(/[.,;:!?)]+$/, "").replace(/\{(\w+)\}/g, ":$1");
+        for (const m of lineText.matchAll(/curl[^\n]*?https?:\/\/([^\/\s]+)(\/[\w\/:{}.\-]*)/g)) {
+          // A curl example against SOMEONE ELSE'S API (googleapis, a preview
+          // host, a third-party webhook) says nothing about this repo's routes.
+          // Only localhost and same-repo-shaped hosts can be checked; E9 field
+          // finding - external curl lines were the loudest false-positive class.
+          const host = m[1].toLowerCase();
+          const ownHost = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/.test(host)
+            || /\$\{|\$[A-Z_]|<[a-z-]+>/.test(host); // ${BASE_URL}, $HOST, <your-domain>
+          if (!ownHost) { suppressed++; continue; }
+          const p = m[2].replace(/[.,;:!?)]+$/, "").replace(/\{(\w+)\}/g, ":$1");
+          if (p === "" || p === "/") { suppressed++; continue; }
           if ([...endpointPaths].some((e) => e.endsWith(" " + p))) continue;
-          add("route-claim", `curl ...${m[1]}`, doc, line,
+          if (clientRoutes.has(normParam(p))) { suppressed++; continue; }
+          add("route-claim", `curl ...${m[2]}`, doc, line,
             "no route registration matches this path",
             { candidates: candidatesFor(`fact:http-endpoints/GET ${p}`, factsById) });
         }
