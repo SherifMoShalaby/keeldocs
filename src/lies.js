@@ -123,11 +123,21 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
   const add = (cls, claim, doc, line, receipt, extra = {}) =>
     findings.push({ class: cls, claim, doc, line, receipt, ...extra });
 
+  // A section that documents ABSENCE ("Retired endpoints", "Removed files")
+  // inverts the test: the paths listed there are correct precisely BECAUSE
+  // they no longer resolve. Flagging them reports the doc as wrong for being
+  // right (E9 round 3 - a real "B3.1 Retired Endpoints" block).
+  const ABSENCE_SECTION = /\b(retired|removed|deleted|dropped|sunset|decommissioned)\b/i;
+
   for (const doc of docPaths) {
     const text = readFileSync(join(root, doc), "utf8");
     const lines = text.split("\n");
+    let section = "";
     lines.forEach((lineText, i) => {
       const line = i + 1;
+      const head = lineText.match(/^#{1,6}\s+(.*)$/);
+      if (head) section = head[1];
+      const documentsAbsence = ABSENCE_SECTION.test(section);
       if (TREE_CHARS.test(lineText)) { return; } // ASCII tree diagrams
       const imperative = IMPERATIVE.test(lineText);
 
@@ -139,6 +149,7 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
         // key:value snippets, and URLs - not file claims
         if (!pathLike || /^https?:/.test(tok) || tok.includes("=") || tok.includes(":") || tok.startsWith("-")) continue;
         if (PLACEHOLDER.test(tok) || CONVENTIONAL.test(tok) || imperative) { suppressed++; continue; }
+        if (documentsAbsence) { suppressed++; continue; } // a "Removed files" list is right to name gone paths
         if (tok.includes("{")) { suppressed++; continue; } // brace-glob shorthand, not a path (E9)
         if (tok.includes("|")) { suppressed++; continue; } // pipe-separated pattern list, not a path (E9)
         if (/^@?[\w.-]+(\/[\w.-]+)?@[\w.^~>=<-]+$/.test(tok)) { suppressed++; continue; } // pkg@version spec, not a path (E9)
@@ -225,6 +236,7 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
           const key = `${m[1]} ${path.replace(/\{(\w+)\}/g, ":$1")}`;
           if (endpointPaths.has(key)) continue;
           if (clientRoutes.has(normParam(path))) { suppressed++; continue; } // a real page
+          if (documentsAbsence) { suppressed++; continue; } // "Retired endpoints": absence IS the claim
           const factId = `fact:http-endpoints/${key}`;
           add("route-claim", `${m[1]} ${path}`, doc, line,
             "no matching route registration in extracted endpoints",
@@ -243,6 +255,7 @@ export function detectLies({ root, docPaths, factsById, pkg }) {
           if (p === "" || p === "/") { suppressed++; continue; }
           if ([...endpointPaths].some((e) => e.endsWith(" " + p))) continue;
           if (clientRoutes.has(normParam(p))) { suppressed++; continue; }
+          if (documentsAbsence) { suppressed++; continue; }
           add("route-claim", `curl ...${m[2]}`, doc, line,
             "no route registration matches this path",
             { candidates: candidatesFor(`fact:http-endpoints/GET ${p}`, factsById) });

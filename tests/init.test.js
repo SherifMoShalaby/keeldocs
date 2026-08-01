@@ -177,3 +177,27 @@ test("E9 round 2: external curl hosts, prose links, and client-route satisfactio
     assert.ok(!claims.some((c) => c.includes(quiet)), `must suppress: ${quiet}`);
   }
 });
+
+test("E9 round 3: a section documenting ABSENCE is right to name gone paths", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "kd-e9c-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "docs"), { recursive: true });
+  writeFileSync(join(root, "docs", "api.md"), [
+    "## Current endpoints", "",
+    "`GET /api/live` and `GET /api/ghost` are served.", "",
+    "### Retired Endpoints", "",
+    "```", "DELETE  /api/v1/legacy/*   (all)", "```",
+    "Also removed: `src/old-handler.ts`.", "",
+    "## Active again", "", "See `GET /api/other`.",
+  ].join("\n"));
+  const facts = new Map([["fact:http-endpoints/GET /api/live",
+    { id: "fact:http-endpoints/GET /api/live",
+      payload: { schema_version: 1, type: "endpoint", attrs: { method: "GET", path: "/api/live" } },
+      provenance: { provider: "p@1", source: [] } }]]);
+  const r = detectLies({ root, docPaths: ["docs/api.md"], factsById: facts, pkg: { name: "x" } });
+  const claims = r.findings.map((f) => f.claim);
+  assert.ok(claims.some((c) => c.includes("/api/ghost")), "a missing route in a NORMAL section still flags");
+  assert.ok(claims.some((c) => c.includes("/api/other")), "the rule ends when the next heading starts");
+  assert.ok(!claims.some((c) => c.includes("/api/v1/legacy")), "a retired-endpoint listing must not flag");
+  assert.ok(!claims.some((c) => c.includes("old-handler")), "nor a removed-file listing");
+});

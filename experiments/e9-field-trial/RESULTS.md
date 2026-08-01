@@ -95,3 +95,36 @@ TRUE, verified by hand against the repo: a documented edge function
 routes are three unrelated handlers. Total findings 249 → 118, with the
 receipts accurate throughout — every round of this trial moved precision,
 never recall.
+
+## Round 3 — the last five route claims, resolved by evidence
+
+Asked to "fix the five route claims", the honest split turned out to be
+4-to-1 against the tool:
+
+**Four were keeldocs false positives.** They sit under a heading reading
+*"B3.1 Retired Endpoints"* — a list of endpoints deliberately removed.
+Their absence is exactly what the document asserts, so flagging them
+reported the doc as wrong for being right. Fixed at the rule level: a
+section whose heading matches retired/removed/deleted/dropped/sunset/
+decommissioned inverts the test, and both file and route claims stay
+quiet inside it (unit-pinned, including that the rule ends at the next
+heading).
+
+**One was a real documentation bug**, wrong on three counts: the TSD
+documented search as `POST /functions/v1/search-rides` — an Edge Function
+that does not exist among the eleven that do — under the wrong name
+(`search_rides`, underscore) and with a body shape (`{origin:{lat,lng},
+filters:{…}}`) matching no version of the function. It is a PostgREST
+RPC. Corrected against the CURRENT definition in migration 0019, which is
+byte-for-byte what the client passes to `supabase.rpc('search_rides', …)`.
+
+**A new gap opened by the fix.** The corrected line —
+`POST /rest/v1/rpc/search_rides` — is still flagged, because keeldocs does
+not model the PostgREST surface at all. For a Supabase app that surface
+IS the API: every table is reachable at `/rest/v1/<table>` and every
+function at `/rest/v1/rpc/<fn>`, all of it derivable from the catalog the
+replay engine already builds. Modeling it would close this class of
+finding and document a real API surface currently invisible to the tool —
+but it also grows the coverage denominator again, which is an owner
+decision (the last one was made deliberately, not unilaterally), so it is
+recorded here rather than built.
