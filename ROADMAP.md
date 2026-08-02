@@ -11,12 +11,17 @@ budget-driven chunking. E8 found no incremental cache at all → **D1** (100k wa
 completes); then one changed file re-parsing a provider's whole input set →
 **D4** for `ts-imports` and **D6** for `express` (11,288ms → **737ms** at 1M).
 
-**Every R10 budget now passes at 10k and 100k, including the one-file-edit p50
-that failed every previous round** — 3.65s against 5s. Two honest qualifications
-go with that: the pass is by ~1% once normalised against this container's speed
-drift, so it is met but not comfortably; and 1M still misses p50 (6.0s
-unchanged, 17.3s edited) while passing everything else. The budgets have never
-been touched.
+**Every provider on the edit path is now incremental** (D9 finished the set).
+The budgets have never been touched — but the p50 result must be stated
+carefully, and the reason is itself a finding: **this container's speed drift
+between sessions (2.3x, measured on `check --no-cache` where every D-series
+change is inert) now exceeds every effect being measured.** The same code
+measured 3.65s for a 100k one-file-edit check in one session and 7.74s in the
+next. So the honest position is that D1/D2/D4/D6/D9 each have a verified
+same-session A/B effect, and that **the 100k p50 budget is not established** on
+hardware this noisy. R10's other half — two real monorepos, off this container —
+has gone from nice-to-have to the only way that budget can be honestly called
+met.
 
 This is the single tracking document. It reconciles three things that had been
 living in separate places: the original design brief's deliverables, the phased
@@ -210,7 +215,8 @@ Created by E8 on 2026-08-01, all with measured baselines rather than estimates.
 | D4 | **Per-file parse cache** — `incremental: per-file`, keyed by content digest, handed to the provider like a fact read | **Done for `ts-imports`** (`src/cache.js` + the provider, 7 unit tests, harness gate) | `ts-imports` at 1M: **28.0s → 13.7s** on an edit. A/B on the manifest key alone: 100k edit 6.49s → **5.51s**, 1M edit 48.96s → **39.34s**. Costs +300 MB RSS at 1M (914 → 1212 MB), the first change in this series that spends memory rather than saving it. *Correction: the earlier "12 providers re-run" figure was wrong — it counted providers whose globs match, not ones that run. Three do.* |
 | D6 | **`express` adopts `incremental: per-file`** | **Done** (provider refactor + `incremental: per-file`, harness gate) | `express` at 1M: **11,288 ms → 737 ms** on an edit. A/B on the manifest key alone at 100k: extraction 3,503 ms → **2,576 ms**. The refactor (per-file anon numbering; scan and publish separated) was proven **byte-identical on every fixture before any cache existed** — a flagship extractor should be provably neutral on its own first. Its key carries a **path-set digest** as well as content, because `resolve_import` probes the filesystem mid-scan: an edit re-scans one file, an add or delete re-scans everything. Gated through EDIT, ADD and DELETE, including a mount declared in a different file than the router it points at |
 | D8 | **`ts-imports` data movement** | **Open** — new, and a different shape | With parsing incremental, `ts-imports` still costs 8.4s on a 1M edit while re-parsing exactly one file. That time is reading an 18.5 MB handoff, emitting 37 MB of output and grouping 190,000 symbols — **data movement, not analysis**. Needs a compact intermediate and/or streaming (D5), not more per-file work |
-| D9 | **`env-readers` adopts `incremental: per-file`** | **Open** — small and clean | 1,187 ms at 1M, the last unadopted provider on the edit path. No cross-file resolution, so the adoption is the simple case |
+| D9 | **`env-readers` adopts `incremental: per-file`** | **Done** (harness gate) | A/B on the manifest key at 100k: extraction 4,663 ms → **4,136 ms**; 545 ms at 1M on an edit. Genuinely the simple case, and *checked* rather than assumed — its only non-content dependency is the FILENAME, which decides whether the file is scanned as `.env.example` or as code. The gate asserts the difference from express: an ADD re-scans **1** file and a DELETE re-scans **0**, where express redoes everything. If that ever changes, `incremental: per-file` has become a false claim for this provider |
+| D10 | **Benchmark on hardware that is not this container** | **Open** — now the highest-value measurement left | Session-to-session drift of 2.3x on identical code paths exceeds every optimisation in this series. R10's "2 real monorepos" clause is the fix and is still owed |
 | D3 | **`--affected`** | **Open, and demoted** | Skips providers a diff cannot have affected. The measurement shows this is the smaller half of the remaining cost — the expensive providers genuinely do read the changed file |
 | D7 | **Sandbox setup per provider run** | **Open, newly sized** | ~29% of a one-file edit at 100k is `unshare` + the minimal-root mount dance + view construction, paid once per cache miss. Nothing about it is wrong; it is simply the next-largest slice once parsing is dealt with, and no per-provider work will touch it |
 | D5 | **Streaming provider output** | **Deferred on evidence, not forgotten** | D2's 256 MB ceiling binds at ~42.7 MB of declared input (~1.9M LOC), so the wall moved rather than vanished. NDJSON on a spooled descriptor would remove it, but RSS is 914 MB against a 2 GB budget across a 100× size range — memory is not the binding constraint at any size being asked about today |
@@ -218,10 +224,11 @@ Created by E8 on 2026-08-01, all with measured baselines rather than estimates.
 Re-run E8 after each; `experiments/e8-scale/RESULTS.md` holds the baseline and
 the numbers after D1, D2 and D4, and the R10 budgets have never been touched.
 The honest statement of what keeldocs handles is **a million lines / 200
-packages, at a 1.8s warm check and a 3.7s one-file-edit check at 100k, and 6.0s
-/ 17.3s at 1M**. The 100k figures meet every R10 budget; the 1M p50 does not.
-Public material may say the budgets are met at 100k *and must say on what
-hardware*, because the margin is about one percent.
+packages**, with a one-file-edit check that has been measured between 3.65s and
+7.74s at 100k *for the same code* depending on how loaded this container was.
+No public material should quote a p50 figure until D10 produces one on stable
+hardware. What IS established is every same-session A/B in the table above, and
+that the tool completes correctly at every size.
 
 One methodological note that now matters more than any single number: this
 container's run-to-run variance is large — `check --no-cache`, which exercises

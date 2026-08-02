@@ -2042,6 +2042,62 @@ def main():
     except Exception as e:
         failures.append(f"D6 express per-file scan: {why(e)}")
 
+    # ---- D9: env-readers adopts the per-file cache. This is the provider with
+    # NO cross-file dependency, and the gate checks that too: an add re-scans
+    # only the added file and a delete re-scans nothing, where express (whose
+    # key carries a path-set digest) has to redo everything. If this provider
+    # ever starts behaving like express, its manifest claim has become false.
+    try:
+        import shutil as _sh9, tempfile as _tf9
+        tmp = _tf9.mkdtemp(prefix="keeldocs-d9-")
+        repo = os.path.join(tmp, "repo")
+        _sh9.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), repo,
+                      ignore=_sh9.ignore_patterns("golden", ".keeldocs"))
+        SNIP9 = ('import("%s/src/facts.js").then(async ({extractAll}) => {'
+                 'const {jcs} = await import("%s/src/jcs.js");'
+                 'const r = extractAll(process.argv[1], {});'
+                 'const e = [...r.factsById.values()].filter(f => f.payload.type === "env-var");'
+                 'console.log(JSON.stringify({n: e.length, rescanned: r.cache.reparsed["env-readers"] ?? 0,'
+                 ' err: r.toolError ?? null,'
+                 ' dump: jcs(e.map(f => ({id: f.id, hash: f.hash, payload: f.payload, provenance: f.provenance}))'
+                 '.sort((a,b) => a.id.localeCompare(b.id)))}));'
+                 '});') % (ROOT.replace("\\", "/"), ROOT.replace("\\", "/"))
+
+        def envs(no_cache=False):
+            r = subprocess.run(["node", "-e", SNIP9, repo], capture_output=True, text=True, timeout=600,
+                               env={**os.environ, **({"KEELDOCS_NO_CACHE": "1"} if no_cache else {})})
+            return json.loads(r.stdout.strip().splitlines()[-1])
+
+        base = envs()
+        assert base["err"] is None and base["n"] == 2, base
+        app = os.path.join(repo, "app.js")
+
+        W(app, open(app).read() + "\nconst extra = process.env.D9_PROBE;\n")
+        edited = envs()
+        assert edited["rescanned"] == 1, f"one file changed, one re-scan; got {edited['rescanned']}"
+        assert edited["dump"] == envs(True)["dump"], "edited incremental answer != from-scratch"
+        assert "D9_PROBE" in edited["dump"], "the new read never reached the facts"
+
+        W(os.path.join(repo, "added.js"), "export const k = process.env.D9_ADDED;\n")
+        added = envs()
+        assert added["dump"] == envs(True)["dump"], "added incremental answer != from-scratch"
+        assert "D9_ADDED" in added["dump"]
+        assert added["rescanned"] == 1, \
+            ("an ADD re-scanned %d files: this provider has no cross-file dependency, so only the new file "
+             "should be scanned - if that changed, `incremental: per-file` is now a false claim"
+             % added["rescanned"])
+
+        os.remove(os.path.join(repo, "added.js"))
+        gone = envs()
+        assert gone["dump"] == envs(True)["dump"], "deleted incremental answer != from-scratch"
+        assert "D9_ADDED" not in gone["dump"], "a var survived the deletion of the file that read it"
+        assert gone["rescanned"] == 0, f"a DELETE should re-scan nothing; got {gone['rescanned']}"
+        rmtree(tmp)
+        print("  PASS  D9 env-readers per-file scan: correct through edit/ADD/DELETE, and an ADD "
+              "re-scans 1 file where express re-scans all")
+    except Exception as e:
+        failures.append(f"D9 env-readers per-file scan: {why(e)}")
+
     # ---- D2 input-proportional output cap (R10): a provider whose LEGITIMATE
     # output exceeds the old 5MB constant must complete with nothing lost, and a
     # runaway must still be killed. Both halves matter: the first without the

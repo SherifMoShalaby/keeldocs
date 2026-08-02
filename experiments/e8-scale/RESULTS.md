@@ -602,3 +602,92 @@ provider incremental, a one-file edit at 1M would still pay the sandbox setup
 per miss (~29% of an edit at 100k, D7) and the cost of moving several tens of
 megabytes of facts through the engine. That is a different problem and should
 be named as one rather than chased with another provider adoption.
+
+---
+
+# Re-run after D9 (env-readers adopts the per-file cache) — 2026-08-02
+
+The last unadopted provider on the edit path. The roadmap called it "the simple
+case"; that was checked rather than assumed, and this time the assumption held.
+
+## It really is the simple case, and the gate proves it
+
+`env-readers` produces, per file, a list of `(name, line)` it found. There is
+no filesystem probing during the scan, no cross-file resolution, no run-wide
+counter. The only thing besides the file's bytes that changes its work is the
+**filename**, because that decides which scanner runs — a `.env.example` and a
+`.ts` file with identical bytes are two completely different scans. So the key
+is `<content digest>|<example|code>` and the stored findings are path-free, with
+the path stamped on use.
+
+The difference from `express` is observable, and the harness asserts it:
+
+| mutation | `env-readers` re-scans | `express` re-scans |
+|---|---|---|
+| edit one file | 1 | 1 |
+| **add a file** | **1** (only the new one) | **everything** |
+| **delete a file** | **0** | **everything** |
+
+`express` has to redo everything on an add or delete because its key carries a
+path-set digest — `resolve_import` probes the filesystem mid-scan, so adding a
+file changes what an untouched file resolves to. `env-readers` has no such
+dependency, and the gate fails if it ever acquires one: an ADD that re-scans
+more than the added file means `incremental: per-file` has become a false claim
+for this provider.
+
+## What it buys
+
+A/B toggling only the manifest key, same tree, same session:
+
+| | with `incremental: per-file` | without |
+|---|---|---|
+| 100k, one-file edit (extraction only) | **4,136 ms** | 4,663 ms |
+
+Per-provider at 1M on a one-file edit: **545 ms** (plus 50 ms to write the
+cache), down from 1,187 ms measured in the D6 session.
+
+## A methodological finding that now outranks the numbers
+
+This session's bench: 10k edit 2.50s, 100k edit 7.74s. The D6 session measured
+3.65s at 100k. **That is not a regression.** The control says so: `check
+--no-cache`, where every D-series change is inert, ran **9.15s in the D6 session
+and 21.07s here — the machine is 2.3× slower today.** Normalised, this session's
+100k edit is ~3.4s, slightly better than D6's 3.65s and consistent with the A/B.
+
+The point worth recording is that **the container's drift between sessions
+(2.3×) now exceeds every effect this experiment is trying to measure** (D6 was
+0.9s, D9 is 0.5s). Bench absolutes from this environment can no longer function
+as budget verdicts, and this report should stop presenting them that way. What
+survives:
+
+- **A/B toggling one variable in one session** — trustworthy, and it is how D4,
+  D6 and D9 are each stated.
+- **Per-provider timings inside one process** (`KEELDOCS_TIME=1`) — trustworthy
+  for ratios within a run.
+- **Absolute wall-clock against a 5-second budget** — not trustworthy here at
+  all.
+
+So the D6 conclusion stands but its framing needs correcting: "every R10 budget
+passes at 10k and 100k" was true of the machine that measured it, and this
+session would have reported a *failure* of the same budget on the same code.
+**The 100k p50 result is not established.** The R10 gate's other half — two real
+monorepos, on hardware that is not this container — has gone from a nice-to-have
+to the only way this budget can honestly be called met.
+
+## Results (this session; see the caveat above before reading them as verdicts)
+
+| size | init | cold (`--no-cache`) | warm #1 | warm #2 | after 1-file edit | peak RSS | exit |
+|---|---|---|---|---|---|---|---|
+| 10k | 13.28s | 14.19s | 1.65s | 1.62s | 2.50s | 900 MB | 0 |
+| 100k | 19.77s | 21.07s | 3.81s | 3.22s | 7.74s | 908 MB | 0 |
+
+## What is left
+
+Every provider on the edit path is now incremental. What remains at 1M is not
+per-file work and cannot be reached by more of it:
+
+- **D8** — `ts-imports` spends ~8s on an edit moving data, not parsing: an
+  18.5 MB handoff in, 37 MB of output out, 190,000 symbols grouped. Needs a
+  compact intermediate or streaming (D5).
+- **D7** — sandbox setup, ~29% of an edit at 100k, paid once per cache miss.
+- **D3** — `--affected`, still the smallest of the three.

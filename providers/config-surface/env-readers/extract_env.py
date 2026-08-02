@@ -31,6 +31,48 @@ READS = re.compile(
 DECL = re.compile(r"^([A-Z][A-Z0-9_]*)\s*=")
 
 
+def scan_example(path):
+    """[(name, line)] declared in a .env.example-style file. Path-free."""
+    found = []
+    for i, raw in enumerate(open(path, encoding="utf-8", errors="replace")):
+        m = DECL.match(raw.strip())
+        if m:
+            found.append([m.group(1), i + 1])
+    return found
+
+
+def scan_code(path):
+    """[(name, line)] read from source. Path-free."""
+    try:
+        text = open(path, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return None
+    found = []
+    for i, line in enumerate(text.split("\n")):
+        for m in READS.finditer(line):
+            found.append([next(g for g in m.groups() if g), i + 1])
+    return found
+
+
+def load_handoff():
+    """The engine's per-file scan cache, if it supplied one (D9).
+
+    Every failure path degrades to a full scan rather than to a wrong answer:
+    no env var, missing file, malformed JSON, a digest the engine never
+    mentioned. The worst case is slow, never incorrect."""
+    path = os.environ.get("KEELDOCS_INCREMENTAL")
+    if not path:
+        return {}, {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            h = json.load(f)
+        if not isinstance(h, dict):
+            return {}, {}
+        return h.get("parsed") or {}, h.get("digests") or {}
+    except Exception:
+        return {}, {}
+
+
 def main(root):
     vars_ = {}
 
@@ -41,28 +83,43 @@ def main(root):
         v["declared_in_example"] |= kind == "example"
         v["sources"].append({"file": file, "line": line, "kind": kind})
 
+    known, digests = load_handoff()
+    fresh = {}
+
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP)
         for fn in sorted(filenames):
-            rel = os.path.relpath(os.path.join(dirpath, fn), root).replace(os.sep, "/")
-            if EXAMPLE.match(fn):
-                for i, raw in enumerate(open(os.path.join(dirpath, fn), encoding="utf-8", errors="replace")):
-                    m = DECL.match(raw.strip())
-                    if m:
-                        add(m.group(1), rel, i + 1, "example")
-            elif fn.endswith(CODE_EXT):
-                try:
-                    text = open(os.path.join(dirpath, fn), encoding="utf-8", errors="replace").read()
-                except OSError:
+            full = os.path.join(dirpath, fn)
+            rel = os.path.relpath(full, root).replace(os.sep, "/")
+            # The FILENAME decides which scanner runs, so it is part of the key:
+            # a `.env.example` and a `.ts` file with identical bytes are two
+            # completely different scans. Nothing else here depends on anything
+            # outside this file - no filesystem probing, no cross-file
+            # resolution, no run-wide counters - so content plus branch is the
+            # whole of it, and the stored findings are path-free.
+            kind = "example" if EXAMPLE.match(fn) else "code" if fn.endswith(CODE_EXT) else None
+            if kind is None:
+                continue
+            d = digests.get(rel)
+            key = f"{d}|{kind}" if d else None
+            found = known.get(key) if key else None
+            if found is None:
+                found = scan_example(full) if kind == "example" else scan_code(full)
+                if found is None:      # unreadable: a real state, not a cacheable one
                     continue
-                for i, line in enumerate(text.split("\n")):
-                    for m in READS.finditer(line):
-                        add(next(g for g in m.groups() if g), rel, i + 1, "code")
+                if key:
+                    fresh[key] = found
+            for name, line in found:
+                add(name, rel, line, kind)
 
     out = sorted(vars_.values(), key=lambda v: v["name"])
     for v in out:
         v["sources"].sort(key=lambda s: (s["file"], s["line"]))
-    print(json.dumps({"vars": out}, indent=1))
+    payload = {"vars": out}
+    # engine plumbing, stripped before anything sees it as a fact
+    if fresh:
+        payload["_parsed"] = fresh
+    print(json.dumps(payload, indent=1))
 
 
 if __name__ == "__main__":

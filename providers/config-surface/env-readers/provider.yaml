@@ -10,3 +10,4 @@ inputs: ["**/*.{js,mjs,cjs,ts,tsx,jsx,prisma,py,go,java,dart}", "**/.env.example
 requires: []
 timeout_class: D
 emits: [env-var]
+incremental: per-file   # D9: a file's env reads depend on nothing but that file (and its name)
