@@ -1,32 +1,33 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-02.** `main` at `a70de3e` · 88 commits · engine `0.2.0-dev.0` ·
-tagged `v0.1.0-rc.1` at `927b4cb` · 3-OS CI green (Windows non-blocking) ·
-151 unit tests · 39 extractor goldens · 80 harness checks.
+**As of 2026-08-02, end of session.** 90 commits on `main` · engine
+`0.2.0-dev.0` · tagged `v0.1.0-rc.1` at `927b4cb` · 3-OS CI green (Windows
+non-blocking) · 151 unit tests · 39 extractor goldens · 80 harness checks.
+*(This header names counts and the release tag, not a HEAD SHA — a header that
+quotes its own commit is false the moment it lands and needs a second commit to
+become true. That happened four times in one day; the fix is to stop.)*
 
-**E8 and E11 ran on 2026-08-01 and everything they found is now fixed except
-the 1M p50.** E11's flagship ERD stopped rendering between 100 and 250 tables →
-budget-driven chunking. E8 found no incremental cache at all → **D1** (100k warm
-9.66s → 2.23s); then 1M LOC dying on a constant output cap → **D2** (1M now
-completes); then one changed file re-parsing a provider's whole input set →
-**D4** for `ts-imports` and **D6** for `express` (11,288ms → **737ms** at 1M).
+**Nothing in this document is waiting to be built.** The two experiments that
+ran on 2026-08-01 both failed and both are resolved. E11: the flagship ERD
+stopped rendering between 100 and 250 tables, and `src/render.js` gained
+budget-driven chunking — every size to 1,000 tables now draws every table. E8:
+there was no incremental cache at all (**D1**, 100k warm 9.66s → 2.23s) and 1M
+LOC died on a constant output cap (**D2**, 1M now completes). Those two were
+what the failure actually required. Seven more items followed, are honestly
+measured, and were past the point of need — section 6 keeps them as a record.
 
-**The scale work is closed** (section 6 is now a record, not a queue). D1 and
-D2 were what the failure actually required — an incremental cache the tool had
-never had, and an output cap that scales with its input — after which 1M LOC
-completes cleanly. Seven further items followed and are honestly measured, but
-they were past the point of need: profiling always finds a next-largest
-bottleneck, and a list generated that way has no end.
-The budgets have never been touched — but the p50 result must be stated
-carefully, and the reason is itself a finding: **this container's speed drift
-between sessions (2.3x, measured on `check --no-cache` where every D-series
-change is inert) now exceeds every effect being measured.** The same code
-measured 3.65s for a 100k one-file-edit check in one session and 7.74s in the
-next. So the honest position is that D1/D2/D4/D6/D9 each have a verified
-same-session A/B effect, and that **the 100k p50 budget is not established** on
-hardware this noisy. R10's other half — two real monorepos, off this container —
-has gone from nice-to-have to the only way that budget can be honestly called
-met.
+**One number is deliberately not claimed.** The budgets were never moved, and
+the p50 has no verdict: this container's timing drifts up to **2.3× between
+sessions on identical code paths** (measured on `check --no-cache`, where every
+scale change is inert), which is larger than any effect the series measured.
+Each optimisation has a verified same-session A/B; the *budget* does not have a
+result. RAM, cold runs and completes-at-all pass at every size to 1M. Closing
+R10 honestly needs one run on stable hardware plus its two-real-monorepo clause
+— a measurement, in section 4, not more code. **No public material should quote
+a p50 until then.**
+
+**What is left is five owner actions, all in section 4**, and the first gates
+three of the others.
 
 This is the single tracking document. It reconciles three things that had been
 living in separate places: the original design brief's deliverables, the phased
