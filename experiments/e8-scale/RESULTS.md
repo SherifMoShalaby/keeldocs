@@ -856,3 +856,74 @@ There is no third redundancy of this kind left. Further reduction means
 interning the repetitive small strings (`kind`) behind an index table, which
 trades readable goldens and a simple contract for ~3 MB — a worse deal than
 either of the two that came before it, and not filed as debt on that basis.
+
+---
+
+# D7 (sandbox setup per provider run) — measured 2026-08-02, largely REFUSED
+
+D7 was filed after D4 with the claim that *"~29% of a one-file edit at 100k is
+`unshare` + the minimal-root mount dance + view construction."* **That figure was
+wrong by roughly 5x, and it was wrong the same way the "12 providers" figure in
+D4 was wrong: it was an unexplained residual attributed to a plausible cause
+rather than a measurement.**
+
+Measured directly, by running the real wrapper around a no-op:
+
+| | 100k (1,400 declared files) | 1M (5,400) |
+|---|---|---|
+| view build (hardlink farm) | 24 ms | 87 ms |
+| namespace + 14 tmpfs masks + 2 keeps + view mount | 60 ms | 79 ms |
+| view teardown | 34 ms | 84 ms |
+| **per cache miss** | **118 ms** | **250 ms** |
+| across the 3 providers that miss on an edit | ~354 ms | ~750 ms |
+
+That is **2-6% of an edit**, not 29%. The namespace and mount work — the part
+that sounds expensive — is roughly constant at 60-79 ms regardless of repo size;
+what scales is the hardlink farm.
+
+## What was built: the one change with no safety surface
+
+`buildView` issued one recursive `mkdir` per *file*; a package of thirty modules
+asked for the same parent thirty times. It now memoises directories: **16% off
+view construction** (11 ms at 100k, 19 ms at 1M). Two tests assert the view's
+contents are byte-for-byte unchanged, because what is inside the view *is* what
+the provider can read.
+
+That is a rounding error and is not presented as anything else. It is here
+because it was free.
+
+## What was refused, and why
+
+**Persisting views between runs** would remove most of build + teardown (~58 ms
+per miss at 100k, ~171 ms at 1M). It is refused on two counts. A view is a farm
+of hardlinks, which point at *inodes*: when an editor replaces a file the old
+link still resolves to the old content, so a persisted view is a stale-content
+hazard of exactly the kind this project refuses — and one that would produce
+confidently wrong documentation rather than an error. And ADR-002 tears the view
+down on every path out *deliberately*, because a leaked view inside the
+repository is indistinguishable from repository content to anything that walks
+it; the current code carries two teardowns for that reason. Trading a stated
+safety property for ~150 ms is not a trade worth making.
+
+**Sharing one view across providers** requires an exact match of resolved files,
+directory grants, engine links *and* declared fact reads — sharing across
+differing fact reads would hand one provider another's resolved facts, which is
+a scoping violation rather than a speedup. Measured on the synthetic: ten
+providers do share the 1,400-file / no-fact-reads signature, but of the three
+that actually run and miss on an edit, `env-readers` resolves a different set
+(1,401 files) and `ts-imports` reads `workspace-layout` facts. **It saves
+nothing on the measured path.** On a polyglot repo where several of those ten
+detect, it would — so it is filed as a conditional item, not a general one.
+
+## Verdict
+
+**D7 is closed as measured-and-refused rather than left open as if it were
+pending work.** The premise was mis-sized, the free part is done, and the
+remaining reduction costs a security property that four ADR-002 amendments were
+spent getting right, for a few hundred milliseconds that this container cannot
+even measure reliably (see D10).
+
+The general lesson is the one this experiment keeps re-teaching: **a residual is
+not a measurement.** Twice now a number has been filed by subtracting what was
+understood from the total and naming the remainder after the most plausible
+suspect. Both times the suspect was innocent.

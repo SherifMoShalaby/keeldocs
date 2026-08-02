@@ -154,9 +154,15 @@ export function resolveInputs(root, inputs, allFiles) {
 // before the view is remounted read-only, since nothing can be created after.
 export function buildView(root, viewDir, { files, dirs, links = [] }) {
   mkdirSync(viewDir, { recursive: true });
+  // One mkdir per DIRECTORY, not per file. `files` is sorted, so a package of
+  // 30 modules used to issue 30 recursive mkdir calls for the same parent.
+  // Worth 16% of view construction (D7) and nothing else: the view's contents,
+  // and therefore what the provider can read, are byte-for-byte what they were.
+  const made = new Set([viewDir]);
   for (const rel of files) {
     const dst = join(viewDir, rel);
-    mkdirSync(dirname(dst), { recursive: true });
+    const parent = dirname(dst);
+    if (!made.has(parent)) { mkdirSync(parent, { recursive: true }); made.add(parent); }
     try { linkSync(join(root, rel), dst); }
     catch (err) {
       if (err.code === "EEXIST") continue;

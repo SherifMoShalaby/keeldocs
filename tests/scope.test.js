@@ -93,3 +93,37 @@ test("repoFiles skips engine-owned and vendored trees", (t) => {
   });
   assert.deepEqual(repoFiles(root), ["src/a.ts"]);
 });
+
+
+// ---------------------------------------------------------------------------
+// D7: view construction memoises directory creation. The only thing that may
+// change is how many syscalls it takes - never what ends up inside the view,
+// because what is inside the view IS what the provider can read.
+
+test("memoised directory creation builds the identical view", (t) => {
+  const root = tmpRepo(t, {
+    "a/b/c/one.ts": "1", "a/b/c/two.ts": "2", "a/b/three.ts": "3",
+    "a/four.ts": "4", "five.ts": "5", "deep/x/y/z/six.ts": "6",
+  });
+  const view = join(root, ".view");
+  const { files } = resolveInputs(root, ["**/*.ts"], repoFiles(root));
+  buildView(root, view, { files, dirs: [], links: [] });
+  // every declared file present, at its own path, with its own content
+  for (const rel of files) {
+    assert.equal(readFileSync(join(view, rel), "utf8"), readFileSync(join(root, rel), "utf8"),
+      `${rel} missing or wrong in the view`);
+  }
+  // and nothing else: a memo that skipped a mkdir would show up as a gap here
+  const inView = repoFiles(view).sort();
+  assert.deepEqual(inView, [...files].sort(),
+    "the view contains exactly the declared set - no more, no fewer");
+});
+
+test("a view is still built correctly when every file shares one parent", (t) => {
+  const root = tmpRepo(t, { "src/a.ts": "a", "src/b.ts": "b", "src/c.ts": "c" });
+  const view = join(root, ".view");
+  const { files } = resolveInputs(root, ["src/*.ts"], repoFiles(root));
+  buildView(root, view, { files, dirs: [], links: [] });
+  assert.deepEqual(repoFiles(view).sort(), ["src/a.ts", "src/b.ts", "src/c.ts"],
+    "the shared parent is created once and still holds all three");
+});
