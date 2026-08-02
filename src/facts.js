@@ -399,6 +399,15 @@ function envFacts(raw, provenanceBase) {
   return { facts, gaps: [] };
 }
 
+// The re-anchoring matcher (ADR-007 S2) compares NAMELESS signature sets, so a
+// rename does not look like a deletion. It was a provider-emitted field until
+// D8 measured it as the single largest thing on the wire (10.71 MB of a 36.7 MB
+// payload at 1M LOC) and provably a pure function of what was already there -
+// exact on all 190,400 symbols. Providers may still send it; when they do not,
+// it is derived here with the identical rule, so the two spellings cannot drift.
+const namelessOf = (name, sigs) =>
+  (sigs ?? []).map((sig) => sig.includes(` ${name} `) ? sig.replace(` ${name} `, " § ") : sig);
+
 function moduleGraphFacts(raw, provenanceBase, packages) {
   // Longest-prefix package owner; "." (single-package root) matches everything.
   const pkgFor = (path) => {
@@ -435,7 +444,8 @@ function moduleGraphFacts(raw, provenanceBase, packages) {
       // module path lives in the ID + attrs so a move IS an identity change (S1).
       payload: { schema_version: 1, type: "symbol",
         attrs: { name: s.name, module: s.path, package: pkg, kind: s.kind, sigs: s.sigs } },
-      provenance: { ...provenanceBase, source: [{ file: s.path }], nameless: s.nameless },
+      provenance: { ...provenanceBase, source: [{ file: s.path }],
+                    nameless: s.nameless ?? namelessOf(s.name, s.sigs) },
     });
   }
   const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? "unknown", file: w.file ?? null }));

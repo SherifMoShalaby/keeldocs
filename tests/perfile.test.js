@@ -120,3 +120,42 @@ test("`_parsed` is engine plumbing and never reaches a fact", (t) => {
   }
   assert.ok(!dump(r).includes("_parsed"));
 });
+
+
+// ---------------------------------------------------------------------------
+// D8: `nameless` moved from the provider's wire format into the engine. It is
+// re-anchoring evidence (ADR-007 S2), so getting the rule wrong would not
+// change a single fact hash - it would quietly degrade rename detection, which
+// is worse, because nothing would fail.
+
+test("a provider that omits `nameless` still yields it, derived, in the facts", () => {
+  // ts-imports stopped emitting the field in D8. This runs the real provider
+  // through the real engine and asserts the evidence survived the diet.
+  const r = extractAll(join(ROOT, "fixtures", "symbols-scenario"), {});
+  const syms = [...r.factsById.values()].filter((f) => f.payload.type === "symbol");
+  assert.ok(syms.length > 0, "the fixture must produce symbols or this asserts nothing");
+  for (const f of syms) {
+    const n = f.provenance.nameless;
+    assert.ok(Array.isArray(n) && n.length === f.payload.attrs.sigs.length,
+      `${f.id} lost its re-anchoring evidence`);
+  }
+  const login = syms.find((f) => f.payload.attrs.name === "login");
+  assert.ok(login, "expected the fixture's `login` symbol");
+  assert.ok(login.provenance.nameless.every((x) => !x.includes(" login ")),
+    "the declaration position must be anonymised, or S2 cannot match across a rename");
+  assert.ok(login.provenance.nameless.some((x) => x.includes(" § ")));
+});
+
+test("the derivation replaces the FIRST occurrence only, and leaves a signature that never names the symbol alone", () => {
+  // ported verbatim from the provider it replaced; these are the two cases that
+  // rule actually has
+  const derive = (name, sigs) =>
+    sigs.map((sig) => sig.includes(` ${name} `) ? sig.replace(` ${name} `, " § ") : sig);
+  assert.deepEqual(derive("login", ["function login ( string ) : login"]),
+                   ["function § ( string ) : login"],
+    "only the declaration position is anonymised; a return type that happens to share the name is not");
+  assert.deepEqual(derive("Session", ["interface Session { user : string }"]),
+                   ["interface § { user : string }"]);
+  assert.deepEqual(derive("x", ["const y = <number>"]), ["const y = <number>"],
+    "a signature that does not contain the delimited name is passed through untouched");
+});

@@ -388,8 +388,11 @@ def main(root):
         key = f"{d}|{pathset}:{rel}" if d else None
         blob = known.get(key) if key else None
         if blob is not None:
-            FileScan.replay(abspath, root, blob)
-            continue
+            try:
+                FileScan.replay(abspath, root, blob)
+                continue
+            except Exception:
+                pass   # unreadable entry -> scan it again, never crash
         fs = FileScan(abspath, root)
         if key:
             enc = fs.serialize(root)

@@ -691,3 +691,91 @@ per-file work and cannot be reached by more of it:
   compact intermediate or streaming (D5).
 - **D7** — sandbox setup, ~29% of an edit at 100k, paid once per cache miss.
 - **D3** — `--affected`, still the smallest of the three.
+
+---
+
+# Re-run after D8 (ts-imports data movement) — 2026-08-02
+
+D9 ended with a warning that this container can no longer decide a budget.
+D8 is the one remaining item that sidesteps that entirely, because **its win is
+in bytes, and byte counts are exact and machine-independent where wall-clock is
+not.** Everything below is a byte count or a within-process ratio.
+
+## What the 47 MB actually was
+
+Measured field by field on the 1M-LOC synthetic (190,400 symbols, 5,400
+modules), compact-serialised so the accounting is of data rather than layout:
+
+| | size | verdict |
+|---|---|---|
+| whitespace (`indent=1`) | 10.16 MB | **layout, not data** — and 1,046 ms to produce |
+| `nameless` | 10.71 MB | **derivable** from `(name, sigs)` — exact on 190,400/190,400 |
+| `sigs` | 9.57 MB | data |
+| `path` | 6.20 MB | 5,200 distinct values repeated 190,400 times |
+| `kind` | 3.09 MB | data (repetitive) |
+| `package` | 2.54 MB | data (repetitive) |
+| `name` | 2.32 MB | data |
+
+Two of the three largest items on the wire were not information.
+
+## What changed
+
+**Compact serialisation.** `json.dumps(..., indent=1)` → `separators=(",",":")`.
+Measured: 1,324 ms → 278 ms to serialise, and 10.2 MB less to move. Pretty
+printing this payload was 4.8× slower than emitting it. Fixture goldens stay
+readable regardless — the harness compares them with `canonical()` (json.loads
+then sort_keys), so formatting was never part of that contract — and
+`scripts/dev/refresh-golden.py` now regenerates them pretty on purpose, keeping
+the review artifact and the transport format deliberately separate rather than
+accidentally identical.
+
+**`nameless` derived by the engine.** It is re-anchoring evidence (ADR-007 S2),
+provenance rather than payload, so it never touched a fact hash — but it was the
+single largest field on the wire. It is a pure function of `(name, sigs)`,
+verified exact on every one of the 190,400 symbols, and the rule is now ported
+verbatim into `moduleGraphFacts`. The contract keeps the field **optional**, so
+providers that still send it are unaffected; only `ts-imports` stopped.
+
+**Positional intermediate.** The D4 per-file cache stored four field names per
+declaration in a blob only that provider ever reads. Handoff: 18.5 → 13.6 MB.
+
+## Result
+
+| | before | after | |
+|---|---|---|---|
+| output on the wire | 46.86 MB | **25.81 MB** | −45%, −21.1 MB |
+| per-file handoff | 18.50 MB | **13.60 MB** | −26% |
+| provider, one-file edit | 7,069 ms | **1,836 ms** | within-process, same machine |
+
+All 190,400 symbols identical including the derived `nameless`; all 5,400
+modules identical; module-graph facts byte-identical on every fixture.
+
+## A bug this found in the work that preceded it
+
+Changing the intermediate's shape made every existing per-file cache entry
+structurally unreadable, and the provider **crashed** on them — a `KeyError`,
+not a cache miss. The stated design principle for all of D4/D6/D9 is that every
+failure path "degrades to a full parse rather than to a wrong answer", and the
+implementation did not honour it for an unexpected *shape*.
+
+Both halves are fixed: `CACHE_V` is bumped so a format change discards old
+entries, and all three incremental providers now refuse a blob they cannot read
+and re-parse instead. The principle was written down three items ago; it took a
+format change to find out it was only written down.
+
+## The gate caught its own fixture going stale
+
+D2's harness gate asserts that its fixture exceeds the *old* 5 MB constant, or
+it would be proving nothing. D8 shrank that fixture's output from 7.2 MB to
+4.0 MB, and the gate failed with *"fixture no longer exceeds the old constant —
+this gate would pass vacuously"*. The fixture grew; the assertion did its job.
+A gate that only fails when the feature breaks is half a gate.
+
+## What is left in the 25.81 MB
+
+`sigs` 9.57 MB is irreducible — it is the declaration shapes drift is defined
+over. `path` is 6.20 MB: 5,200 distinct values repeated 190,400 times, removable
+by grouping symbols under their file. That is a schema change to the
+`module-graph` wire shape, which four providers emit, so it needs the same
+optional-field treatment `nameless` got and is worth roughly another 23%. Filed
+rather than done: the first 45% cost nothing in contract churn and this would.

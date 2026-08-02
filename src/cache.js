@@ -63,7 +63,12 @@ import { join } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { jcs } from "./jcs.js";
 
-const CACHE_V = 1;
+// Bumped to 2 by D8: the per-file intermediate went positional, so entries
+// written by v1 are structurally incompatible. A version bump discards them;
+// the providers below ALSO refuse a blob they cannot read, because a cache that
+// crashes on an unexpected shape is not "degrades to a full parse" - it is a
+// broken run, and this exact mistake produced one during D8's own development.
+const CACHE_V = 2;
 
 // The bypass. Env rather than a threaded option because extractAll has nine
 // call sites and a cache you cannot turn off at any of them is not a cache, it

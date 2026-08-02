@@ -103,6 +103,9 @@ def main(root):
             d = digests.get(rel)
             key = f"{d}|{kind}" if d else None
             found = known.get(key) if key else None
+            if found is not None and not all(
+                    isinstance(x, list) and len(x) == 2 for x in found):
+                found = None   # unreadable entry -> scan it again, never crash
             if found is None:
                 found = scan_example(full) if kind == "example" else scan_code(full)
                 if found is None:      # unreadable: a real state, not a cacheable one

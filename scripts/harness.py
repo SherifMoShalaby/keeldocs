@@ -2107,11 +2107,14 @@ def main():
         tmp = _tf2.mkdtemp(prefix="keeldocs-d2-")
         KD = os.path.join(ROOT, "bin", "keeldocs.js")
 
-        # (a) legitimate large output: 222 files / 160k lines makes ts-imports
-        # emit ~7.2MB from ~4.4MB of input - over the old constant, under 6x.
+        # (a) legitimate large output: 252 files / 250k lines makes ts-imports
+        # emit ~6.2MB - over the old 5MB constant, well under the 6x ratio.
+        # Grown from 20x10x800 when D8 halved the wire format: the assertion
+        # below caught the fixture falling under the constant and refused to
+        # pass vacuously, which is the gate working rather than a gate to fix.
         big = os.path.join(tmp, "big")
         subprocess.run([sys.executable, os.path.join(ROOT, "experiments", "e8-scale", "gen.py"),
-                        big, "20", "10", "800"], capture_output=True, text=True, timeout=300, check=True)
+                        big, "25", "10", "1000"], capture_output=True, text=True, timeout=300, check=True)
         direct = subprocess.run(
             [sys.executable, os.path.join(ROOT, "providers", "module-graph", "ts-imports", "extract_symbols.py"), big],
             capture_output=True, text=True, timeout=600)
