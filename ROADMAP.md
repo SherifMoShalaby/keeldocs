@@ -1,8 +1,8 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-01.** `main` at `a9a1fec` · 70 commits · engine `0.2.0-dev.0` ·
+**As of 2026-08-02.** `main` at `23b83ef` · 71 commits · engine `0.2.0-dev.0` ·
 tagged `v0.1.0-rc.1` at `927b4cb` · 3-OS CI green (Windows non-blocking) ·
-137 unit tests · 39 extractor goldens · 77 harness checks.
+144 unit tests · 39 extractor goldens · 78 harness checks.
 
 **E8 and E11 ran on 2026-08-01, both failed, and three of the four things they
 found are now fixed.** E11's flagship ERD stopped rendering between 100 and 250
