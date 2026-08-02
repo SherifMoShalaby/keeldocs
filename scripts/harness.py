@@ -1925,6 +1925,59 @@ def main():
     except Exception:
         failures.append(f"CLI envelope smoke: rc={r.returncode} stdout={r.stdout[:200]!r}")
 
+    # ---- D4 per-file parse cache (R10): re-parsing only what changed must be
+    # INDISTINGUISHABLE from re-parsing everything. The engine cannot verify a
+    # provider's `incremental: per-file` claim, so this is where it gets checked.
+    try:
+        import re as _re4, shutil as _sh4, tempfile as _tf4
+        tmp = _tf4.mkdtemp(prefix="keeldocs-d4-")
+        repo = os.path.join(tmp, "repo")
+        subprocess.run([sys.executable, os.path.join(ROOT, "experiments", "e8-scale", "gen.py"),
+                        repo, "6", "5", "60"], capture_output=True, text=True, timeout=300, check=True)
+        KD = os.path.join(ROOT, "bin", "keeldocs.js")
+
+        def facts(*extra):
+            r = subprocess.run(["node", "-e", (
+                'import("%s/src/facts.js").then(async ({extractAll}) => {'
+                'const {jcs} = await import("%s/src/jcs.js");'
+                'const r = extractAll(process.argv[1], {});'
+                'const d = jcs([...r.factsById.values()].map(f => ({id: f.id, hash: f.hash, payload: f.payload,'
+                ' provenance: f.provenance})).sort((a,b) => a.id.localeCompare(b.id)));'
+                'console.log(JSON.stringify({n: r.factsById.size, reparsed: r.cache.reparsed,'
+                ' err: r.toolError ?? null, dump: d}));'
+                '});') % (ROOT.replace("\\", "/"), ROOT.replace("\\", "/")), repo],
+                capture_output=True, text=True, timeout=900,
+                env={**os.environ, **({"KEELDOCS_NO_CACHE": "1"} if extra else {})})
+            return json.loads(r.stdout.strip().splitlines()[-1])
+
+        cold = facts()
+        assert cold["err"] is None, cold["err"]
+        assert cold["reparsed"].get("ts-imports", 0) > 1, \
+            f"the fixture must exercise the incremental provider; got {cold['reparsed']}"
+        parsed_cold = cold["reparsed"]["ts-imports"]
+
+        # edit ONE file, then compare the incremental answer to a from-scratch one
+        victim = os.path.join(repo, "packages", "pkg3", "src", "m2.ts")
+        W(victim, open(victim).read() + "\nexport function d4HarnessProbe(n: number): number { return n; }\n")
+        inc = facts()
+        assert inc["reparsed"].get("ts-imports") == 1, \
+            f"exactly one file changed, so exactly one re-parse; got {inc['reparsed']}"
+        scratch = facts("--no-cache")
+        assert inc["dump"] == scratch["dump"], \
+            "the incremental answer differs from the from-scratch answer - a speedup that drops a surface is a lie"
+        assert "d4HarnessProbe" in inc["dump"], "the edit never reached the facts through the cache"
+        assert inc["n"] == scratch["n"], f"fact count {inc['n']} vs {scratch['n']}"
+        # a DELETION must propagate too - the easy bug is a cache that only watches edits
+        os.remove(victim)
+        gone, gone_scratch = facts(), facts("--no-cache")
+        assert gone["dump"] == gone_scratch["dump"], "a deleted file's symbols survived in the per-file cache"
+        assert "d4HarnessProbe" not in gone["dump"]
+        rmtree(tmp)
+        print(f"  PASS  D4 per-file parse cache: {parsed_cold} parses cached, 1 re-parsed on edit, "
+              f"incremental==from-scratch through edit AND delete")
+    except Exception as e:
+        failures.append(f"D4 per-file parse cache: {why(e)}")
+
     # ---- D2 input-proportional output cap (R10): a provider whose LEGITIMATE
     # output exceeds the old 5MB constant must complete with nothing lost, and a
     # runaway must still be killed. Both halves matter: the first without the

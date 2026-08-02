@@ -21,7 +21,8 @@ import { refusalOf, loadLock, parseTrustedKeys } from "./trust.js";
 import { REGISTRY, REGISTRY_ERROR, ENGINE_VERSION } from "./registry.js";
 import { repoFiles, resolveInputs, buildView } from "./scope.js";
 import { minimalRootPlan, STAGE } from "./minroot.js";
-import { cacheEnabled, extractKey, fileDigest, hashAll, hashInputs, inputsUnmoved, readEntry, uncacheableReason, writeEntry } from "./cache.js";
+import { cacheEnabled, clearHandoff, extractKey, fileDigest, hashAll, hashInputs, inputsUnmoved, loadPerFile,
+         readEntry, savePerFile, uncacheableReason, writeEntry, writeHandoff } from "./cache.js";
 
 // fileURLToPath, never URL.pathname (Windows: "/D:/..." breaks join - item 10)
 const ENGINE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -799,7 +800,7 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
   // exactly what the harness asserts - so this never enters the deterministic
   // stdout path. It surfaces on the human channel only.
   const useCache = cacheEnabled();
-  const cacheStats = { hits: 0, misses: 0, uncacheable: 0, enabled: useCache, reasons: {} };
+  const cacheStats = { hits: 0, misses: 0, uncacheable: 0, enabled: useCache, reasons: {}, reparsed: {} };
   // one hash pass for the whole run, shared by every provider's key
   const digests = useCache ? hashAll(repoRoot, allFiles) : null;
   // D2: how many bytes each provider was actually handed. One stat pass over
@@ -876,7 +877,51 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
       } else {
         if (why) { cacheStats.uncacheable++; cacheStats.reasons[reg.id] = why; }
         else cacheStats.misses++;
-        run = runProvider(reg, repoRoot, args, factEnv, scope, resolved, declaredBytes(resolved.files));
+        // D4: hand the provider its own previous per-file parses. This is a
+        // PERFORMANCE input and nothing else - the provider's output must be
+        // identical whether the handoff is complete, partial or absent, which
+        // is what the harness gate asserts.
+        let perFile = null;
+        if (reg.incremental === "per-file" && useCache && digests) {
+          const byRel = {};
+          for (const rel of resolved.files) byRel[rel] = digests.get(rel) ?? fileDigest(join(repoRoot, rel));
+          perFile = { byRel, parsed: loadPerFile(repoRoot, reg.id) };
+          factEnv.KEELDOCS_INCREMENTAL = writeHandoff(repoRoot, reg.id, byRel, perFile.parsed);
+        }
+        // KEELDOCS_TIME=1 prints per-provider timings to STDERR. Twice now a
+        // question about where a run's seconds went has been settled by this
+        // and not by argument (D2's "is it the provider or the constant", D4's
+        // "did the saving actually materialise"), so it stays. stderr, never
+        // stdout: the deterministic channel is the repository's truth.
+        const startedAt = process.hrtime.bigint();
+        try {
+          run = runProvider(reg, repoRoot, args, factEnv, scope, resolved, declaredBytes(resolved.files));
+          if (process.env.KEELDOCS_TIME === "1") {
+            const bytes = run.raw === undefined ? 0 : JSON.stringify(run.raw).length;
+            process.stderr.write(`  [time] ${reg.id.padEnd(20)} ` +
+              `${String(Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6)).padStart(6)}ms  ` +
+              `raw ${(bytes / 1048576).toFixed(1)}MB\n`);
+          }
+        } finally {
+          if (perFile) clearHandoff(repoRoot, reg.id);
+        }
+        // `_parsed` is the provider's contribution to the cache, never a fact.
+        // It is stripped before normalization sees the output, so a provider
+        // that emits it cannot smuggle anything into the document.
+        if (perFile && run.status === "ok" && run.raw && typeof run.raw === "object") {
+          const fresh = run.raw._parsed;
+          delete run.raw._parsed;
+          if (fresh && typeof fresh === "object") {
+            cacheStats.reparsed[reg.id] = Object.keys(fresh).length;
+            const savedAt = process.hrtime.bigint();
+            savePerFile(repoRoot, reg.id, perFile.byRel, perFile.parsed, fresh);
+            if (process.env.KEELDOCS_TIME === "1") {
+              process.stderr.write(`  [time] ${reg.id.padEnd(20)} ` +
+                `${String(Math.round(Number(process.hrtime.bigint() - savedAt) / 1e6)).padStart(6)}ms  ` +
+                `per-file cache write (${Object.keys(fresh).length} new)\n`);
+            }
+          }
+        }
         // Only a clean run is worth remembering. A failure is a state of the
         // world right now, not a property of these inputs - caching it would
         // make a transient timeout permanent until something unrelated changed.

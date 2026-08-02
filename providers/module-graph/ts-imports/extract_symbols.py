@@ -264,6 +264,27 @@ def extract_file(full, rel):
     return decls, imports
 
 
+def load_handoff():
+    """The engine's per-file parse cache for THIS provider, if it supplied one.
+
+    Every failure mode here degrades to a full parse rather than to a wrong
+    answer: no env var, a missing file, malformed JSON, a digest the engine
+    never mentioned. That asymmetry is the whole safety argument - the worst
+    case is slow, never incorrect.
+    """
+    path = os.environ.get("KEELDOCS_INCREMENTAL")
+    if not path:
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            h = json.load(f)
+        if not isinstance(h, dict):
+            return {}
+        return {"parsed": h.get("parsed") or {}, "digests": h.get("digests") or {}}
+    except Exception:
+        return {}
+
+
 def main(root):
     files = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -275,13 +296,40 @@ def main(root):
                 files.append(rel)
     file_set = set(files)
 
+    # D4 per-file parse cache. PARSING one file is independent of the others;
+    # RESOLUTION below is not, and it still runs over every file every time.
+    # The engine hands back parses it has seen before, keyed by content digest,
+    # so an edit re-parses the file that changed and nothing else. Absent,
+    # partial or stale handoff must all produce identical output - the handoff
+    # is an optimisation, never an input to the answer.
+    handoff = load_handoff()
+    known = handoff.get("parsed", {})
+    digests = handoff.get("digests", {})
+    fresh = {}
+
     all_decls, mod_imports, warnings = [], {}, []
     for rel in files:
-        try:
-            decls, imports = extract_file(os.path.join(root, rel), rel)
-        except Exception as e:  # parse failure is a gap, never silence
-            warnings.append({"kind": "parse-failed", "file": rel, "detail": str(e)[:120]})
-            continue
+        # The cache key is the engine's content digest plus what else actually
+        # changes this parse - here the grammar, since a .tsx and a .ts file
+        # with identical bytes do not parse the same. The stored decls are
+        # PATH-FREE and the path is stamped on use: two identical files at
+        # different paths share one parse, and an intermediate that carried a
+        # path would have quietly given both of them the same one.
+        digest = digests.get(rel)
+        key = digest + ("|tsx" if rel.endswith(".tsx") else "|ts") if digest else None
+        cached = known.get(key) if key else None
+        if cached is not None:
+            decls = [dict(d, path=rel) for d in cached["decls"]]
+            imports = cached["imports"]
+        else:
+            try:
+                decls, imports = extract_file(os.path.join(root, rel), rel)
+            except Exception as e:  # parse failure is a gap, never silence
+                warnings.append({"kind": "parse-failed", "file": rel, "detail": str(e)[:120]})
+                continue
+            if key:
+                fresh[key] = {"decls": [{k: v for k, v in d.items() if k != "path"} for d in decls],
+                              "imports": sorted(set(imports))}
         all_decls.extend(decls)
         if imports:
             mod_imports[rel] = sorted(set(imports))
@@ -311,7 +359,12 @@ def main(root):
                  for s in mod_imports.get(rel, [])]
         modules.append({"path": rel, "package": pkg_for(rel, pkgs), "imports": edges})
 
-    print(json.dumps({"modules": modules, "symbols": symbols, "warnings": warnings}, indent=1))
+    out = {"modules": modules, "symbols": symbols, "warnings": warnings}
+    # The engine strips `_parsed` before anything sees it as a fact; it exists
+    # only so the next run can skip re-parsing what has not changed.
+    if fresh:
+        out["_parsed"] = fresh
+    print(json.dumps(out, indent=1))
 
 
 if __name__ == "__main__":

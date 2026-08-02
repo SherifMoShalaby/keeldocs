@@ -343,3 +343,132 @@ python3 experiments/e8-scale/bench.py /tmp/e8-1m  1m
 ```
 
 `baseline-*.json` pre-D1 · `d1-*.json` after D1 · `d2-*.json` after D2.
+
+---
+
+# Re-run after D4 (per-file parse cache) — 2026-08-02
+
+D1 made an unchanged tree free. D4 attacks what happens the moment one file
+changes: the provider re-runs, and its unit of work is its *entire* declared
+input set.
+
+## First, a correction to the D2-era write-up
+
+The roadmap recorded "one `.ts` edit invalidates 12 providers." That was wrong,
+and it was wrong in a way worth naming: the measurement counted providers whose
+**globs match** the changed file, not providers that actually **run**. Nine of
+the twelve are excluded by dependency detection — `react-router`, `nestjs`,
+`vue-router`, `angular-router` and the messaging providers all declare
+`deps: [...]` that the synthetic repo does not have. Only **three** re-run:
+`ts-imports`, `express`, `env-readers`.
+
+Re-measured properly, a 100k one-file edit costs **~64% provider parsing, ~29%
+sandbox setup, ~7% view construction**. Parsing is still the thing to attack,
+but for a smaller and more specific reason than the number implied.
+
+## The mechanism
+
+The obvious move — run the provider on only the changed files and merge — is
+wrong for exactly the providers that cost the most, and wrong in the same way
+D2's sharding was: `ts-imports` resolves import specifiers against the walked
+file set and `express` resolves a mount graph across files. Feed either a
+subset and internal edges silently become external.
+
+So the split is *inside* the provider: **parsing is per-file, analysis is not.**
+The engine caches the per-file parse, keyed by content digest, and hands it back
+through the same channel as a cross-capability fact read. The provider
+re-parses only what it has no entry for, then does its cross-file work over the
+complete merged set exactly as before. Nothing about the analysis narrows.
+
+A provider opts in with `incremental: per-file`, because only the provider knows
+whether its parse of a file is really independent of the others. The engine
+cannot check that claim — so the harness does.
+
+Three details that turned out to matter:
+
+- **Keys are `<digest>[|<discriminator>]`.** The digest says which bytes; the
+  discriminator says anything else that changes the parse of those bytes.
+  `ts-imports` appends the grammar, because a `.tsx` and a `.ts` file with
+  identical content do not parse the same.
+- **Intermediates are path-free.** The first implementation stored the path
+  inside the cached parse, and the 200 identical `m0.ts` files in the synthetic
+  monorepo — one digest, 200 paths — collapsed onto a single entry. **596 facts
+  vanished.** Caught by the equality test before it reached a commit; the path
+  is now stamped on use, so identical files legitimately share one parse.
+- **`_parsed` is stripped before anything else sees it**, so a provider cannot
+  smuggle cache plumbing into a document, and the D1 entry stores the real
+  output rather than the output plus its own cache.
+
+## What it buys
+
+Measured inside a real extraction at 1M LOC (`KEELDOCS_TIME=1`, same process):
+
+| provider | cold run | on a one-file edit |
+|---|---|---|
+| **ts-imports** (adopted) | 28,012 ms | **13,733 ms** |
+| express (not adopted) | 12,078 ms | 11,288 ms |
+| env-readers (not adopted) | 2,201 ms | 1,975 ms |
+
+A/B on the same tree, toggling only the manifest key:
+
+| | with `incremental: per-file` | without |
+|---|---|---|
+| 100k, one-file edit | **5,513 ms** | 6,492 ms |
+| 1M, one-file edit | **39,339 ms** | 48,962 ms |
+
+## Results
+
+| size | init | cold (`--no-cache`) | warm #1 | warm #2 | after 1-file edit | peak RSS | exit |
+|---|---|---|---|---|---|---|---|
+| 10k | 11.81s | 8.74s | 1.50s | 1.48s | 2.29s | 907 MB | 0 |
+| 100k | 13.46s | 12.42s | 2.68s | 2.48s | 6.44s | 899 MB | 0 |
+| 1M | 74.19s | 59.87s | 16.60s | 12.91s | 47.21s | 1212 MB | 0 |
+
+**These absolute numbers are weaker evidence than the A/B above, and the report
+should say so.** `check_cold` runs with `--no-cache`, where D4 is inert — and it
+moved from 41.97s to 59.87s between the D2 session and this one, +43%, on
+identical code paths. That is the container's variance, not a regression, and
+it is large enough to swamp the effect being measured. Only same-session A/B is
+trustworthy here.
+
+## Verdict against the four budgets
+
+| budget | 10k | 100k | 1M |
+|---|---|---|---|
+| RAM ≤ 2 GB | PASS | PASS | PASS 1.2 GB |
+| cold ≤ 10 min | PASS | PASS | PASS |
+| completes at all | PASS | PASS | PASS |
+| warm p95 ≤ 15s | PASS | PASS | PASS 12.9s |
+| warm p50 ≤ 5s, unchanged tree | PASS 1.48s | PASS 2.48s | FAIL 12.9s |
+| warm p50 ≤ 5s, one-file edit | PASS 2.29s | **FAIL 6.44s** | FAIL 47.2s |
+
+**E8 still does not pass.** D4 moved the one-file edit meaningfully — ~15% at
+100k, ~20% at 1M, and 51% off the provider it was applied to — without moving
+it across the line. The budgets have not been touched.
+
+## What D4 cost
+
+**+300 MB of peak RSS at 1M** (914 MB → 1212 MB): the handoff is 18.5 MB, the
+provider's stdout carries its new parses alongside its output, and the parsed
+intermediates live in the engine's heap for the duration. Still inside R10's
+2 GB budget, but this is the first change in the series that spends memory
+rather than saving it, and at some larger size it will be the binding
+constraint before the clock is.
+
+## What is left, precisely
+
+`express` is now the single most expensive provider on an edit — 11,288 ms at
+1M, ~1,556 ms at 100k — and it has **not** adopted the mechanism. It could: its
+`FileScan` is per-file and its mount-graph resolution is cross-file, exactly the
+split D4 is built around. It has not, for a stated reason rather than an
+oversight: `FileScan` accumulates into four module-level collections rather than
+returning its contribution, so adopting D4 means refactoring the flagship
+endpoint extractor — the one E1 measured at 100% recall and 100% precision, and
+the one with a byte-compared golden. That refactor should be done deliberately,
+with the golden as the gate, and not squeezed in behind a benchmark.
+
+Doing it is the obvious next step, and on these numbers it would take the 100k
+edit to roughly 5s and the 1M edit to roughly 36s. The first of those crosses a
+budget; the second does not come close, and no per-provider work will — 1M LOC
+needs the whole 3-provider set incremental *and* something for the ~29% that is
+sandbox setup.

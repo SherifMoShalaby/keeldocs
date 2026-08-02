@@ -12,3 +12,4 @@ emits: [module, symbol]   # symbols carry ADR-007 `ds` identities; modules carry
 # Honest scope (v0.1): ESM/TS only - CommonJS module.exports is not modeled.
 # Overload implementation signatures are excluded from the fact hash
 # (ADR-007 amendment 3); bodies are never part of any signature.
+incremental: per-file   # D4: parsing is per-file; resolution below still runs over the whole set

@@ -1,0 +1,10 @@
+{
+ "label": "1m",
+ "repo": "(synthetic, see RESULTS.md#reproduce)",
+ "note": "measured step-by-step with bench.py's methodology; the batch runner was killed by the container",
+ "init": { "seconds": 74.19, "peak_rss_mb": 1206.4, "rc": 0, "code": "INITIALIZED" },
+ "check_cold": { "seconds": 59.87, "peak_rss_mb": 917.8, "rc": 0, "code": "CLEAN" },
+ "check1": { "seconds": 16.6, "peak_rss_mb": 895.1, "rc": 0, "code": "CLEAN" },
+ "check2": { "seconds": 12.91, "peak_rss_mb": 896.0, "rc": 0, "code": "CLEAN" },
+ "check_after_1_file_edit": { "seconds": 47.21, "peak_rss_mb": 1212.0, "rc": 1, "code": "DRIFT_FOUND" }
+}

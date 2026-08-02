@@ -24,7 +24,7 @@ const KNOWN_KEYS = new Set([
   "id", "capability", "semver", "tier", "confidence", "entry", "runtime",
   "query", "language", "detect", "argMode", "needs", "inputs", "requires",
   "timeout_class", "emits", "status", "verbs", "files", "skip-files", "live",
-  "exec", "association",
+  "exec", "association", "incremental",
 ]);
 const DETECT_KEYS = new Set(["always", "deps", "files", "dirs"]);
 
@@ -177,6 +177,10 @@ function entryOf(y, cap, id, dir, relFile) {
       : { entry: `providers/${cap}/${id}/${y.entry.replace(/^\.\//, "")}`, dir: toPosix(dir) }),
     factInputs,
     ...(y.live === true ? { live: true } : {}),
+    // D4: the provider CLAIMS its parse of a file is independent of the other
+    // files, which the engine cannot verify - only the harness can, by proving
+    // an incremental run and a from-scratch run agree byte for byte.
+    ...(y.incremental === "per-file" ? { incremental: "per-file" } : {}),
     ...(y.exec === "node" ? { exec: "node" } : {}), // default python stays implicit
     timeoutClass: y.timeout_class ?? "D",
     needs: [...new Set([...(y.needs ?? []), ...factInputs])],

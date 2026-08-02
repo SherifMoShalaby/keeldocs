@@ -58,7 +58,7 @@
 // is not a trade-off worth agonising over.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { jcs } from "./jcs.js";
@@ -220,4 +220,92 @@ export function writeEntry(repoRoot, id, key, raw) {
     writeFileSync(tmp, gzipSync(Buffer.from(jcs({ v: CACHE_V, key, raw }), "utf8")));
     renameSync(tmp, final);
   } catch { /* an unwritable cache dir slows the tool; it must never break it */ }
+}
+
+// ---------------------------------------------------------------------------
+// D4 — per-file parse cache (risk R10)
+//
+// D1 caches a provider's whole answer, so an unchanged tree costs nothing. But
+// the moment ONE file changes the whole provider re-runs, and its unit of work
+// is its entire declared input set: at 100k LOC a one-line edit re-parses
+// 1,400 files and costs 6.24s against a 5s budget. E8 measured the split as
+// ~64% provider parsing, ~29% sandbox setup, ~7% view construction, so the
+// parsing is the thing to attack.
+//
+// The obvious move - run the provider on only the changed files and merge -
+// is WRONG for exactly the providers that cost the most. ts-imports resolves
+// import specifiers against the walked file set and express resolves a mount
+// graph across files; feeding either a subset silently turns internal edges
+// external. That is the same unsoundness that killed sharding in D2.
+//
+// So the split is inside the provider, not across invocations: PARSING is
+// per-file, ANALYSIS is not. The engine caches the per-file parse and hands it
+// back, and the provider re-parses only what it has no entry for, then does
+// its cross-file work over the complete merged set exactly as before. Nothing
+// about the analysis narrows; only the parsing does.
+//
+// Entries are keyed by CONTENT DIGEST rather than path, which falls out nicer
+// than intended: a file that moves keeps its parse, and two identical files
+// share one entry.
+//
+// The provider must opt in (`incremental: per-file` in its manifest) because
+// only the provider knows whether its parse of a file is really independent of
+// the others. The engine cannot check that claim, so the harness does: a gate
+// proves an incremental run and a from-scratch run produce byte-identical
+// facts, and the handoff is a PERFORMANCE input only - output must never
+// depend on whether the cache was warm.
+const perFileDir = (repoRoot) => join(repoRoot, ".keeldocs", "cache", "perfile");
+const perFilePath = (repoRoot, id) =>
+  join(perFileDir(repoRoot), `${id.replace(/[^a-zA-Z0-9._-]/g, "_")}.${shaHex(id).slice(0, 8)}.json.gz`);
+
+export function loadPerFile(repoRoot, id) {
+  try {
+    const o = JSON.parse(gunzipSync(readFileSync(perFilePath(repoRoot, id))).toString("utf8"));
+    return o?.v === CACHE_V && o.parsed && typeof o.parsed === "object" ? o.parsed : {};
+  } catch { return {}; }  // absent or corrupt is a cold parse, never a failure
+}
+
+// The handoff the provider reads: the digest of every file it is about to see,
+// plus the parses already known. It lives inside the repository because that is
+// the only place the sandboxed view can reach, and it is delivered through the
+// same mechanism as a cross-capability fact read.
+// A provider composes its own key as `<engine digest>[|<discriminator>]` - the
+// digest says WHICH BYTES, the discriminator says anything else that changes
+// the parse of those bytes (ts-imports appends the grammar, because a .tsx and
+// a .ts file with identical content do not parse the same). The engine only
+// ever reads the part before the pipe, so it can prune without knowing what a
+// discriminator means.
+const digestOf = (key) => key.split("|")[0];
+
+export function writeHandoff(repoRoot, id, digestsByRel, parsed) {
+  const live = new Set(Object.values(digestsByRel));
+  const known = {};
+  for (const [k, v] of Object.entries(parsed)) if (live.has(digestOf(k))) known[k] = v;
+  const p = join(perFileDir(repoRoot), `handoff-${id.replace(/[^a-zA-Z0-9._-]/g, "_")}.json`);
+  mkdirSync(perFileDir(repoRoot), { recursive: true });
+  writeFileSync(p, JSON.stringify({ v: CACHE_V, digests: digestsByRel, parsed: known }));
+  return p;
+}
+
+// Persist, pruned to what the repository currently contains. Without the prune
+// every edit would leave its predecessor behind forever; with it the cache is
+// bounded by the repo rather than by its history.
+export function savePerFile(repoRoot, id, digestsByRel, parsed, fresh) {
+  const merged = { ...parsed, ...(fresh ?? {}) };
+  const live = new Set(Object.values(digestsByRel));
+  const kept = {};
+  for (const [k, v] of Object.entries(merged)) if (live.has(digestOf(k))) kept[k] = v;
+  try {
+    mkdirSync(perFileDir(repoRoot), { recursive: true });
+    const final = perFilePath(repoRoot, id);
+    const tmp = `${final}.${process.pid}.tmp`;
+    writeFileSync(tmp, gzipSync(Buffer.from(JSON.stringify({ v: CACHE_V, parsed: kept }), "utf8")));
+    renameSync(tmp, final);
+  } catch { /* an unwritable cache slows the tool; it must never break it */ }
+  return Object.keys(kept).length;
+}
+
+export function clearHandoff(repoRoot, id) {
+  try { rmSync(join(perFileDir(repoRoot), `handoff-${id.replace(/[^a-zA-Z0-9._-]/g, "_")}.json`), { force: true }); }
+  catch { /* best effort */ }
 }
