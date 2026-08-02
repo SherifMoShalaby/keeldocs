@@ -472,3 +472,133 @@ edit to roughly 5s and the 1M edit to roughly 36s. The first of those crosses a
 budget; the second does not come close, and no per-provider work will — 1M LOC
 needs the whole 3-provider set incremental *and* something for the ~29% that is
 sandbox setup.
+
+---
+
+# Re-run after D6 (express adopts the per-file scan cache) — 2026-08-02
+
+D4 built the mechanism and proved it on `ts-imports`. D6 applies it to the
+provider that was left as the biggest single cost on an edit — and the one
+where a per-file cache is most likely to be quietly wrong, because `express`
+resolves mount graphs *across* files. It is the extractor E1 measured at 100%
+recall and 100% precision, with a byte-compared golden, so the golden was the
+gate throughout.
+
+## The refactor came first, and had to prove itself neutral
+
+`FileScan` mutated four module-level collections. Two things had to change
+before any caching was possible:
+
+- **Anonymous routers were numbered by a global counter.** A node id was
+  `(file, "#anon<N>")` where N depended on how many anonymous nodes earlier
+  files had created — so the same file scanned in a different position got a
+  different id, and no per-file cache entry could be stable. Numbering is now
+  per file. The file is already in the id tuple, so uniqueness is unaffected,
+  and the id becomes a function of that file alone, which it never was.
+- **Scanning and publishing are now separate.** `FileScan` accumulates its own
+  contribution and `publish()` pushes it into the run-wide collections, so a
+  *replayed* scan lands in the same collections in the same order as a fresh
+  one. Order is emission order, and emission order is contract.
+
+That refactor was verified byte-identical on every fixture that produces
+express output — express-mounts, drift, init, mono, polyglot — **before** any
+cache existed. A refactor of the flagship extractor should be provably neutral
+on its own before anything is built on top of it.
+
+## What a scan actually depends on
+
+A scan is a pure function of three things, and the third is the one that is
+easy to miss: **this file's bytes, this file's path, and which files exist.**
+
+`resolve_import` probes the filesystem *during* the scan, so adding or removing
+a file changes what an *untouched* file's imports resolve to. Keying on content
+alone would have served a resolution computed against a tree that no longer
+exists — a mount edge pointing at a file that is gone, or a missing edge to one
+that has arrived.
+
+So the cache key is `<content digest>|<path-set digest>:<rel path>`. The
+consequence is stated rather than hidden: **an edit re-scans one file; an add or
+delete re-scans everything.** That is the common case optimised and the rare
+case left correct, which is the right way round. It also means the harness has
+to test ADD and DELETE, not just EDIT — and it does, including the case where a
+newly added router file must resolve through a mount declared in a *different*
+file (`/api/v2/beta`). That is precisely the edge D2's rejected sharding would
+have dropped.
+
+Node ids embed absolute paths, so they are stored repo-relative and rebuilt on
+load; a scan that cannot be encoded (anything escaping the repo root) is simply
+not cached. Refusing to cache is always available and always safe.
+
+## What it buys
+
+Per-provider, inside a real extraction at 1M LOC (`KEELDOCS_TIME=1`):
+
+| provider | before D6 | after D6 |
+|---|---|---|
+| **express** | 11,288 ms | **737 ms** |
+| ts-imports (D4) | 13,733 ms | 8,376 ms |
+| env-readers (not adopted) | 1,975 ms | 1,187 ms |
+
+*(The machine is faster this session than the D4 session — see the caveat
+below. `express` at 737 ms is a real order-of-magnitude change; the ts-imports
+and env-readers rows mostly reflect machine speed.)*
+
+A/B toggling only express's manifest key, same tree, same minute:
+
+| | with `incremental: per-file` | without |
+|---|---|---|
+| 100k, one-file edit (extraction only) | **2,576 ms** | 3,503 ms |
+
+## Results
+
+| size | init | cold (`--no-cache`) | warm #1 | warm #2 | after 1-file edit | peak RSS | exit |
+|---|---|---|---|---|---|---|---|
+| 10k | 5.98s | 5.31s | 1.09s | 1.05s | **1.49s** | 902 MB | 0 |
+| 100k | 9.85s | 9.15s | 1.82s | 1.80s | **3.65s** | 908 MB | 0 |
+| 1M | 40.34s | 33.13s | 7.05s | 6.04s | **17.30s** | 1207 MB | 0 |
+
+## Verdict against the four budgets
+
+| budget | 10k | 100k | 1M |
+|---|---|---|---|
+| RAM ≤ 2 GB | PASS | PASS | PASS 1.2 GB |
+| cold ≤ 10 min | PASS | PASS | PASS |
+| completes at all | PASS | PASS | PASS |
+| warm p95 ≤ 15s | PASS | PASS | PASS 7.05s |
+| warm p50 ≤ 5s, unchanged tree | PASS 1.05s | PASS 1.80s | FAIL 6.04s |
+| warm p50 ≤ 5s, one-file edit | PASS 1.49s | **PASS 3.65s** | FAIL 17.30s |
+
+**Every R10 budget now passes at 10k and 100k, including the one-file-edit p50
+that has failed in every previous round.** At 1M, p95 passes and p50 misses on
+both scenarios.
+
+## The caveat that belongs in the same breath
+
+This container is not a stable measuring instrument, and the pass at 100k is
+thinner than it looks. `check --no-cache` — identical code paths, D4 and D6
+both inert — ran at 12.42s in the D4 session and 9.15s here. The machine is
+**~1.35× faster today**. Normalising the 100k edit against that control gives
+**~4.9s against a 5s budget: a pass by about one percent.**
+
+So the honest statement is that the 100k p50 budget is met *on the machines
+measured so far*, and is not met with any margin. It should not be described as
+comfortably met, and it should be re-measured somewhere that is not this
+container before it appears in anything public. The A/B is the trustworthy part
+— toggling one manifest key on one tree in one minute moved the edit from
+3,503 ms to 2,576 ms — and that effect is real regardless of the clock.
+
+## What is left, and it has changed shape
+
+With parsing and scanning both incremental, the 1M bottleneck is no longer
+parsing. `ts-imports` still costs 8.4s on an edit while re-parsing exactly one
+file: that time is now **reading an 18.5 MB handoff, emitting 37 MB of output,
+and grouping 190,000 symbols** — data movement, not analysis. Attacking it
+means a more compact intermediate and/or streaming (D5), not more per-file
+work. `env-readers` at 1.2s is the last unadopted provider and is a small,
+clean candidate.
+
+The 1M p50 is not reachable by finishing this line of work. Even with every
+provider incremental, a one-file edit at 1M would still pay the sandbox setup
+per miss (~29% of an edit at 100k, D7) and the cost of moving several tens of
+megabytes of facts through the engine. That is a different problem and should
+be named as one rather than chased with another provider adoption.

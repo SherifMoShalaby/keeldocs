@@ -1,0 +1,10 @@
+{
+ "label": "1m",
+ "repo": "(synthetic, see RESULTS.md#reproduce)",
+ "note": "measured step-by-step with bench.py's methodology",
+ "init": { "seconds": 40.34, "peak_rss_mb": 1206.6, "rc": 0, "code": "INITIALIZED" },
+ "check_cold": { "seconds": 33.13, "peak_rss_mb": 953.2, "rc": 0, "code": "CLEAN" },
+ "check1": { "seconds": 7.05, "peak_rss_mb": 902.1, "rc": 0, "code": "CLEAN" },
+ "check2": { "seconds": 6.04, "peak_rss_mb": 895.2, "rc": 0, "code": "CLEAN" },
+ "check_after_1_file_edit": { "seconds": 17.3, "peak_rss_mb": 921.9, "rc": 1, "code": "DRIFT_FOUND" }
+}

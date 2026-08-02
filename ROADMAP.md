@@ -4,17 +4,19 @@
 tagged `v0.1.0-rc.1` at `927b4cb` · 3-OS CI green (Windows non-blocking) ·
 144 unit tests · 39 extractor goldens · 78 harness checks.
 
-**E8 and E11 ran on 2026-08-01, both failed, and three of the four things they
-found are now fixed.** E11's flagship ERD stopped rendering between 100 and 250
-tables; `src/render.js` gained budget-driven chunking. E8 found no incremental
-cache at all, so **D1** built one — the 100k warm check went 9.66s → 2.23s. It
-then found 1M LOC dying on a constant output cap, so **D2** made that cap
-input-proportional — **1M LOC now completes**. It then found that one changed
-file re-parses a provider's entire declared input set, so **D4** added a
-per-file parse cache — `ts-imports` at 1M went 28.0s → 13.7s on an edit.
-**E8 still does not pass**, and the budgets have never been touched: a one-file
-edit is 6.4s at 100k against a 5s p50, and 47s at 1M. `express` is the biggest
-remaining single cost and has not adopted the per-file mechanism.
+**E8 and E11 ran on 2026-08-01 and everything they found is now fixed except
+the 1M p50.** E11's flagship ERD stopped rendering between 100 and 250 tables →
+budget-driven chunking. E8 found no incremental cache at all → **D1** (100k warm
+9.66s → 2.23s); then 1M LOC dying on a constant output cap → **D2** (1M now
+completes); then one changed file re-parsing a provider's whole input set →
+**D4** for `ts-imports` and **D6** for `express` (11,288ms → **737ms** at 1M).
+
+**Every R10 budget now passes at 10k and 100k, including the one-file-edit p50
+that failed every previous round** — 3.65s against 5s. Two honest qualifications
+go with that: the pass is by ~1% once normalised against this container's speed
+drift, so it is met but not comfortably; and 1M still misses p50 (6.0s
+unchanged, 17.3s edited) while passing everything else. The budgets have never
+been touched.
 
 This is the single tracking document. It reconciles three things that had been
 living in separate places: the original design brief's deliverables, the phased
@@ -206,7 +208,9 @@ Created by E8 on 2026-08-01, all with measured baselines rather than estimates.
 | D1 | **Incremental extraction** — cache the provider subprocess, keyed on the exact resolved input set by content hash | **Done** (`src/cache.js`, 20 unit tests, harness gate) | warm check 5.61s → **1.40s** @10k, 9.66s → **2.23s** @100k; overhead 33ms (3% of a warm run) |
 | D2 | **Input-proportional output cap** — `clamp(6 × declared input bytes, 5MB, 256MB)` | **Done** (`src/facts.js`, 7 unit tests, harness gate) | **1M LOC completes**: rc 0, CLEAN, 38,047 surfaces, 914 MB, warm check **8.9s** (was exit 2). The roadmap's named remedy — sharding — was measured and rejected as *unsound*: ts-imports resolves imports against the walked file set, so a shard boundary silently turns 1,000 internal edges external. The provider's 46.9 MB is 2.02× its own declared input; the constant was the defect |
 | D4 | **Per-file parse cache** — `incremental: per-file`, keyed by content digest, handed to the provider like a fact read | **Done for `ts-imports`** (`src/cache.js` + the provider, 7 unit tests, harness gate) | `ts-imports` at 1M: **28.0s → 13.7s** on an edit. A/B on the manifest key alone: 100k edit 6.49s → **5.51s**, 1M edit 48.96s → **39.34s**. Costs +300 MB RSS at 1M (914 → 1212 MB), the first change in this series that spends memory rather than saving it. *Correction: the earlier "12 providers re-run" figure was wrong — it counted providers whose globs match, not ones that run. Three do.* |
-| D6 | **`express` adopts `incremental: per-file`** | **Open** — now the biggest single cost on an edit | 11,288 ms at 1M, ~1,556 ms at 100k. Its `FileScan` is per-file and its mount-graph resolution is cross-file, exactly D4's split — but `FileScan` accumulates into four module-level collections instead of returning its contribution, so adopting means refactoring the flagship endpoint extractor (E1: 100% recall, 100% precision, byte-compared golden). Worth doing deliberately with the golden as the gate, not squeezed in behind a benchmark. Estimated: 100k edit → ~5s, 1M edit → ~36s |
+| D6 | **`express` adopts `incremental: per-file`** | **Done** (provider refactor + `incremental: per-file`, harness gate) | `express` at 1M: **11,288 ms → 737 ms** on an edit. A/B on the manifest key alone at 100k: extraction 3,503 ms → **2,576 ms**. The refactor (per-file anon numbering; scan and publish separated) was proven **byte-identical on every fixture before any cache existed** — a flagship extractor should be provably neutral on its own first. Its key carries a **path-set digest** as well as content, because `resolve_import` probes the filesystem mid-scan: an edit re-scans one file, an add or delete re-scans everything. Gated through EDIT, ADD and DELETE, including a mount declared in a different file than the router it points at |
+| D8 | **`ts-imports` data movement** | **Open** — new, and a different shape | With parsing incremental, `ts-imports` still costs 8.4s on a 1M edit while re-parsing exactly one file. That time is reading an 18.5 MB handoff, emitting 37 MB of output and grouping 190,000 symbols — **data movement, not analysis**. Needs a compact intermediate and/or streaming (D5), not more per-file work |
+| D9 | **`env-readers` adopts `incremental: per-file`** | **Open** — small and clean | 1,187 ms at 1M, the last unadopted provider on the edit path. No cross-file resolution, so the adoption is the simple case |
 | D3 | **`--affected`** | **Open, and demoted** | Skips providers a diff cannot have affected. The measurement shows this is the smaller half of the remaining cost — the expensive providers genuinely do read the changed file |
 | D7 | **Sandbox setup per provider run** | **Open, newly sized** | ~29% of a one-file edit at 100k is `unshare` + the minimal-root mount dance + view construction, paid once per cache miss. Nothing about it is wrong; it is simply the next-largest slice once parsing is dealt with, and no per-provider work will touch it |
 | D5 | **Streaming provider output** | **Deferred on evidence, not forgotten** | D2's 256 MB ceiling binds at ~42.7 MB of declared input (~1.9M LOC), so the wall moved rather than vanished. NDJSON on a spooled descriptor would remove it, but RSS is 914 MB against a 2 GB budget across a 100× size range — memory is not the binding constraint at any size being asked about today |
@@ -214,9 +218,10 @@ Created by E8 on 2026-08-01, all with measured baselines rather than estimates.
 Re-run E8 after each; `experiments/e8-scale/RESULTS.md` holds the baseline and
 the numbers after D1, D2 and D4, and the R10 budgets have never been touched.
 The honest statement of what keeldocs handles is **a million lines / 200
-packages, at a ~2.5s warm check at 100k and ~13s at 1M**, with a single-file
-edit costing 6.4s and 47s respectively. No public material should claim the p50
-budget until it is met.
+packages, at a 1.8s warm check and a 3.7s one-file-edit check at 100k, and 6.0s
+/ 17.3s at 1M**. The 100k figures meet every R10 budget; the 1M p50 does not.
+Public material may say the budgets are met at 100k *and must say on what
+hardware*, because the margin is about one percent.
 
 One methodological note that now matters more than any single number: this
 container's run-to-run variance is large — `check --no-cache`, which exercises

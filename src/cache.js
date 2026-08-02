@@ -290,11 +290,26 @@ export function writeHandoff(repoRoot, id, digestsByRel, parsed) {
 // Persist, pruned to what the repository currently contains. Without the prune
 // every edit would leave its predecessor behind forever; with it the cache is
 // bounded by the repo rather than by its history.
+// Two entries can share a live content digest and differ in their
+// discriminator - express keys on the path SET as well as the bytes, because
+// adding a file changes what an untouched file's imports resolve to. That is
+// deliberate and useful (flipping a branch back reuses the earlier scans), but
+// left alone it grows as (live files x every path-set ever seen). So after
+// pruning dead digests, the newest `live.size * SLOTS` entries survive: room
+// for the current shape and roughly one previous, and nothing beyond.
+const PERFILE_SLOTS = 2;
+
 export function savePerFile(repoRoot, id, digestsByRel, parsed, fresh) {
+  // fresh LAST so a re-parse of the same key lands at the end and counts as new
   const merged = { ...parsed, ...(fresh ?? {}) };
   const live = new Set(Object.values(digestsByRel));
-  const kept = {};
+  let kept = {};
   for (const [k, v] of Object.entries(merged)) if (live.has(digestOf(k))) kept[k] = v;
+  const cap = Math.max(live.size * PERFILE_SLOTS, 1);
+  const keys = Object.keys(kept);
+  if (keys.length > cap) {
+    kept = Object.fromEntries(keys.slice(keys.length - cap).map((k) => [k, kept[k]]));
+  }
   try {
     mkdirSync(perFileDir(repoRoot), { recursive: true });
     const final = perFilePath(repoRoot, id);

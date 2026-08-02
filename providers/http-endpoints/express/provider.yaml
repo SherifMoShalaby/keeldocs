@@ -10,3 +10,4 @@ inputs: ["**/*.{ts,js,mjs}"]   # the extractor walks the WHOLE tree for .ts/.js 
 requires: []
 timeout_class: C
 emits: [endpoint, extraction-gap]
+incremental: per-file   # D6: scanning is per-file; the mount graph below still resolves over the whole set

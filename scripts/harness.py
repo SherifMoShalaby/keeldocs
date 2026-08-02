@@ -1978,6 +1978,70 @@ def main():
     except Exception as e:
         failures.append(f"D4 per-file parse cache: {why(e)}")
 
+    # ---- D6: express adopts the per-file cache. The flagship endpoint
+    # extractor resolves mount graphs ACROSS files, so this is the case where a
+    # per-file cache is most likely to be quietly wrong. Adding a file changes
+    # what an untouched file's imports resolve to, which is why the key carries
+    # a path-set digest - and why ADD and DELETE are tested, not just EDIT.
+    try:
+        import shutil as _sh6, tempfile as _tf6
+        tmp = _tf6.mkdtemp(prefix="keeldocs-d6-")
+        repo = os.path.join(tmp, "repo")
+        _sh6.copytree(os.path.join(ROOT, "fixtures", "express-mounts"), repo,
+                      ignore=_sh6.ignore_patterns("golden", ".keeldocs"))
+        SNIP = ('import("%s/src/facts.js").then(async ({extractAll}) => {'
+                'const {jcs} = await import("%s/src/jcs.js");'
+                'const r = extractAll(process.argv[1], {});'
+                'const e = [...r.factsById.values()].filter(f => f.payload.type === "endpoint");'
+                'console.log(JSON.stringify({n: e.length, rescanned: r.cache.reparsed.express ?? 0,'
+                ' err: r.toolError ?? null,'
+                ' dump: jcs(e.map(f => ({id: f.id, hash: f.hash, payload: f.payload, provenance: f.provenance}))'
+                '.sort((a,b) => a.id.localeCompare(b.id)))}));'
+                '});') % (ROOT.replace("\\", "/"), ROOT.replace("\\", "/"))
+
+        def eps(no_cache=False):
+            r = subprocess.run(["node", "-e", SNIP, repo], capture_output=True, text=True, timeout=600,
+                               env={**os.environ, **({"KEELDOCS_NO_CACHE": "1"} if no_cache else {})})
+            return json.loads(r.stdout.strip().splitlines()[-1])
+
+        base = eps()
+        assert base["err"] is None and base["n"] == 4, base
+        assert base["rescanned"] == 3, f"expected 3 files scanned cold, got {base['rescanned']}"
+        api = os.path.join(repo, "routes", "api.js")
+
+        # 1) EDIT one file -> exactly one re-scan, same answer as from scratch
+        W(api, open(api).read().replace("router.get('/orders'", "router.get('/baskets'"))
+        edited = eps()
+        assert edited["rescanned"] == 1, f"one file changed, so one re-scan; got {edited['rescanned']}"
+        assert edited["dump"] == eps(True)["dump"], "edited incremental answer != from-scratch"
+        assert "/api/baskets" in edited["dump"], "the rename never reached the mount-resolved path"
+
+        # 2) ADD a router and mount it -> a NEW cross-file edge must resolve.
+        # This is the case sharding would have broken and the case a
+        # content-only key would have missed.
+        W(os.path.join(repo, "routes", "v2.js"),
+          "const express = require('express');\nconst r = express.Router();\n"
+          "r.get('/beta', (q, s) => s.json([]));\nmodule.exports = r;\n")
+        W(api, open(api).read().replace("module.exports = router;",
+          "const v2 = require('./v2');\nrouter.use('/v2', v2);\nmodule.exports = router;"))
+        added = eps()
+        assert added["dump"] == eps(True)["dump"], "added incremental answer != from-scratch"
+        assert "/api/v2/beta" in added["dump"], \
+            "a mount added in another file did not resolve - the path-set digest is not doing its job"
+        assert added["n"] == 5, added["n"]
+
+        # 3) DELETE the file the mount points at -> the endpoint must vanish
+        os.remove(os.path.join(repo, "routes", "v2.js"))
+        gone = eps()
+        assert gone["dump"] == eps(True)["dump"], "deleted incremental answer != from-scratch"
+        assert "/api/v2/beta" not in gone["dump"], "an endpoint survived the deletion of the file that defined it"
+        assert gone["n"] == 4, gone["n"]
+        rmtree(tmp)
+        print("  PASS  D6 express per-file scan: mount graph correct through edit, ADD and DELETE; "
+              "1 re-scan on an edit")
+    except Exception as e:
+        failures.append(f"D6 express per-file scan: {why(e)}")
+
     # ---- D2 input-proportional output cap (R10): a provider whose LEGITIMATE
     # output exceeds the old 5MB constant must complete with nothing lost, and a
     # runaway must still be killed. Both halves matter: the first without the
