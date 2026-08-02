@@ -927,3 +927,79 @@ The general lesson is the one this experiment keeps re-teaching: **a residual is
 not a measurement.** Twice now a number has been filed by subtracting what was
 understood from the total and naming the remainder after the most plausible
 suspect. Both times the suspect was innocent.
+
+---
+
+# D3 (`--affected`) — 2026-08-02: already built, and the profile found something bigger
+
+D3 was filed on day one as *"scope a check to what a diff touched"* and demoted
+twice. Looking at it properly, it had already been overtaken.
+
+## `--affected` as specified is done, and D1 does it better
+
+Its purpose was to skip providers a diff cannot have affected. **D1 does exactly
+that**, keyed on content hashes rather than on a diff — which is strictly
+better: a file touched and reverted is still a cache hit, and a diff-based rule
+would have re-run for it. There is nothing left of that half to build.
+
+The other half — skipping the doc/drift side — was measured phase by phase
+rather than subtracted (D7's lesson), on a warm 1M-LOC check:
+
+| phase | |
+|---|---|
+| `extractAll` (warm, 234,088 facts) | 8,592 ms |
+| journal | 93 ms |
+| parse 4 docs (45 anchors, 49 regions) | 50 ms |
+| evaluate drift (90 findings) | 162 ms |
+| coverage (38,047 surfaces) | 29 ms |
+| upgrade discovery | 294 ms |
+| **everything `--affected` would target** | **628 ms — 7%** |
+
+Seven percent, and every millisecond of it is the part that decides whether a
+document is lying. Skipping evaluation to save it would trade the tool's only
+job for a rounding error. **Closed as already-built plus not-worth-it.**
+
+## What the profile actually found
+
+A CPU profile of the same warm run — a profile, not a residual — put **44% of it
+in writing the fact JSONL files**: `jcs` 20%, `writeFileSync` 17%, `writeCapFile`
+7.5%, plus a large share of the 18% spent in garbage collection. The cause was
+one line: every capability's facts were serialised into a **single string** —
+77 MB for module-graph's 190,400 symbols — and handed to the filesystem in one
+call.
+
+Writing in 1 MB chunks produces **byte-identical files** and never materialises
+the whole thing:
+
+| | |
+|---|---|
+| one 77 MB string + `writeFileSync` | 723 ms |
+| 1 MB chunks + `writeSync` | **194 ms** (−73%) |
+| **warm `extractAll` at 1M** | **8,592 ms → 5,409 ms (−37%)** |
+
+Re-profiled after: `writeFileSync`'s 1,004 ms and `writeFileUtf8`'s 495 ms are
+gone, replaced by 121 ms of `writeSync`; GC fell from 1,590 ms to 1,068 ms.
+
+## Filed, not taken: eight of ten fact files have no reader
+
+`jcs` + `canonicalize` are still 27% of the warm run, canonicalising 234,088
+facts into JSONL. Grepping every manifest, **only two capabilities are ever
+declared as a `${facts:cap}` read: `db-schema` and `workspace-layout`.** The
+other eight — including module-graph's 77 MB — are written on every run and read
+by no provider in that run.
+
+Not writing them would take most of the remaining 27%. It is **not** taken here,
+because the JSONL store is not dead code: ADR-004 defines it as the canonical
+derived fact store, and eight harness gates read it back as their observable.
+Removing an artifact the design names is a design decision that belongs in an
+ADR amendment, not a performance change smuggled in behind a profile. Filed as
+D12.
+
+## The pattern, twice in two items
+
+D7's premise was a residual mistaken for a measurement. D3's premise was a
+feature that a later item had already implemented better. Both were filed early,
+in good faith, from a model of where the time *ought* to be — and in both cases
+the profile disagreed. The measurement here cost twenty minutes and moved a warm
+1M run by 37%, which is more than either D3 or D7 would have produced as
+written.
