@@ -1,6 +1,6 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-02.** `main` at `c2c7a7a` · 77 commits · engine `0.2.0-dev.0` ·
+**As of 2026-08-02.** `main` at `a70de3e` · 88 commits · engine `0.2.0-dev.0` ·
 tagged `v0.1.0-rc.1` at `927b4cb` · 3-OS CI green (Windows non-blocking) ·
 151 unit tests · 39 extractor goldens · 80 harness checks.
 
