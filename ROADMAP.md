@@ -11,10 +11,12 @@ budget-driven chunking. E8 found no incremental cache at all → **D1** (100k wa
 completes); then one changed file re-parsing a provider's whole input set →
 **D4** for `ts-imports` and **D6** for `express` (11,288ms → **737ms** at 1M).
 
-**Every provider on the edit path is now incremental** (D9 finished the set),
-and D8 + D11 cut what the largest of them moves by **64%** — `ts-imports`
-output 46.86 MB → 17.03 MB, measured in **bytes** rather than seconds, which is
-the only currency this container can still count honestly.
+**The scale work is closed** (section 6 is now a record, not a queue). D1 and
+D2 were what the failure actually required — an incremental cache the tool had
+never had, and an output cap that scales with its input — after which 1M LOC
+completes cleanly. Seven further items followed and are honestly measured, but
+they were past the point of need: profiling always finds a next-largest
+bottleneck, and a list generated that way has no end.
 The budgets have never been touched — but the p50 result must be stated
 carefully, and the reason is itself a finding: **this container's speed drift
 between sessions (2.3x, measured on `check --no-cache` where every D-series
@@ -56,9 +58,9 @@ a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
 accurate receipts across four hardening rounds. What is *not* done splits
 cleanly into three piles: a short list of owner actions that gate publication
 and therefore gate every adoption metric; a set of features deliberately
-refused until their evidence arrives; and — new as of 2026-08-01, from running
-E8 — one measured scale item, because a loop that is correct and fast on an
-unchanged tree still re-parses far too much when a single file changes.
+refused until their evidence arrives. The scale work E8 opened is **closed**:
+the tool is correct at every size up to a million lines, and what R10 still owes
+is a measurement on stable hardware, not more code.
 
 ---
 
@@ -158,8 +160,10 @@ remaining v1.0 gate is about people, publication or elapsed time.
 
 ## 4. Blocked on you — the critical path
 
-These four items gate more than they look like they do. The first one gates a
-chain of three.
+These five items gate more than they look like they do. The first one gates a
+chain of three, and none of them can be moved from a build environment. This is
+the whole of what is left; section 6 is closed and section 5 is a set of
+refusals, not a backlog.
 
 1. **npm Trusted Publishing, then re-run the release job.** `release.yml` is
    written and runs the full suite at the tag; it needs credentials configured
@@ -178,6 +182,13 @@ chain of three.
 4. **Windows promotion to a blocking lane** — a scheduled task fires 2026-08-29
    to check the four-week green streak and remind you it is a one-line deletion
    in `ci.yml`.
+5. **Run E8 once on hardware that is not this container** (was "D10"). Not a
+   build — a measurement. This container's timing drifts up to 2.3× between
+   sessions on identical code paths, which is more than any optimisation in the
+   scale work, so R10's warm-check budgets currently have **no verdict**. One
+   run of `experiments/e8-scale/bench.py` on a stable machine, plus R10's own
+   "2 real monorepos" clause, is the only thing that can close that row. Until
+   then no public material should quote a p50 figure.
 
 Two things worth deciding while you are in there, both cheap: whether to **cut
 `0.2.0` on E7's evidence or on your own judgement** (the gate was yours, and the
@@ -207,40 +218,60 @@ into committed artifacts.
 
 ---
 
-## 6. Open engineering debt — buildable now
+## 6. Scale work (the D-series) — CLOSED 2026-08-02
 
-Created by E8 on 2026-08-01, all with measured baselines rather than estimates.
+**This section is a record, not a queue.** Nothing in it is waiting to be
+built, and no reader should treat a "D" number as an outstanding task.
 
-| # | Item | Status | Measurement |
-|---|---|---|---|
-| D1 | **Incremental extraction** — cache the provider subprocess, keyed on the exact resolved input set by content hash | **Done** (`src/cache.js`, 20 unit tests, harness gate) | warm check 5.61s → **1.40s** @10k, 9.66s → **2.23s** @100k; overhead 33ms (3% of a warm run) |
-| D2 | **Input-proportional output cap** — `clamp(6 × declared input bytes, 5MB, 256MB)` | **Done** (`src/facts.js`, 7 unit tests, harness gate) | **1M LOC completes**: rc 0, CLEAN, 38,047 surfaces, 914 MB, warm check **8.9s** (was exit 2). The roadmap's named remedy — sharding — was measured and rejected as *unsound*: ts-imports resolves imports against the walked file set, so a shard boundary silently turns 1,000 internal edges external. The provider's 46.9 MB is 2.02× its own declared input; the constant was the defect |
-| D4 | **Per-file parse cache** — `incremental: per-file`, keyed by content digest, handed to the provider like a fact read | **Done for `ts-imports`** (`src/cache.js` + the provider, 7 unit tests, harness gate) | `ts-imports` at 1M: **28.0s → 13.7s** on an edit. A/B on the manifest key alone: 100k edit 6.49s → **5.51s**, 1M edit 48.96s → **39.34s**. Costs +300 MB RSS at 1M (914 → 1212 MB), the first change in this series that spends memory rather than saving it. *Correction: the earlier "12 providers re-run" figure was wrong — it counted providers whose globs match, not ones that run. Three do.* |
-| D6 | **`express` adopts `incremental: per-file`** | **Done** (provider refactor + `incremental: per-file`, harness gate) | `express` at 1M: **11,288 ms → 737 ms** on an edit. A/B on the manifest key alone at 100k: extraction 3,503 ms → **2,576 ms**. The refactor (per-file anon numbering; scan and publish separated) was proven **byte-identical on every fixture before any cache existed** — a flagship extractor should be provably neutral on its own first. Its key carries a **path-set digest** as well as content, because `resolve_import` probes the filesystem mid-scan: an edit re-scans one file, an add or delete re-scans everything. Gated through EDIT, ADD and DELETE, including a mount declared in a different file than the router it points at |
-| D8 | **`ts-imports` data movement** | **Done** (2 unit tests, golden regenerated, harness green) | Measured in BYTES, not seconds — the one item this container can still decide honestly. Output **46.86 MB → 25.81 MB (−45%)**, handoff 18.5 → 13.6 MB, provider on a one-file edit 7,069 → **1,836 ms** (within-process). Two of the three largest things on the wire were not information: `indent=1` whitespace (10.16 MB and 1,046 ms to produce — 4.8× slower than compact) and `nameless` (10.71 MB, a pure function of `(name, sigs)`, exact on 190,400/190,400 — now derived by the engine, field kept optional so other providers are unaffected). Facts byte-identical everywhere |
-| D11 | **Group symbols under their file** | **Done** (3 unit tests, golden regenerated, harness green) | **25.81 MB → 17.03 MB (−34%), and −64% cumulative from the original 46.86 MB.** Measuring first beat the estimate: `package` hoists as well as `path`, verified constant within a file on all 5,200. `kind` deliberately does NOT hoist — it is uniform per file across the entire 1M synthetic and varies per file in real code, so a purely benchmark-driven decision would have flattened it, saved 3.09 MB, and lost information on every real repository with nothing failing to say so. A unit test now pins that. Both shapes are the contract; only ts-imports moved |
-| D9 | **`env-readers` adopts `incremental: per-file`** | **Done** (harness gate) | A/B on the manifest key at 100k: extraction 4,663 ms → **4,136 ms**; 545 ms at 1M on an edit. Genuinely the simple case, and *checked* rather than assumed — its only non-content dependency is the FILENAME, which decides whether the file is scanned as `.env.example` or as code. The gate asserts the difference from express: an ADD re-scans **1** file and a DELETE re-scans **0**, where express redoes everything. If that ever changes, `incremental: per-file` has become a false claim for this provider |
-| D10 | **Benchmark on hardware that is not this container** | **Open** — now the highest-value measurement left | Session-to-session drift of 2.3x on identical code paths exceeds every optimisation in this series. R10's "2 real monorepos" clause is the fix and is still owed |
-| D3 | **`--affected`** | **Closed: already built by D1, and the profile redirected it** | The half that skipped unaffected providers **D1 already does, better** — content hashes rather than a diff, so a touched-then-reverted file stays a hit. The other half (skipping doc/drift evaluation) is **628 ms of a warm 1M check, 7%**, measured phase by phase — and it is the part that decides whether a document is lying. What the CPU profile found instead: **44% of a warm run was writing fact JSONL**, because each capability was serialised into ONE string (77 MB for module-graph) before a single `writeFileSync`. Chunked writes give byte-identical files and take **warm `extractAll` at 1M from 8,592 ms to 5,409 ms (−37%)** |
-| D12 | **Write only the fact files something reads** | **Open — needs an ADR-004 decision, not a performance one** | `jcs` is still 27% of a warm run. Only **two** capabilities are ever declared as a `${facts:cap}` read (`db-schema`, `workspace-layout`); the other eight — including module-graph's 77 MB — are written every run with no consumer. Skipping them takes most of that 27%, but ADR-004 defines the JSONL as the canonical derived fact store and eight harness gates read it back. Removing an artifact the design names belongs in an amendment, not behind a profile |
-| D7 | **Sandbox setup per provider run** | **Closed: measured, one free part built, the rest REFUSED** | **The filed figure was wrong by ~5x.** Measured directly against a no-op through the real wrapper: 118 ms per cache miss at 100k (view 24 + namespace/mounts 60 + teardown 34), 250 ms at 1M — **2-6% of an edit, not 29%**. The 29% was an unexplained residual attributed to a plausible cause, the same error as D4's "12 providers". Built: `buildView` memoises directory creation, −16% of view construction, zero safety surface, two tests asserting the view is byte-identical. Refused: **persisting views** (hardlinks point at inodes, so a persisted view is a stale-content hazard, and ADR-002 tears views down on every path out deliberately) and **sharing views** (needs an exact match of files, dirs, links AND fact reads; measured to save nothing on the edit path — filed as conditional on repo shape). Trading a security property four ADR-002 amendments were spent on, for ~150 ms this container cannot measure, is not a trade worth making |
-| D5 | **Streaming provider output** | **Deferred on evidence, not forgotten** | D2's 256 MB ceiling binds at ~42.7 MB of declared input (~1.9M LOC), so the wall moved rather than vanished. NDJSON on a spooled descriptor would remove it, but RSS is 914 MB against a 2 GB budget across a 100× size range — memory is not the binding constraint at any size being asked about today |
+E8's scale benchmark failed on 2026-08-01. Two things had to be fixed for the
+tool to be correct at scale, and they were: **D1** gave it an incremental cache
+it had never had (100k warm check 9.66s → 2.23s), and **D2** replaced a constant
+output cap with an input-proportional one, after which **1M LOC completed
+cleanly for the first time**. That is where the goal was met — the tool is
+correct at every size, and comfortable at the size a beta cohort will bring.
 
-Re-run E8 after each; `experiments/e8-scale/RESULTS.md` holds the baseline and
-the numbers after D1, D2 and D4, and the R10 budgets have never been touched.
-The honest statement of what keeldocs handles is **a million lines / 200
-packages**, with a one-file-edit check that has been measured between 3.65s and
-7.74s at 100k *for the same code* depending on how loaded this container was.
-No public material should quote a p50 figure until D10 produces one on stable
-hardware. What IS established is every same-session A/B in the table above, and
-that the tool completes correctly at every size.
+Seven further items followed. They are real improvements, honestly measured, and
+they were **past the point of need**. Profiling always finds a next-largest
+bottleneck; a list generated that way has no natural end, and letting it read
+like a backlog was a mistake in how this document was kept. The engine side of
+scale is done. What remains for R10 is not code — it is **one measurement on
+hardware that is not this container**, and that belongs in section 4 with the
+other things only the owner can do.
 
-One methodological note that now matters more than any single number: this
-container's run-to-run variance is large — `check --no-cache`, which exercises
-identical code paths, moved 43% between two sessions. Only same-session A/B
-toggling one variable is trustworthy evidence here, and that is how D4's effect
-is stated above. `KEELDOCS_TIME=1` prints per-provider timings to stderr and has
-now settled two of these questions by measurement rather than argument.
+### The record
+
+| # | What | Outcome |
+|---|---|---|
+| D1 | Incremental extraction, keyed on the resolved input set by content hash | **The one that mattered.** Warm check 5.61s → 1.40s @10k, 9.66s → **2.23s** @100k; 33 ms overhead. Content hashes, not git blob hashes — the index needs stat-based dirty detection, whose failure mode is a silently stale answer |
+| D2 | Input-proportional output cap, `clamp(6 × declared input bytes, 5MB, 256MB)` | **The other one that mattered. 1M LOC completes**: rc 0, CLEAN, 38,047 surfaces. The register's named remedy — sharding — was measured and rejected as *unsound*: a shard boundary silently turns 1,000 internal edges external |
+| D4 | Per-file parse cache (`incremental: per-file`), `ts-imports` | Past the point of need. 28.0s → 13.7s on a 1M edit. Cost +300 MB RSS. *Its filed premise ("12 providers re-run") was wrong — three do* |
+| D6 | `express` adopts it | 11,288 ms → 737 ms on a 1M edit. Refactor proven byte-identical on every fixture before any cache existed |
+| D9 | `env-readers` adopts it | 4,663 → 4,136 ms at 100k. The one case where the advance description held, and only because it was checked |
+| D8 | `ts-imports` wire format | 46.86 → 25.81 MB. Two of the three largest things on the wire were not information |
+| D11 | Symbols grouped under their file | 25.81 → 17.03 MB; **−64% cumulative**. `kind` deliberately not hoisted — uniform in the synthetic, varies in real code |
+| D3 | `--affected` | **Already built by D1**, better. Its remaining half is 7% of a warm check and is the part that decides whether a document is lying. A profile redirected it: chunked fact-file writes, warm 1M extraction 8,592 → 5,409 ms |
+| D7 | Sandbox setup per run | **Mostly refused.** Filed figure wrong by ~5× (118–250 ms/miss, not 29%). One free part built; persisting and sharing views both refused — they cost a stated safety property |
+| D5 | Streaming provider output | **Not needed.** RSS is 914 MB against a 2 GB budget across a 100× size range; memory is not the binding constraint |
+| D12 | Write only the fact files something reads | **Not queued.** Would take ~27% of a warm run, but ADR-004 defines the JSONL as the canonical derived store and eight gates read it back. If it is ever done it starts as an ADR amendment, not a performance change |
+
+### What this cost and what it taught
+
+Two items were filed on numbers that turned out to be wrong, both the same way:
+a residual was subtracted from a total and named after the most plausible
+suspect. D4's "12 providers re-run" (three do) and D7's "29% is sandbox setup"
+(2–6%). **A residual is not a measurement.** The third correction is larger: the
+container's own timing drifts up to 2.3× between sessions on identical code
+paths — more than any single optimisation in this list — so only same-session
+A/B toggling one variable is trustworthy here, and the R10 budget verdicts are
+**not established** by anything measured in it.
+
+The honest statement of what keeldocs handles: **a million lines / 200 packages,
+correct at every size**, with a warm check around 2s at 100k. A p50 figure should
+not appear in public material until it is measured somewhere stable.
+
+`experiments/e8-scale/RESULTS.md` holds every baseline, profile and A/B behind
+the table above. `KEELDOCS_TIME=1` prints per-provider timings to stderr and
+settled two of these questions by measurement rather than argument.
 
 Two sandbox residuals are recorded rather than open, because closing them buys
 nothing at the current threat model: `/proc`, `/sys` and `/dev` stay the host's

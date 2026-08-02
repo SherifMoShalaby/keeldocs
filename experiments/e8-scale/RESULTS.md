@@ -1003,3 +1003,57 @@ in good faith, from a model of where the time *ought* to be — and in both case
 the profile disagreed. The measurement here cost twenty minutes and moved a warm
 1M run by 37%, which is more than either D3 or D7 would have produced as
 written.
+
+
+---
+
+# The D-series is closed — 2026-08-02
+
+This file stops here. Not because the profile is flat — it never will be — but
+because the thing E8 was run to find out has been answered, and everything after
+the answer was momentum.
+
+**What the failure actually required: two items.** D1 gave the tool an
+incremental cache it had never had (100k warm check 9.66s -> 2.23s). D2 replaced
+a constant output cap with an input-proportional one, after which **1M LOC
+completed cleanly for the first time**. At that point keeldocs was correct at
+every size measured and comfortable at the size a beta cohort will bring.
+
+**Seven items followed, and they were past the point of need.** D4, D6 and D9
+put a per-file parse cache behind the three providers on the edit path. D8 and
+D11 cut the wire format 64%. D3 turned out to be already built by D1, and its
+profile redirected the effort into chunked fact-file writing (warm 1M extraction
+8,592 -> 5,409 ms). D7 was largely refused on re-measurement. Every one of these
+is real, measured, and gated. None of them was required for the tool to be
+correct or usable, and each one was chosen the same way: by looking at the
+profile and taking the largest remaining thing. **A list generated that way has
+no end**, and keeping it in the roadmap as "engineering debt" made a finite piece
+of work look infinite. That was a mistake in how the work was recorded, not in
+the work.
+
+**Two items were opened on numbers that were wrong**, both in the same way — a
+residual subtracted from a total and named after the most plausible suspect.
+D4's premise was "12 providers re-parse everything" (three do). D7's was "29% of
+a run is sandbox setup" (118-250 ms per miss, 2-6%). A residual is not a
+measurement, and both were only caught because they were checked before the
+number was believed.
+
+**The largest correction is methodological and it outranks every number above.**
+This container's own timing drifts up to **2.3x between sessions on identical
+code paths** — more than any single optimisation in the series. Same-session A/B
+toggling exactly one variable is trustworthy here; a p50 quoted across sessions
+is not. So: RAM, cold runs, and completes-at-all **pass** at every size to 1M.
+The **p50 and p95 budgets have no verdict**, and the budgets were never moved to
+manufacture one. Closing R10 honestly needs one run on stable hardware plus the
+two real monorepos - a measurement, not a build, and it sits in the roadmap's
+owner section rather than here.
+
+Two candidates stay recorded rather than open. **D5** (streaming provider output)
+is not needed: RSS is 914 MB against a 2 GB budget across a 100x size range, so
+memory is not the binding constraint. **D12** (write only the fact files
+something reads) would take most of a remaining 27%, but ADR-004 defines that
+JSONL as the canonical derived store and eight gates read it back; it begins as
+an ADR amendment or not at all.
+
+**The honest one-line statement of what keeldocs handles: a million lines across
+200 packages, correct at every size, with a warm check around 2s at 100k.**
