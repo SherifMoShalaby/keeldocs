@@ -346,7 +346,7 @@ def main(root):
     for d in all_decls:
         grouped.setdefault((d["path"], d["name"]), []).append(d)
     pkgs = workspace_packages()
-    symbols = []
+    symbols = []          # [(path, package, {name, kind, sigs})], grouped below
     for (path, name), ds in sorted(grouped.items()):
         has_overloads = any(d["kind"] == "function" and not d["impl"] for d in ds) \
             and any(d["impl"] for d in ds)
@@ -358,17 +358,25 @@ def main(root):
         # it was the single largest field on the wire at 10.71 MB. The engine
         # derives it; the contract keeps the field optional, so providers that
         # still send it are unaffected.
-        symbols.append({"path": path, "name": name, "package": pkg_for(path, pkgs),
-                        "kind": kinds, "sigs": sigs})
+        symbols.append((path, pkg_for(path, pkgs), {"name": name, "kind": kinds, "sigs": sigs}))
 
     modules = []
-    participating = {s["path"] for s in symbols} | set(mod_imports)
+    participating = {path for path, _pkg, _s in symbols} | set(mod_imports)
     for rel in sorted(participating):
         edges = [{"specifier": s, "resolved": resolve_relative(rel, s, file_set)}
                  for s in mod_imports.get(rel, [])]
         modules.append({"path": rel, "package": pkg_for(rel, pkgs), "imports": edges})
 
-    out = {"modules": modules, "symbols": symbols, "warnings": warnings}
+    # D11: emit symbols GROUPED under their file. `path` and `package` are
+    # written once per file instead of once per symbol - 8.78 MB of a 25.81 MB
+    # payload at 1M LOC. `symbols` (flat) remains the contract's other accepted
+    # shape; the engine reads either, so no other provider had to move.
+    symbol_files = []
+    for path, package, sym in symbols:      # already sorted by (path, name)
+        if not symbol_files or symbol_files[-1]["path"] != path:
+            symbol_files.append({"path": path, "package": package, "symbols": []})
+        symbol_files[-1]["symbols"].append(sym)
+    out = {"modules": modules, "symbolFiles": symbol_files, "warnings": warnings}
     # The engine strips `_parsed` before anything sees it as a fact; it exists
     # only so the next run can skip re-parsing what has not changed.
     if fresh:

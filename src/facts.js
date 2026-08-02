@@ -431,7 +431,20 @@ function moduleGraphFacts(raw, provenanceBase, packages) {
       provenance: { ...provenanceBase, source: [{ file: m.path }] },
     });
   }
-  for (const s of raw.symbols ?? []) {
+  // D11: two accepted shapes, one loop. `symbols` is the flat form every
+  // module-graph provider has always emitted; `symbolFiles` groups them under
+  // their file so `path` and `package` are written once instead of once per
+  // symbol. At 1M LOC that is 8.78 MB of a 25.81 MB payload - 5,200 paths
+  // repeated 190,400 times - and `package` verified constant within a file on
+  // all 5,200. `kind` deliberately does NOT hoist: it is uniform per file in
+  // the synthetic corpus and varies per file in real code (the fixture has
+  // const + interface + function in one module), which is exactly the
+  // generalisation a synthetic benchmark would have talked you into.
+  // Additive, like `nameless`: providers still emitting the flat form are
+  // untouched, and only ts-imports moved.
+  const flatSymbols = raw.symbols ?? (raw.symbolFiles ?? []).flatMap((f) =>
+    (f.symbols ?? []).map((s) => ({ ...s, path: f.path, package: s.package ?? f.package ?? null })));
+  for (const s of flatSymbols) {
     // ADR-007 symbol identity: `ds <pkg> <version|.> <module-path>/<descriptor>`.
     // Suffix per SCIP shape: callables `().`, types `#`, terms `.`.
     const suffix = s.kind.includes("function") ? "()."

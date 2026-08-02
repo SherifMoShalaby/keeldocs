@@ -779,3 +779,80 @@ by grouping symbols under their file. That is a schema change to the
 `module-graph` wire shape, which four providers emit, so it needs the same
 optional-field treatment `nameless` got and is worth roughly another 23%. Filed
 rather than done: the first 45% cost nothing in contract churn and this would.
+
+---
+
+# Re-run after D11 (symbols grouped under their file) — 2026-08-02
+
+D8 filed this with a number and a reason not to do it yet: `path` was 6.20 MB of
+the remaining 25.81 MB, and removing it meant changing a wire shape four
+providers emit. Measuring it first made the case better than the estimate —
+**`package` hoists too**, verified constant within a file on all 5,200 — so the
+saving is 8.78 MB rather than 6.20 MB.
+
+## Shape
+
+```
+symbols:     [{path, package, name, kind, sigs}, ...]        <- flat, unchanged
+symbolFiles: [{path, package, symbols: [{name, kind, sigs}]}] <- new, optional
+```
+
+Both are the contract; one expression in `moduleGraphFacts` reads either. The
+same additive move `nameless` used in D8, and for the same reason: only
+`ts-imports` had to change.
+
+## The thing the synthetic corpus would have got wrong
+
+`kind` looks like it hoists. Across the entire 1M-LOC synthetic it is **uniform
+within every one of the 5,200 files** — the generator emits one declaration
+shape per module, so a purely measurement-driven decision would have hoisted it
+and saved another 3.09 MB.
+
+It varies in real code. The `symbols-scenario` fixture has a `const`, an
+`interface` and a `function` in one module. Hoisting `kind` would have been free
+on every benchmark and lossy on every actual repository, with nothing failing to
+say so. It stays per-symbol, and the unit test asserts that one file holds
+several kinds precisely so a future optimisation cannot quietly take it.
+
+## Result
+
+| | bytes | |
+|---|---|---|
+| original (pre-D8) | 46.86 MB | |
+| after D8 | 25.81 MB | −45% |
+| **after D11** | **17.03 MB** | **−34% more, −64% from the original** |
+
+Per-file handoff unchanged at 13.60 MB — D11 touched the output shape only.
+All 190,400 symbols identical after regrouping; all 5,400 modules identical;
+module-graph facts byte-identical to the pre-D8 baseline on every fixture.
+
+The regenerated golden is 1,157 bytes and reads better than it did: symbols now
+sit visibly under the file they came from.
+
+## The D2 gate has now been grown twice
+
+D2's harness gate asserts its fixture exceeds the *old* 5 MB constant, or it
+proves nothing. D8 shrank that fixture's output below the line and the gate
+said so; D11 shrank it below the line again, and the gate said so again. The
+fixture is now 390 files / 432k lines. Two format improvements in a row were
+caught by an assertion whose entire job is to notice when a test has stopped
+testing anything — which is the argument for writing that kind of assertion at
+all.
+
+A second gate needed updating for an honest reason: D2's fact-completeness check
+counted `emitted["symbols"]` and now counts either shape. That assertion is
+about facts surviving the trip, not about which shape a provider prefers.
+
+## What is left of the payload
+
+| field | size | |
+|---|---|---|
+| `sigs` | 9.57 MB | irreducible — the declaration shapes drift is defined over |
+| `kind` | 3.09 MB | repetitive, but per-symbol by necessity (above) |
+| `name` | 2.32 MB | data |
+| structure | ~2.05 MB | brackets, keys, the 5,200 file records |
+
+There is no third redundancy of this kind left. Further reduction means
+interning the repetitive small strings (`kind`) behind an index table, which
+trades readable goldens and a simple contract for ~3 MB — a worse deal than
+either of the two that came before it, and not filed as debt on that basis.

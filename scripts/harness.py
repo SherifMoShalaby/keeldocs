@@ -2107,14 +2107,15 @@ def main():
         tmp = _tf2.mkdtemp(prefix="keeldocs-d2-")
         KD = os.path.join(ROOT, "bin", "keeldocs.js")
 
-        # (a) legitimate large output: 252 files / 250k lines makes ts-imports
-        # emit ~6.2MB - over the old 5MB constant, well under the 6x ratio.
-        # Grown from 20x10x800 when D8 halved the wire format: the assertion
-        # below caught the fixture falling under the constant and refused to
-        # pass vacuously, which is the gate working rather than a gate to fix.
+        # (a) legitimate large output: 390 files / 432k lines makes ts-imports
+        # emit ~7.1MB - over the old 5MB constant, well under the 6x ratio.
+        # This fixture has now been grown TWICE, by D8 and again by D11, each
+        # time because the assertion below caught it falling under the constant
+        # and refused to pass vacuously. That is the gate working, not a gate
+        # to fix - and it is why the assertion exists at all.
         big = os.path.join(tmp, "big")
         subprocess.run([sys.executable, os.path.join(ROOT, "experiments", "e8-scale", "gen.py"),
-                        big, "25", "10", "1000"], capture_output=True, text=True, timeout=300, check=True)
+                        big, "30", "12", "1200"], capture_output=True, text=True, timeout=300, check=True)
         direct = subprocess.run(
             [sys.executable, os.path.join(ROOT, "providers", "module-graph", "ts-imports", "extract_symbols.py"), big],
             capture_output=True, text=True, timeout=600)
@@ -2139,9 +2140,15 @@ def main():
             '});') % ROOT.replace("\\", "/"), big], capture_output=True, text=True, timeout=900)
         got = json.loads(counted.stdout.strip().splitlines()[-1])
         assert got["err"] is None, got["err"]
-        assert got["modules"] == len(emitted["modules"]) and got["symbols"] == len(emitted["symbols"]), \
+        # the module-graph contract accepts two symbol shapes (D11): flat
+        # `symbols`, or `symbolFiles` grouped under their file. Count either,
+        # because this assertion is about facts surviving the trip - not about
+        # which shape the provider happens to prefer this month.
+        n_symbols = len(emitted.get("symbols", [])) + sum(
+            len(f.get("symbols", [])) for f in emitted.get("symbolFiles", []))
+        assert got["modules"] == len(emitted["modules"]) and got["symbols"] == n_symbols, \
             f"facts lost in transit: engine {got} vs provider " \
-            f"{{'modules': {len(emitted['modules'])}, 'symbols': {len(emitted['symbols'])}}}"
+            f"{{'modules': {len(emitted['modules'])}, 'symbols': {n_symbols}}}"
         big_mb = len(direct.stdout) / 1048576
 
         # (b) a runaway is STILL killed. Tiny declared input -> the floor binds,

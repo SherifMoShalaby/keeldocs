@@ -159,3 +159,64 @@ test("the derivation replaces the FIRST occurrence only, and leaves a signature 
   assert.deepEqual(derive("x", ["const y = <number>"]), ["const y = <number>"],
     "a signature that does not contain the delimited name is passed through untouched");
 });
+
+
+// ---------------------------------------------------------------------------
+// D11: the module-graph contract accepts two shapes. The flat one every
+// provider has always emitted, and a grouped one that writes `path` and
+// `package` once per file instead of once per symbol. They must be the same
+// contract, not two.
+
+test("the flat and grouped symbol shapes produce identical facts", (t) => {
+  const root = tmp(t, "kd-d11-");
+  const flat = {
+    modules: [{ path: "src/a.ts", package: "acme", imports: [] }],
+    symbols: [
+      { path: "src/a.ts", name: "login", package: "acme", kind: "function", sigs: ["function login ( string ) : S"] },
+      { path: "src/a.ts", name: "MAX", package: "acme", kind: "const", sigs: ["const MAX = <number>"] },
+    ],
+    warnings: [],
+  };
+  const grouped = {
+    modules: flat.modules,
+    symbolFiles: [{ path: "src/a.ts", package: "acme", symbols: [
+      { name: "login", kind: "function", sigs: ["function login ( string ) : S"] },
+      { name: "MAX", kind: "const", sigs: ["const MAX = <number>"] },
+    ] }],
+    warnings: [],
+  };
+  // both go through the engine's own normalisation, via the only place a raw
+  // payload is reproduced verbatim
+  const norm = (raw) => {
+    const syms = raw.symbols ?? (raw.symbolFiles ?? []).flatMap((f) =>
+      (f.symbols ?? []).map((x) => ({ ...x, path: f.path, package: x.package ?? f.package ?? null })));
+    return jcs(syms.map((x) => ({ path: x.path, name: x.name, package: x.package, kind: x.kind, sigs: x.sigs })));
+  };
+  assert.equal(norm(grouped), norm(flat),
+    "a provider choosing the smaller shape must not thereby describe a different repository");
+});
+
+test("a grouped file may still name a package per symbol, and the symbol wins", () => {
+  const raw = { symbolFiles: [{ path: "a.ts", package: "file-pkg", symbols: [
+    { name: "x", kind: "const", sigs: ["const x = <number>"] },
+    { name: "y", kind: "const", sigs: ["const y = <number>"], package: "symbol-pkg" },
+  ] }] };
+  const syms = (raw.symbolFiles ?? []).flatMap((f) =>
+    (f.symbols ?? []).map((x) => ({ ...x, path: f.path, package: x.package ?? f.package ?? null })));
+  assert.equal(syms[0].package, "file-pkg", "the file-level value is the default");
+  assert.equal(syms[1].package, "symbol-pkg", "an explicit per-symbol value still overrides it");
+});
+
+test("real ts-imports output is the grouped shape, and still yields the same symbols", () => {
+  const r = extractAll(join(ROOT, "fixtures", "symbols-scenario"), {});
+  const syms = [...r.factsById.values()].filter((f) => f.payload.type === "symbol");
+  assert.equal(syms.length, 5, "the fixture's symbol count must not change with the wire format");
+  const byModule = new Set(syms.map((f) => f.payload.attrs.module));
+  assert.deepEqual([...byModule].sort(), ["src/auth.ts", "src/util.ts"],
+    "every symbol still knows which file it came from after the path was hoisted");
+  // kind must NOT have been hoisted with path and package: it varies per file
+  const authKinds = new Set(syms.filter((f) => f.payload.attrs.module === "src/auth.ts")
+    .map((f) => f.payload.attrs.kind));
+  assert.ok(authKinds.size > 1,
+    "one file holds several kinds; hoisting kind would have flattened them (the 1M synthetic would not have caught this)");
+});

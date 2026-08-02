@@ -12,9 +12,9 @@ completes); then one changed file re-parsing a provider's whole input set →
 **D4** for `ts-imports` and **D6** for `express` (11,288ms → **737ms** at 1M).
 
 **Every provider on the edit path is now incremental** (D9 finished the set),
-and D8 halved what the largest of them moves: `ts-imports` output is down 45%
-and its one-file-edit cost 74%, measured in **bytes** rather than seconds —
-which is the only currency this container can still count honestly.
+and D8 + D11 cut what the largest of them moves by **64%** — `ts-imports`
+output 46.86 MB → 17.03 MB, measured in **bytes** rather than seconds, which is
+the only currency this container can still count honestly.
 The budgets have never been touched — but the p50 result must be stated
 carefully, and the reason is itself a finding: **this container's speed drift
 between sessions (2.3x, measured on `check --no-cache` where every D-series
@@ -48,7 +48,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. Thirty-four providers across ten
-capabilities feed eight document recipes. The engine has 146 unit tests, 39
+capabilities feed eight document recipes. The engine has 149 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
@@ -218,7 +218,7 @@ Created by E8 on 2026-08-01, all with measured baselines rather than estimates.
 | D4 | **Per-file parse cache** — `incremental: per-file`, keyed by content digest, handed to the provider like a fact read | **Done for `ts-imports`** (`src/cache.js` + the provider, 7 unit tests, harness gate) | `ts-imports` at 1M: **28.0s → 13.7s** on an edit. A/B on the manifest key alone: 100k edit 6.49s → **5.51s**, 1M edit 48.96s → **39.34s**. Costs +300 MB RSS at 1M (914 → 1212 MB), the first change in this series that spends memory rather than saving it. *Correction: the earlier "12 providers re-run" figure was wrong — it counted providers whose globs match, not ones that run. Three do.* |
 | D6 | **`express` adopts `incremental: per-file`** | **Done** (provider refactor + `incremental: per-file`, harness gate) | `express` at 1M: **11,288 ms → 737 ms** on an edit. A/B on the manifest key alone at 100k: extraction 3,503 ms → **2,576 ms**. The refactor (per-file anon numbering; scan and publish separated) was proven **byte-identical on every fixture before any cache existed** — a flagship extractor should be provably neutral on its own first. Its key carries a **path-set digest** as well as content, because `resolve_import` probes the filesystem mid-scan: an edit re-scans one file, an add or delete re-scans everything. Gated through EDIT, ADD and DELETE, including a mount declared in a different file than the router it points at |
 | D8 | **`ts-imports` data movement** | **Done** (2 unit tests, golden regenerated, harness green) | Measured in BYTES, not seconds — the one item this container can still decide honestly. Output **46.86 MB → 25.81 MB (−45%)**, handoff 18.5 → 13.6 MB, provider on a one-file edit 7,069 → **1,836 ms** (within-process). Two of the three largest things on the wire were not information: `indent=1` whitespace (10.16 MB and 1,046 ms to produce — 4.8× slower than compact) and `nameless` (10.71 MB, a pure function of `(name, sigs)`, exact on 190,400/190,400 — now derived by the engine, field kept optional so other providers are unaffected). Facts byte-identical everywhere |
-| D11 | **Group symbols under their file** | **Open, sized and deliberately deferred** | `path` is 6.20 MB of the remaining 25.81 MB — 5,200 distinct values repeated 190,400 times. Removing it is a `module-graph` wire-shape change that four providers emit, so it needs the optional-field treatment `nameless` got. Worth ~23% more; the first 45% cost no contract churn and this would |
+| D11 | **Group symbols under their file** | **Done** (3 unit tests, golden regenerated, harness green) | **25.81 MB → 17.03 MB (−34%), and −64% cumulative from the original 46.86 MB.** Measuring first beat the estimate: `package` hoists as well as `path`, verified constant within a file on all 5,200. `kind` deliberately does NOT hoist — it is uniform per file across the entire 1M synthetic and varies per file in real code, so a purely benchmark-driven decision would have flattened it, saved 3.09 MB, and lost information on every real repository with nothing failing to say so. A unit test now pins that. Both shapes are the contract; only ts-imports moved |
 | D9 | **`env-readers` adopts `incremental: per-file`** | **Done** (harness gate) | A/B on the manifest key at 100k: extraction 4,663 ms → **4,136 ms**; 545 ms at 1M on an edit. Genuinely the simple case, and *checked* rather than assumed — its only non-content dependency is the FILENAME, which decides whether the file is scanned as `.env.example` or as code. The gate asserts the difference from express: an ADD re-scans **1** file and a DELETE re-scans **0**, where express redoes everything. If that ever changes, `incremental: per-file` has become a false claim for this provider |
 | D10 | **Benchmark on hardware that is not this container** | **Open** — now the highest-value measurement left | Session-to-session drift of 2.3x on identical code paths exceeds every optimisation in this series. R10's "2 real monorepos" clause is the fix and is still owed |
 | D3 | **`--affected`** | **Open, and demoted** | Skips providers a diff cannot have affected. The measurement shows this is the smaller half of the remaining cost — the expensive providers genuinely do read the changed file |
