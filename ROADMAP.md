@@ -27,8 +27,11 @@ R10 honestly needs one run on stable hardware plus its two-real-monorepo clause
 — a measurement, in section 4, not more code. **No public material should quote
 a p50 until then.**
 
-**What is left is four owner actions, all in section 4.** The one that gated
-three others — publication — is done.
+**What is left is six owner actions, all in section 4, and all of them now
+happen on a physical machine** — real agent binaries (E7), stable hardware (E8),
+registry logins, people. The one that gated three others, publication, is done.
+Each item names the file carrying its procedure; nothing lives only in a chat
+log.
 
 This is the single tracking document. It reconciles three things that had been
 living in separate places: the original design brief's deliverables, the phased
@@ -164,8 +167,16 @@ remaining v1.0 gate is about people, publication or elapsed time.
 
 ## 4. Blocked on you — the critical path
 
-Four items, none of which can be moved from a build environment. Section 6 is
+Six items, none of which can be moved from a build environment. Section 6 is
 closed and section 5 is a set of refusals, so this is the whole of what is left.
+
+**The work has moved to a physical machine, and this is where it picks up.**
+Everything that could be built in a sandbox is built, tested and pushed; nothing
+is stranded in one. What remains needs things a cloud session structurally
+cannot have: real agent binaries signed into real accounts (E7), hardware whose
+clock does not drift (E8), a registry login (PyPI), and people (the cohort).
+Each item below names the file that carries its procedure, so no step lives only
+in a chat log.
 
 **~~1. npm publication~~ — DONE 2026-08-03.** `keeldocs` is on npm.
 `0.2.0-rc.4` publishes from `.github/workflows/release.yml` on a `v*` tag under
@@ -186,18 +197,32 @@ seven checks silently absent. rc.4 green. Every one of those was invisible to
 review and only findable by releasing; the throwaway rc is what kept them out of
 the `0.2.0` cut.
 
-1. **Merge the four open Tareeqna branches**, in this order because the last
+1. **Run E7 — the cross-agent skill smoke matrix.** The last gate before a
+   `0.2.0` cut, and the only outstanding experiment that must happen on your own
+   machine: it tests whether Claude Code, Codex and Cursor *discover and invoke*
+   a skill unprompted, which needs the real agents, not a sandbox that can only
+   place the files. Procedure, scripts and a results skeleton:
+   **`experiments/e7-agent-matrix/RUNBOOK.md`** — two commands to build a repo
+   whose committed docs are provably lying, one per agent to install the skills,
+   then two tests each. ≥2 of 3 green clears the gate. **Record a failure in
+   full if you get one**: it falsifies R7's uniformity assumption while there is
+   still time to change the distribution strategy, which is the entire reason
+   this experiment is ordered before a launch rather than after one.
+2. **Claim `keeldocs` on PyPI and crates.io.** Five minutes, both still free as
+   of 2026-08-03, and R14 exists because "undrift" was taken between the pick
+   and the lock. Publication made the name findable; that cuts both ways.
+3. **Merge the four open Tareeqna branches**, in this order because the last
    two stack: `keeldocs/ci-drift-gate` (report-only CI gate),
    `keeldocs/tsd-search-rides-fix` (the RPC correction plus the two-overload
    note), `keeldocs/postgrest-surface` (REST + routine docs), then
    `keeldocs/views-and-put` (views, PUT, PK markers — branched off the
    previous one).
-2. **Recruit an interview beta cohort** — the ≥50% card-completion gate has no
+4. **Recruit an interview beta cohort** — the ≥50% card-completion gate has no
    data.
-3. **Windows promotion to a blocking lane** — a scheduled task fires 2026-08-29
+5. **Windows promotion to a blocking lane** — a scheduled task fires 2026-08-29
    to check the four-week green streak and remind you it is a one-line deletion
    in `ci.yml`.
-4. **Run E8 once on hardware that is not this container** (was "D10"). Not a
+6. **Run E8 once on hardware that is not this container** (was "D10"). Not a
    build — a measurement. This container's timing drifts up to 2.3× between
    sessions on identical code paths, which is more than any optimisation in the
    scale work, so R10's warm-check budgets currently have **no verdict**. One
@@ -310,7 +335,7 @@ alongside the build rather than after.
 | E4 lie-detector wow | "deterministic verification wows on first run" | **Directional pass** — full user test needs users |
 | E5 determinism goldens | "byte-identical output across OSes" | **Passed, permanent** — runs every CI push |
 | E6 redaction adversarial corpus | "the write barrier catches realistic leaks" | **Passed** |
-| E7 agent adapter smoke matrix | the distribution bet | **Runnable 2026-08-03, not yet run** — `npx keeldocs` resolves; this is the next experiment |
+| E7 agent adapter smoke matrix | the distribution bet | **Runnable 2026-08-03, not yet run** — `npx keeldocs` resolves. Procedure, scripts and results skeleton: `experiments/e7-agent-matrix/RUNBOOK.md`. Needs real agent binaries, so it runs on your machine |
 | E8 scale benchmark (1M LOC) | "warm check ≤5s p50" | **Run 2026-08-01 → FAILED; D1 and D2 built and re-measured after each → 3 of 4 budgets now pass at every size including 1M LOC.** No incremental cache existed (D1 built one: 100k warm 9.66s → 2.23s); then 1M LOC died on a constant output cap (D2 made it input-proportional: 1M now completes CLEAN at 8.9s warm, 914 MB). One budget still fails — warm p50 at 1M — and the one-file-edit case (6.24s @100k, 39.70s @1M) is D4. Budgets never moved. Both fixes departed from the mitigation the register named, on measurement, and both departures are recorded in the ADRs |
 | E9 noise SLO field trial | the adoption bet | **Four rounds run** on a real production repo; the 4-week accept-rate number still needs a cohort |
 | E10 injection red-team | "artifact-borne injection cannot reach an action" | **Passed, permanent CI gate** |
