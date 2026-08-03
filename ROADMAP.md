@@ -50,8 +50,8 @@ buildable now and not yet built.
 The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
-proven on a real production repo**. Thirty-four providers across ten
-capabilities feed eight document recipes. The engine has 151 unit tests, 39
+proven on a real production repo**. Thirty-five providers across ten
+capabilities feed five document recipes. The engine has 151 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,

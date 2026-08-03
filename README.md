@@ -2,7 +2,7 @@
 
 **Test coverage for your docs.** keeldocs anchors every doc section to the code it describes, deterministically flags drift with receipts — *"README references `scripts/setup.sh` — deleted in `8f21ac9`, 4 months ago"* — and proposes reviewable, section-level patches. Any stack, any agent, no SaaS.
 
-> Status: **v0.2.0-dev** (v0.1.0-rc.1 taggable at `927b4cb`). Design (nine-expert panel, 13 ADRs) → validation experiments on real repos → all four commands live, all seven v0.1 capabilities live (plus the static RLS surface), real-app beta, cross-OS CI determinism matrix, GitHub Action with SARIF, publish-ready packaging. 32 unit tests + 9 extractor goldens + 8 integration suites, double-run determinism gates on every one.
+> Status: **v0.2.0-dev**, `v0.1.0-rc.1` tagged at `927b4cb`. Design (nine-expert panel, 13 ADRs) → validation experiments on real repos → all four commands live, **35 providers across 10 capabilities** feeding 5 doc recipes, real-app beta, cross-OS CI determinism matrix, GitHub Action with SARIF, publish-ready packaging. **151 unit tests + 39 extractor goldens + 80 harness checks**, double-run determinism gates on every one.
 
 ## Why
 
@@ -34,7 +34,7 @@ Until the npm package is published, clone and run `node bin/keeldocs.js` the sam
 ```yaml
 permissions: { contents: read, security-events: write, pull-requests: write }
 steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@v6
   - uses: SherifMoShalaby/keeldocs@main   # check --ci + SARIF + one sticky PR comment
 ```
 
@@ -70,22 +70,39 @@ dsn-env = "SUPABASE_DB_URL"  # the NAME of the env var holding the DSN - never t
 | `keeldocs sync` | Reviewable proposals (regenerate/restore/rebind/tombstone) with evidence; `--apply`/`--reject`/`--snooze` + interactive `y/n/s/w`; journal-backed rejection memory; human edits never overwritten. |
 | `keeldocs new <type>` | erd · endpoint-inventory · config-reference · system-map (all born clean, never overwrite) · adr capture; plus `slot-write` (7-gate prose validator, tool-applied draft labels) and `approve` (human attestation). A type without facts in your repo is honestly NOT_AVAILABLE. |
 
-Capabilities (all live): http-endpoints (Express + **FastAPI** code-tier, NestJS pure-`.scm` declarative) · db-schema (Prisma) · db-policies (static `CREATE POLICY` replay) · config-surface (env reads + `.env.example` incl. `os.environ`/`os.getenv`, value-blind) · workspace-layout (pnpm/npm/yarn/pyproject/single) · services-topology (compose, owned-vs-external) · module-graph (ts-imports **and py-imports**: import edges + `ds` symbol identities with S1b move-matching, `__all__` honored) · decision-history (git-log churn, HEAD-anchored window).
+### Capabilities and providers (all live)
+
+| Capability | Providers |
+|---|---|
+| `http-endpoints` | aspnet · django · express · fastapi · gin · nestjs · rails · spring · supabase-functions · supabase-postgrest |
+| `db-schema` | prisma · drizzle · rails-sql · sql-replay · tbls-live (`--live`, opt-in) |
+| `db-policies` | sql-policies (static `CREATE POLICY` replay) |
+| `module-graph` | ts-imports · py-imports · go-symbols · java-symbols — import edges + `ds` symbol identities with S1b move-matching |
+| `async-messaging` | kafka · rabbitmq · redis-pubsub · sqs-sns · supabase-realtime |
+| `client-routes` | react-router · next-routes · vue-router · angular-router |
+| `services-topology` | compose · helm · kustomize (owned-vs-external) |
+| `config-surface` | env-readers — env reads + `.env.example`, incl. `os.environ`/`os.getenv`, **value-blind** |
+| `workspace-layout` | workspace-auto (pnpm/npm/yarn/pyproject/single) |
+| `decision-history` | git-log (churn, HEAD-anchored window) |
+
+Code-tier providers parse real call sites; declarative-tier providers are pure `.scm` tree-sitter queries with no code at all. Both are sandboxed subprocesses that emit JSON and write nothing.
+
+**Monorepo scale.** A synthetic 200-package, 1M-line repo extracts and checks end to end inside the 2 GB memory budget, and every fact is byte-identical between a warm and a cold run (`experiments/e8-scale/`). No warm-check latency figure is claimed yet — that measurement needs hardware whose own timing does not drift, and it is the one thing R10 still owes.
 
 ## Repo layout
 
 ```
 bin/            CLI entry - init/check/sync/new + slot-write/approve
 action.yml      GitHub Action (composite): check --ci + SARIF + sticky PR comment
-skills/         Agent Skills (open standard) — init/check/sync/new + core rules
+skills/         6 Agent Skills (open standard) - init/check/sync/new/interview + core rules
 adapters/       per-agent install manifests (Claude Code, Codex, Cursor)
 providers/      capability providers + requirements.txt (pinned extractor runtime)
 recipes/        doc types - erd, endpoint-inventory, config-reference, system-map, adr
-fixtures/       tiny fixture repos + golden fact files — the contribution test bed
+fixtures/       27 tiny fixture repos + 39 golden fact files - the contribution test bed
 scripts/        harness.py (fixture matrix + determinism double-runs), sarif.js
 spec/           anchor specification (versioned, standalone)
 docs/design/    the full panel design: architecture, 13 ADRs, scope, risks
-experiments/    E1/E2/E4 validation prototypes + results (they passed; receipts inside)
+experiments/    11 experiment dirs + VALIDATION-REPORT.md - receipts, including the two that failed first (E8 scale, E11 ERD)
 ```
 
 ## Contributing
