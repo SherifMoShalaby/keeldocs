@@ -90,7 +90,7 @@ unit-pinned:
 
 Route claims went 18 → 5 across the two rounds, and the survivors are all
 TRUE, verified by hand against the repo: a documented edge function
-(`search-rides`) that is not among the eleven that exist, and four
+(name withheld) that is not among the eleven that exist, and four
 `DELETE /api/v1/...` endpoints in the TSD against a repo whose only API
 routes are three unrelated handlers. Total findings 249 → 118, with the
 receipts accurate throughout — every round of this trial moved precision,
@@ -111,17 +111,17 @@ quiet inside it (unit-pinned, including that the rule ends at the next
 heading).
 
 **One was a real documentation bug**, wrong on three counts: the TSD
-documented search as `POST /functions/v1/search-rides` — an Edge Function
-that does not exist among the eleven that do — under the wrong name
-(`search_rides`, underscore) and with a body shape (`{origin:{lat,lng},
-filters:{…}}`) matching no version of the function. It is a PostgREST
+documented its search entry point as `POST /functions/v1/<name>` — an Edge
+Function that does not exist among the eleven that do — under a name whose
+separator differed from the real one (hyphen versus underscore), and with a
+nested-object body shape matching no version of the function. It is a PostgREST
 RPC. Corrected against the definition in migration 0019, which is
-byte-for-byte what the client passes to `supabase.rpc('search_rides', …)`.
+byte-for-byte what the client passes to the corresponding `supabase.rpc(…)`.
 (Round 4 refined this: 0019 is not *the* current definition but one of TWO
 live overloads — the one the app calls. See R4 finding 4.)
 
 **A new gap opened by the fix.** The corrected line —
-`POST /rest/v1/rpc/search_rides` — is still flagged, because keeldocs does
+`POST /rest/v1/rpc/<fn>` — is still flagged, because keeldocs does
 not model the PostgREST surface at all. For a Supabase app that surface
 IS the API: every table is reachable at `/rest/v1/<table>` and every
 function at `/rest/v1/rpc/<fn>`, all of it derivable from the catalog the
@@ -171,9 +171,9 @@ findings moved 114 → 113 — precision again, never recall.
    endpoint inventory's source column now reads
    `postgrest-catalog: fact:db-schema/public.orders` for derived rows.
 4. **The routine surface immediately paid for itself.** The trial subject
-   turned out to have TWO live overloads of its search RPC — an older
-   `geography`-typed one and the newer `double precision` one the app
-   actually calls, both `EXECUTE`-granted to `authenticated`. `CREATE OR
+   turned out to have TWO live overloads of one search RPC — an older
+   spatial-typed one and a newer numeric-typed one the app actually calls,
+   both left executable by the same broad application role. `CREATE OR
    REPLACE` with a changed parameter list does not replace; it overloads.
    Nothing in the repo says so, and no documentation had noticed. The
    catalog does.

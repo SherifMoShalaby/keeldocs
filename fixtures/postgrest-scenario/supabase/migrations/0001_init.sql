@@ -5,10 +5,10 @@
 -- (a real routine PostgREST never exposes) and a procedure (named as a gap).
 create schema if not exists api;
 
-create table public.rides (
+create table public.items (
   id bigserial primary key,
-  driver text not null,
-  seats int not null default 3
+  owner text not null,
+  slots int not null default 3
 );
 
 create table public.profiles (
@@ -16,25 +16,25 @@ create table public.profiles (
   display_name text
 );
 
--- same relation NAME in a second exposed schema: /rest/v1/rides is ambiguous
-create table api.rides (
+-- same relation NAME in a second exposed schema: /rest/v1/items is ambiguous
+create table api.items (
   id bigserial primary key,
   note text
 );
 
-create function public.search_rides(p_origin text, p_max_km numeric default 25)
-returns setof public.rides
+create function public.search_items(p_query text, p_max_n numeric default 25)
+returns setof public.items
 language sql
 stable
 as $$
-  select * from public.rides where p_origin is not null and p_max_km > 0;
+  select * from public.items where p_query is not null and p_max_n > 0;
 $$;
 
-create function public.claim_ride(p_ride_id bigint) returns boolean
+create function public.claim_item(p_item_id bigint) returns boolean
 language plpgsql
 as $$
 begin
-  return p_ride_id > 0;
+  return p_item_id > 0;
 end;
 $$;
 
@@ -56,8 +56,8 @@ $$;
 
 -- an auto-updatable view (write verbs), an aggregate view (GET only), and a
 -- keyless table (no PUT) - the three catalog-decided branches
-create view active_rides as select id, driver, seats from public.rides;
+create view active_items as select id, owner, slots from public.items;
 
-create view ride_counts as select driver, count(*) as n from public.rides group by driver;
+create view item_counts as select owner, count(*) as n from public.items group by owner;
 
-create table public.ride_events (at timestamptz default now(), note text);
+create table public.item_events (at timestamptz default now(), note text);
