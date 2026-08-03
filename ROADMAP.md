@@ -30,8 +30,9 @@ R10 honestly needs one run on stable hardware plus its two-real-monorepo clause
 a p50 until then.**
 
 **What is left is four owner actions, all in section 4, and all of them now
-happen on a physical machine** — stable hardware (E8), registry logins, people.
-The two that gated the rest, publication and E7, are both done.
+happen on a physical machine** — stable hardware (E8), a registry login, people,
+and one scheduled check. The three that gated the rest — publication, E7 and the
+downstream merges — are done.
 Each item names the file carrying its procedure; nothing lives only in a chat
 log.
 
@@ -98,9 +99,9 @@ through `11`). The constraints are where the honest scoring lives.
 
 ### v0.1 — the loop, proven on one ecosystem
 
-Everything in the v0.1 scope table shipped. It is tagged `v0.1.0-rc.1`. The
-line that ships to users is now the `0.2.0` pre-release on npm, so promoting the
-v0.1 tag is a bookkeeping decision rather than a blocked one.
+Everything in the v0.1 scope table shipped. It is tagged `v0.1.0-rc.1`. The line
+that ships to users is now stable `0.2.0` on npm, so promoting the v0.1 tag is a
+bookkeeping decision rather than a blocked one.
 
 | Item | Status |
 |---|---|
@@ -112,7 +113,7 @@ v0.1 tag is a bookkeeping decision rather than a blocked one.
 | Live Postgres via tbls behind `--live` | **Done** (reclassified OBSERVED once replay landed) |
 | Fixture harness (`test-provider`), noise SLO, redaction barrier, slot-write | **Done** |
 | Coverage as ratchet, never a gate | **Done** |
-| npm publish | **Done 2026-08-03** — `keeldocs@0.2.0-rc.4`, trusted publishing + provenance |
+| npm publish | **Done 2026-08-03** — four rc's, then `keeldocs@0.2.0` as `latest`; trusted publishing + provenance, no token |
 | PyPI placeholder + org transfer | **Blocked (you)** — name still free, and R14's lesson is that registries move |
 
 ### v0.2 — Python GA, interview, replay, trust machinery
@@ -172,7 +173,7 @@ remaining v1.0 gate is about people, publication or elapsed time.
 
 ## 4. Blocked on you — the critical path
 
-**Four items open; two are now done.** Section 6 is closed and section 5 is a
+**Four items open; three are now done.** Section 6 is closed and section 5 is a
 set of refusals, so this is the whole of what is left.
 
 **The work has moved to a physical machine, and this is where it picks up.**
@@ -233,12 +234,15 @@ to orient an agent that has no skill support.
 3. **Claim `keeldocs` on PyPI and crates.io.** Five minutes, both still free as
    of 2026-08-03, and R14 exists because "undrift" was taken between the pick
    and the lock. Publication made the name findable; that cuts both ways.
-4. **Merge the four open Tareeqna branches**, in this order because the last
-   two stack: `keeldocs/ci-drift-gate` (report-only CI gate),
-   `keeldocs/tsd-rpc-fix` (the RPC correction plus the two-overload
-   note), `keeldocs/postgrest-surface` (REST + routine docs), then
-   `keeldocs/views-and-put` (views, PUT, PK markers — branched off the
-   previous one).
+**~~4. Merge the four open Tareeqna branches~~ — DONE 2026-08-03.** All four
+   landed as PRs #17-20 in dependency order: the report-only CI gate, the RPC
+   correction with its two-overload note, the REST-and-routines surface, then
+   views, PUT and PK markers. Two corrections to what this entry used to say:
+   there were **five** keeldocs branches, not four — `keeldocs/init-docs` was
+   already merged as #16 — and **both** pairs stack, not just the last two, so
+   the stated order was right for a broader reason than the one given. The
+   downstream repo had no PRs open for any of them; the branches existed and
+   were simply never proposed.
 5. **Recruit an interview beta cohort** — the ≥50% card-completion gate has no
    data.
 6. **Windows: fixed 2026-08-03, and the promotion clock starts now.** The lane
