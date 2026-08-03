@@ -155,3 +155,51 @@ test("http-endpoints declares a db-schema read, and the catalog runs first", () 
   assert.ok(order.lastIndexOf("db-schema") < order.indexOf("http-endpoints"),
     "every db-schema provider must finish before the derived surface reads their facts");
 });
+
+// ---------- keeldocs skills install ----------
+// E7 proved agents discover and invoke the skills; the review then found there
+// was no shipped way to install them. The README said to copy
+// node_modules/keeldocs/skills, which does not exist after `npx`, nests if the
+// target already exists, and ships frontmatter Codex and Cursor reject.
+import { installSkills, listAgents } from "../src/skillscmd.js";
+import { mkdtempSync as _mkdtemp, rmSync as _rm, existsSync as _exists, readFileSync as _read, readdirSync as _readdir } from "node:fs";
+import { tmpdir as _tmpdir } from "node:os";
+import { join as _join } from "node:path";
+
+test("skills install: per-agent path, frontmatter strip, AGENTS.md, and no nesting on re-run", () => {
+  const expected = {
+    "claude-code": { dir: ".claude/skills", strips: false, agentsMd: false },
+    codex: { dir: ".agents/skills", strips: true, agentsMd: true },
+    cursor: { dir: ".cursor/skills", strips: true, agentsMd: true },
+  };
+  assert.deepEqual(listAgents(), Object.keys(expected).sort());
+
+  for (const [agent, want] of Object.entries(expected)) {
+    const root = _mkdtemp(_join(_tmpdir(), `kd-skills-${agent}-`));
+    try {
+      const r = installSkills({ agent, root });
+      assert.equal(r.ok, true, r.summary);
+      assert.equal(r.data.skills_dir, want.dir);
+      assert.ok(r.data.listing <= r.data.cap, `listing ${r.data.listing} over cap`);
+
+      // the agent that chokes on a key must not receive it; the one that
+      // supports it must keep it - a flat copy gets one of the two wrong
+      const initFm = _read(_join(root, want.dir, "init", "SKILL.md"), "utf8").split("---")[1];
+      assert.equal(initFm.includes("disable-model-invocation"), !want.strips);
+      assert.equal(_exists(_join(root, "AGENTS.md")), want.agentsMd);
+
+      // installing twice must not produce <dir>/skills/... - the `cp -r` failure,
+      // which an agent never sees and which reports no error
+      installSkills({ agent, root });
+      assert.equal(_readdir(_join(root, want.dir)).includes("skills"), false, "nested copy created");
+      assert.equal(_readdir(_join(root, want.dir)).length, 6);
+    } finally { _rm(root, { recursive: true, force: true }); }
+  }
+});
+
+test("skills install: an unknown agent refuses and names the ones that exist", () => {
+  const r = installSkills({ agent: "emacs", root: _tmpdir() });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, "USAGE");
+  assert.match(r.summary, /claude-code/);
+});

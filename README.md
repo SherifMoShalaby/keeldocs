@@ -1,114 +1,230 @@
 # keeldocs
 
-**Test coverage for your docs.** keeldocs anchors every doc section to the code it describes, deterministically flags drift with receipts — *"README references `scripts/setup.sh` — deleted in `8f21ac9`, 4 months ago"* — and proposes reviewable, section-level patches. Any stack, any agent, no SaaS.
+**Test coverage for your documentation.**
 
-> Status: **published on npm** (see the badge for the current version) — `npx keeldocs init` works today. Design (nine-expert panel, 13 ADRs) → validation experiments on real repos → all four commands live, **35 providers across 10 capabilities** feeding 8 doc recipes, real-app beta, cross-OS CI determinism matrix, GitHub Action with SARIF, publish-ready packaging. **152 unit tests + 39 extractor goldens + 80 harness checks**, double-run determinism gates on every one.
+[![npm](https://img.shields.io/npm/v/keeldocs)](https://www.npmjs.com/package/keeldocs)
+[![license](https://img.shields.io/npm/l/keeldocs)](https://github.com/SherifMoShalaby/keeldocs/blob/main/LICENSE)
+[![CI](https://github.com/SherifMoShalaby/keeldocs/actions/workflows/ci.yml/badge.svg)](https://github.com/SherifMoShalaby/keeldocs/actions/workflows/ci.yml)
 
-## Why
+Your tests tell you when your code breaks. Nothing tells you when your **docs** break. keeldocs ties each documented claim to the code it describes and tells you exactly which claims stopped being true, with the evidence for each one.
 
-AI agents optimize the forward direction: spec → plan → code. Nothing maintains the backward direction: code → accurate, current documentation. Existing tools generate once and rot, or regenerate everything and destroy human edits. The gap is not generation — it is **continuous, verifiable accuracy**.
+It runs in your repo, writes plain Markdown, and calls no model and no network.
 
-## How it works (the short version)
+## See it
 
-- **Deterministic spine.** Providers extract typed facts (endpoints, schema, env vars, services, packages, symbols, policies) from your repo — sandboxed, cache-keyed, byte-identical across runs. Facts, not prose, define truth.
-- **Anchors.** Doc sections carry tiny identity-only HTML comments binding them to facts (`fact:http-endpoints/GET /orders`) or symbols (`ds <pkg> . src/auth.ts/login().`). Drift = the bound fact-hash changed. Formatting churn never pages anyone; a moved symbol gets an evidence-backed rebind proposal.
-- **Write barrier.** Every machine-generated body passes the redaction barrier before hashing: secret patterns + entropy scan, `[REDACTED:rule]` substitution, loud envelope reporting — a matched secret never lands in a committed doc. Env **values** are structurally absent from every schema.
-- **Draft-only LLM.** The engine contains zero model-calling code. Your agent writes prose only through a validating gate (`slot-write`); the tool applies the `⚠ inferred` label; verified facts render unbadged.
-- **Noise SLO.** Journal-backed rejection memory (a rejected proposal is never re-made), snooze/tombstone decisions, surgical binds (a policy edit stales the policy table, never the ERD). Coverage is a ratchet, never a gate.
+Point it at a repo you already have. Before writing anything, it audits the docs you already wrote:
 
-## Quickstart
+```console
+$ npx keeldocs init
 
-Requires Node ≥ 20, Python 3 (extractor runtime: `pip install -r providers/requirements.txt`), git.
+keeldocs init - DRY_RUN
+
+  stack: init-scenario-fixture | async-messaging:absent | client-routes:absent | config-surface:ok (env-readers@0.1.0) | db-policies:ok (sql-policies@0.1.0) | db-schema:ok (prisma@0.1.0) | decision-history:ok (git-log@0.1.0) | http-endpoints:ok (express@0.1.0,fastapi@0.2.0) | services-topology:absent | workspace-layout:ok (workspace-auto@0.1.0) | module-graph:ok (py-imports@0.2.1,ts-imports@0.2.0) | 12 facts
+
+  Doc lie-detector - 4 finding(s) (2 candidate(s) suppressed):
+    [file-claim] README.md:8  "scripts/seed.js"
+      receipt: not found in the repo; no deletion record in reachable history
+    [env-claim] README.md:9  "ITEMS_CACHE_URL"
+      receipt: read nowhere in code (scanned 3 files for process.env.ITEMS_CACHE_URL / env("ITEMS_CACHE_URL"))
+    [script-claim] README.md:16  "npm run deploy"
+      receipt: no "deploy" in package.json scripts (lint, start)
+    [route-claim] README.md:20  "GET /api/items"
+      receipt: no matching route registration in extracted endpoints  did you mean: fact:http-endpoints/GET /items
+
+  would write: docs/reference/endpoints.md, docs/architecture/data-model.md, docs/reference/configuration.md
+  coverage: 0% -> 0% of 7 surfaces
+  plan: 7 surface(s) still undocumented (full report has the list)
+
+  apply with: keeldocs init --yes
+```
+
+Every finding carries a **receipt** — the specific check that produced it. Nothing is guessed, and nothing is written until you pass `--yes`.
+
+Afterwards, drift reads like a failing test:
+
+```console
+$ npx keeldocs check
+
+keeldocs check - DRIFT_FOUND
+1 drift finding(s) [stale 1, dead 0, tampered 0] across 1 doc(s); 1 clean; 3/3 surfaces documented (100%)
+
+  STALE     docs/reference/endpoints.md:7  api.inventory.table
+
+cache: 1/4 provider(s) reused from .keeldocs/cache (--no-cache to re-extract)
+
+full report: .keeldocs/out/check-8ff08e6d.json
+```
+
+That section is stale because a route it documents was renamed — not because someone reformatted the file. `keeldocs sync` then proposes a fix for that one section, which you accept or reject.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `keeldocs init` | Audits existing docs for false claims, then writes anchored starter docs. Dry-run by default; never overwrites a file you already have. |
+| `keeldocs check` | Reports drift, verification and coverage. Exit `0` clean, `1` findings, `2` error. Built for CI. |
+| `keeldocs sync` | Proposes section-level fixes with evidence — `--apply`, `--reject`, `--snooze`, or interactive. Your prose is never overwritten. `--upgrade` migrates docs written by an older recipe. |
+| `keeldocs new <type>` | Generates a document: `erd`, `endpoint-inventory`, `config-reference`, `system-map`, `module-guide`, `data-flow`, `screens`, `adr`. |
+| `keeldocs skills install` | Installs the Agent Skills for your coding agent — see [below](#use-it-from-your-coding-agent). |
+
+## Install
+
+Try it with no install at all:
 
 ```bash
-npx keeldocs init          # dry-run: detection card + doc lie-detector with receipts
-npx keeldocs init --yes    # write anchored starter docs (born clean, never overwrites)
-npx keeldocs check         # drift + verify + coverage; exit 0/1/2
-npx keeldocs sync          # review section-level proposals; --apply/--reject/--snooze
+npx keeldocs init
 ```
 
-Published as a pre-release; `npm view keeldocs dist-tags` shows what `latest` and `rc` currently resolve to. Running from a clone works identically — `node bin/keeldocs.js <command>`.
+Or install it, so `keeldocs` is on `PATH` in scripts — **`npx` leaves no binary behind**, so prefix every command with `npx` if you skip this:
 
-### CI (GitHub Action)
-
-```yaml
-permissions: { contents: read, security-events: write, pull-requests: write }
-steps:
-  - uses: actions/checkout@v6
-  - uses: SherifMoShalaby/keeldocs@main   # check --ci + SARIF + one sticky PR comment
+```bash
+npm install -D keeldocs
 ```
 
-Coverage never gates; drift does (`fail-on-drift: "false"` to soften). Findings land in code scanning as `keeldocs/stale|dead|tampered`.
+### Prerequisites
 
-### Config (`keeldocs.toml`, optional)
+Node ≥ 20, git, and **Python 3 with the extractor runtime**. The Python part is not optional: without it every language extractor fails and `check` reports a tooling error instead of an answer.
 
-```toml
-[providers]
-disable = ["compose"]        # provider ids to skip in this repo
-
-[docs]
-dirs = ["docs", "handbook"]  # scan roots (default ["docs"]); README.md always scanned
+```bash
+python3 -m pip install --user -r https://raw.githubusercontent.com/SherifMoShalaby/keeldocs/main/providers/requirements.txt
 ```
 
-Schema-strict: a typo'd key is a CONFIG error (exit 2), never a silent no-op.
+On Homebrew or system Python add `--break-system-packages`; `--user` keeps it out of the managed prefix. On Windows use `py -m pip` — there is often no `python3` shim. Verify with `python3 -c "import tree_sitter_typescript"`. The canonical pin list is [`providers/requirements.txt`](https://github.com/SherifMoShalaby/keeldocs/blob/main/providers/requirements.txt).
 
-### Live Postgres (`--live`, opt-in)
+### What to commit
 
-```toml
-[live]
-dsn-env = "SUPABASE_DB_URL"  # the NAME of the env var holding the DSN - never the DSN itself
+keeldocs writes to `.keeldocs/` in your repo. Commit the journal, ignore the rest:
+
+```gitignore
+.keeldocs/cache/
+.keeldocs/out/
 ```
 
-`keeldocs init --live` / `check --live` add catalog-only introspection via [tbls](https://github.com/k1LoW/tbls) (`brew install k1LoW/tap/tbls`): live tables land as schema-qualified facts (`fact:db-schema/public.orders`) with INTROSPECTED confidence and join the ERD. Declared beats live: a table already covered by Prisma is skipped, never duplicated. The DSN travels env-to-env (`TBLS_DSN`), never argv, never any report. `--live` is refused in CI - network never enters the pure-function check path - and docs initialized with `--live` should be checked with `--live`.
+`.keeldocs/decisions.jsonl` records every accept, reject and snooze. **Commit it** — otherwise CI re-proposes changes you already declined.
 
-## v0.1 surface
+## How it works
 
-| Command | Does |
-|---|---|
-| `keeldocs init` | Detection card → **doc lie-detector with receipts** → anchored starter docs (born clean, never overwrites) + doc plan ranked hotspot × fan-in. Dry-run by default, `--yes` applies. Zero LLM. |
-| `keeldocs check` | Drift + verify + coverage. Deterministic, CI-ready: exit 0/1/2/3, `--json` envelope ≤8KB, `--ci` uses HEAD commit time (pure function of the SHA). |
-| `keeldocs sync` | Reviewable proposals (regenerate/restore/rebind/tombstone) with evidence; `--apply`/`--reject`/`--snooze` + interactive `y/n/s/w`; journal-backed rejection memory; human edits never overwritten. |
-| `keeldocs new <type>` | erd · endpoint-inventory · config-reference · system-map (all born clean, never overwrite) · adr capture; plus `slot-write` (7-gate prose validator, tool-applied draft labels) and `approve` (human attestation). A type without facts in your repo is honestly NOT_AVAILABLE. |
+**It extracts facts, not text.** Small extractor programs read your repo and emit typed facts — HTTP routes, database tables, env vars, services, packages, symbols, RLS policies. They write nothing and produce byte-identical output on every run. On Linux they run inside a read-only, network-less minimal root; on macOS and Windows the isolation is best-effort and the guarantee is the code rather than the kernel.
 
-### Capabilities and providers (all live)
+**Doc sections are anchored to those facts** by a small HTML comment that survives editing:
+
+```markdown
+<!-- keeldocs: id=api.inventory binds=fact:http-endpoints/* hash-kind=fact -->
+
+<!-- keeldocs:gen id=api.inventory.table hash=h1:630e607ba8467056 -->
+| method | path | source |
+|---|---|---|
+| GET | `/api/orders` | routes/api.js:5 |
+<!-- /keeldocs:gen -->
+
+Everything outside those markers is yours. keeldocs never touches it.
+```
+
+A section is stale when the fact it binds to changes — not when the file is touched. Reformat freely; nothing pages you.
+
+**Fixes are proposals, not rewrites.** Only the block between the markers is regenerated. Your writing sits in slots the tool never authors.
+
+**Nothing is invented.** The engine contains no model-calling code. If your coding agent writes prose, it passes through a validator that checks each claim against a known fact and labels anything inferred. A claim with no fact behind it cannot render as verified.
+
+## What it can document
 
 | Capability | Providers |
 |---|---|
-| `http-endpoints` | aspnet · django · express · fastapi · gin · nestjs · rails · spring · supabase-functions · supabase-postgrest |
-| `db-schema` | prisma · drizzle · rails-sql · sql-replay · tbls-live (`--live`, opt-in) |
-| `db-policies` | sql-policies (static `CREATE POLICY` replay) |
-| `module-graph` | ts-imports · py-imports · go-symbols · java-symbols — import edges + `ds` symbol identities with S1b move-matching |
-| `async-messaging` | kafka · rabbitmq · redis-pubsub · sqs-sns · supabase-realtime |
-| `client-routes` | react-router · next-routes · vue-router · angular-router |
-| `services-topology` | compose · helm · kustomize (owned-vs-external) |
-| `config-surface` | env-readers — env reads + `.env.example`, incl. `os.environ`/`os.getenv`, **value-blind** |
-| `workspace-layout` | workspace-auto (pnpm/npm/yarn/pyproject/single) |
-| `decision-history` | git-log (churn, HEAD-anchored window) |
+| HTTP endpoints | Express · NestJS · FastAPI · Django · Rails · Spring · Gin · ASP.NET · Supabase Functions · PostgREST |
+| Database schema | Prisma · Drizzle · SQL replay · live Postgres (opt-in) |
+| Database policies | static `CREATE POLICY` replay |
+| Module graph | TypeScript · Python · Go · Java — imports and symbol identities |
+| Async messaging | Kafka · RabbitMQ · Redis Pub/Sub · SQS/SNS · Supabase Realtime |
+| Client routes | React Router · Next.js · Vue Router · Angular Router |
+| Services topology | Docker Compose · Helm · Kustomize |
+| Config surface | env var reads and `.env.example` — **names only, never values** |
+| Workspace layout | pnpm · npm · yarn · pyproject · single-package |
+| Decision history | git log (churn, HEAD-anchored) |
 
-Code-tier providers parse real call sites; declarative-tier providers are pure `.scm` tree-sitter queries with no code at all. Both are sandboxed subprocesses that emit JSON and write nothing.
+34 providers across 10 capabilities. On a stack with no matching provider, `init` writes nothing and `check` reports zero surfaces — that is the honest answer, not a failure.
 
-**Monorepo scale.** A synthetic 200-package, 1M-line repo extracts and checks end to end inside the 2 GB memory budget, and every fact is byte-identical between a warm and a cold run (`experiments/e8-scale/`). No warm-check latency figure is claimed yet — that measurement needs hardware whose own timing does not drift, and it is the one thing R10 still owes.
+## In CI
 
-## Repo layout
-
+```yaml
+# .github/workflows/keeldocs.yml
+name: keeldocs
+on: { push: { branches: [main] }, pull_request: }
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, security-events: write, pull-requests: write }
+    steps:
+      - uses: actions/checkout@v6
+      - uses: SherifMoShalaby/keeldocs@v0.2.0
 ```
-bin/            CLI entry - init/check/sync/new + slot-write/approve
-action.yml      GitHub Action (composite): check --ci + SARIF + sticky PR comment
-skills/         6 Agent Skills (open standard) - init/check/sync/new/interview + core rules
-adapters/       per-agent install manifests (Claude Code, Codex, Cursor)
-providers/      capability providers + requirements.txt (pinned extractor runtime)
-recipes/        doc types - erd, endpoint-inventory, config-reference, system-map, adr
-fixtures/       27 tiny fixture repos + 39 golden fact files - the contribution test bed
-scripts/        harness.py (fixture matrix + determinism double-runs), sarif.js
-spec/           anchor specification (versioned, standalone)
-docs/design/    the full panel design: architecture, 13 ADRs, scope, risks
-experiments/    12 experiment dirs + VALIDATION-REPORT.md - receipts, including the two that failed first (E8 scale, E11 ERD)
+
+Drift fails the build; coverage never does. Findings appear in GitHub code scanning, plus one sticky PR comment that edits itself instead of posting again. Set `fail-on-drift: "false"` to report without failing.
+
+There is also a scheduled **rollup** action that keeps at most one open PR applying deterministic regenerations — never a rebind or a tombstone, which always need a human.
+
+## Use it from your coding agent
+
+keeldocs ships as [Agent Skills](https://code.claude.com/docs/en/skills), so an agent working in your repo can answer *"are my API docs still accurate?"* by running the engine instead of reading the Markdown and forming an impression.
+
+```bash
+npx keeldocs skills install --agent claude-code   # or codex, cursor
 ```
+
+Each agent looks in a different directory and rejects different frontmatter, so this reads the per-agent manifest rather than copying files — and it is safe to re-run.
+
+This was measured, not assumed: Claude Code and Codex each discovered and invoked the skill unprompted, in both interactive and headless modes, and reported drift from the engine's output rather than their own reading. Cursor is not yet tested — there was no trustworthy install path for its CLI on the test machine. Method and results: [`experiments/e7-agent-matrix`](https://github.com/SherifMoShalaby/keeldocs/tree/main/experiments/e7-agent-matrix).
+
+## Configuration
+
+Optional, in `keeldocs.toml`:
+
+```toml
+[providers]
+disable = ["compose"]              # skip a provider in this repo
+
+[docs]
+dirs = ["docs", "handbook"]        # scan roots (default ["docs"]); README.md always scanned
+
+[resolve]
+pin = ["db-schema:prisma"]         # when two providers claim one capability
+
+[trust]
+keys = ["acme:<spki-base64>"]      # trusted signers for third-party providers
+```
+
+A misspelled key is an error, never a silent no-op.
+
+### Live database introspection (opt-in)
+
+```toml
+[live]
+dsn-env = "DATABASE_URL"           # the NAME of the env var holding the DSN — never the DSN
+```
+
+`keeldocs init --live` adds catalog-only introspection via [tbls](https://github.com/k1LoW/tbls), which you install separately. Live tables join the ERD with `INTROSPECTED` confidence, and declared beats live — a table already covered by Prisma is never duplicated. The DSN travels environment-to-environment, never through argv and never into a report. `--live` is refused in CI, because the check path stays free of network by design.
+
+## What it deliberately does not do
+
+- **It does not write your documentation for you.** It maintains what is derivable from code and leaves the reasoning to you.
+- **It does not explain *why*.** Intent is not in the source, so keeldocs will not invent it.
+- **It does not auto-merge.** Every change is a proposal a human accepts.
+- **It has no hosted service, dashboard or account.** Markdown in your repo, anchors in HTML comments, nothing to sign up for.
+
+Secrets are structurally excluded: env **values** never enter a fact, and every generated body passes a redaction scan before it can be written. If you stop using keeldocs, the anchors are inert HTML comments — delete them or leave them.
+
+## Status
+
+`0.2.0`, Apache-2.0. Covered by 154 unit tests, 39 byte-compared extractor goldens and 80 end-to-end harness checks, with double-run determinism gates on Linux and macOS. Windows runs the same matrix and reports rather than gates.
+
+Verified at scale: a synthetic 200-package, 1M-line repository extracts and checks end to end inside a 2 GB memory budget. Warm and cold runs produce byte-identical facts, gated on every fixture in the harness. **No speed figure is claimed** — that measurement is not yet trustworthy.
+
+## Learn more
+
+- [Design docs](https://github.com/SherifMoShalaby/keeldocs/tree/main/docs/design) — architecture, 13 ADRs, scope and risk register
+- [Anchor specification](https://github.com/SherifMoShalaby/keeldocs/blob/main/spec/anchor-spec.md) — versioned and standalone
+- [Roadmap](https://github.com/SherifMoShalaby/keeldocs/blob/main/ROADMAP.md) — what is done, what is deliberately refused, and why
+- [Experiments](https://github.com/SherifMoShalaby/keeldocs/tree/main/experiments) — validation runs, including the scale benchmark and the ERD renderer that both failed first
 
 ## Contributing
 
-Pattern providers are the funnel, and it is real: one `.scm` tree-sitter query + a `provider.yaml` manifest + one fixture — zero code (`providers/http-endpoints/nestjs/` is the worked example; the shared runtime is `providers/_runtime/tsq.py`). `provider.yaml` is the machine-read registry: drop a provider in, it runs. Run `python3 scripts/harness.py` — no agent required. CI runs the same harness on Linux, macOS, and Windows (reduced-trust tier). Apache-2.0, DCO, no CLA.
-
-## Design principles (non-negotiable)
-
-Deterministic-first (no LLM, no network, no clock in the `check` path) · never fabricate rationale (inferred content is always visibly labeled) · patch, don't rewrite (human edits are sacred) · git-native, local-first, no SaaS · low noise or death.
+Most new providers need no engine code beyond a short extractor: one tree-sitter query, one `provider.yaml`, one fixture. A few frameworks need nothing more than the query — `providers/http-endpoints/nestjs/` is the no-code worked example — while most need a Python extractor of around a hundred lines. Run `python3 scripts/harness.py` to test; no agent or API key required. Apache-2.0, DCO, no CLA.

@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8"));
-const COMMANDS = ["init", "check", "sync", "new", "interview", "answer", "mine", "provider", "slot-write", "approve"]; // answer/mine/provider/slot-write/approve: plumbing (ADR-012)
+const COMMANDS = ["init", "check", "sync", "new", "interview", "answer", "mine", "provider", "skills", "slot-write", "approve"]; // answer/mine/provider/slot-write/approve: plumbing (ADR-012)
 const args = process.argv.slice(2);
 const cmd = args[0];
 const json = args.includes("--json");
@@ -26,7 +26,7 @@ function envelope(ok, code, summary, next = []) {
 if (cmd === "--version" || cmd === "-v") { console.log(pkg.version); process.exit(0); }
 
 if (!COMMANDS.includes(cmd)) {
-  const msg = `usage: keeldocs <init|check|sync|new|interview> [--json] [--ci] [--no-cache]  (v${pkg.version})`;
+  const msg = `usage: keeldocs <init|check|sync|new|interview|skills> [--json] [--ci] [--no-cache]  (v${pkg.version})`;
   if (json) console.log(envelope(false, "USAGE", msg));
   else console.error(msg);
   process.exit(2);
@@ -76,6 +76,26 @@ if (cmd === "mine") {
 if (cmd === "provider") {
   const { runProviderCmd } = await import("../src/providercmd.js");
   process.exit(runProviderCmd({ root: process.cwd(), json, args }));
+}
+
+if (cmd === "skills") {
+  const { installSkills, listAgents } = await import("../src/skillscmd.js");
+  const sub = args[1];
+  if (sub !== "install") {
+    const msg = `usage: keeldocs skills install --agent <${listAgents().join("|")}> [--dry-run] [--json]`;
+    if (json) console.log(envelope(false, "USAGE", msg));
+    else console.error(msg);
+    process.exit(2);
+  }
+  const ai = args.indexOf("--agent");
+  const env = installSkills({ agent: ai !== -1 ? args[ai + 1] : "claude-code",
+    root: process.cwd(), dryRun: args.includes("--dry-run") });
+  if (json) console.log(JSON.stringify({ v: 1, ok: env.ok, code: env.code, summary: env.summary.slice(0, 300), data: env.data, next: [] }));
+  else {
+    console.log(`keeldocs skills - ${env.code}\n${env.summary}`);
+    for (const w of env.data.written ?? []) console.log(`  ${w}`);
+  }
+  process.exit(env.ok ? 0 : 2);
 }
 
 if (cmd === "slot-write") {
