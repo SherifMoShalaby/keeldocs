@@ -16,7 +16,7 @@ everything in it needs a physical machine (real agent binaries, stable hardware,
 a registry login, people). §5 is refusals with written evidence thresholds, not
 backlog. §6 is closed and is a record, not a queue.
 
-Current: `keeldocs@0.2.0-rc.4` on npm, 152 unit tests, 39 extractor goldens,
+Current: `keeldocs@0.2.0` on npm (`latest`), 152 unit tests, 39 extractor goldens,
 80 harness checks. CI: Linux and macOS green, **Windows non-blocking and
 currently red** (four D-series checks, harness portability - see ROADMAP §4).
 
@@ -62,8 +62,8 @@ one.** The workflow pins npm 11 (npm 12 needs Node ≥22.22) and asserts the
 hyphen-free version takes `latest` automatically (`release.yml` maps it), so
 there is no manual `dist-tag` step to remember at the `0.2.0` cut.
 
-**E7 passed 2 of 3 on 2026-08-03, so nothing gates `0.2.0` any more** — cutting
-it is a decision. Evidence and the seven defects the run surfaced:
+**E7 passed 2 of 3 and `0.2.0` shipped on 2026-08-03.** Evidence and the seven
+defects the run surfaced:
 `experiments/e7-agent-matrix/RESULTS.md`. Re-running E7 is not a matter of
 typing the two commands: read that file first, because three of those defects
 produce a *confidently wrong* verdict rather than an obviously broken one.

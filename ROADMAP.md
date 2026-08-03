@@ -1,6 +1,6 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-03.** Published: **`keeldocs@0.2.0-rc.4` on npm**, built by
+**As of 2026-08-03.** Published: **`keeldocs@0.2.0` on npm** — `latest` — built by
 `release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
 provenance attestation and no publish token anywhere. Linux and macOS CI green;
 **the non-blocking Windows lane is RED and has been all day — see §4** · 152 unit tests · 39 extractor goldens · 80 harness checks ·
@@ -130,7 +130,7 @@ v0.1 tag is a bookkeeping decision rather than a blocked one.
 | module-guide + onboarding-verify recipes | **Done** |
 | Interview (`interview` / `answer`) + `mine` | **Done** |
 | Windows red → green | **Regressed** — the posix-emit contract, `fileURLToPath` roots and LF-pinned harness all shipped and hold, but four D-series harness checks now fail on Windows with `list index out of range`; the lane is non-blocking so nothing surfaced it. See §4 item 6 |
-| Cut `0.2.0` release | **Unblocked 2026-08-03** — E7 passed 2 of 3, which was the only gate; the release path itself is proven (4 rc's, green on rc.4). A decision now, not a blocker |
+| Cut `0.2.0` release | **Done 2026-08-03** — `keeldocs@0.2.0` on npm as `latest`, SLSA v1 provenance naming `release.yml` at `refs/tags/v0.2.0`, no publish token. Verified cold from the registry: 130 files, 0 `.pyc`, and `meta.engine` finally reports `keeldocs@0.2.0` |
 
 ### v0.3 — breadth, each behind its own gate
 
