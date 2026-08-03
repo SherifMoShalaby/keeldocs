@@ -1,10 +1,10 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-03.** Published: **`keeldocs@0.2.0` on npm** — `latest` — built by
+**As of 2026-08-04.** Published: **`keeldocs@0.3.0` on npm** — `latest` — built by
 `release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
-provenance attestation and no publish token anywhere. 3-OS CI green as of
-`db47d6b` — including the non-blocking Windows lane, red for at least twelve
-runs before it and fixed the same day (§4 item 6) · 154 unit tests · 39 extractor goldens · 80 harness checks ·
+provenance attestation and no publish token anywhere. 3-OS CI green including
+`action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
+runs before it and fixed the same day (§4 item 6) · 156 unit tests · 39 extractor goldens · 80 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -36,6 +36,13 @@ downstream merges — are done.
 Each item names the file carrying its procedure; nothing lives only in a chat
 log.
 
+**A Plane board now exists alongside this document.** Project `KEEL` in the
+`appsby` workspace carries 29 tickets across 8 epics, produced 2026-08-04 by a
+senior-lead review of this roadmap against the original design brief. It is
+worth deciding, once, which of the two is authoritative for open work — this
+file currently claims that role in its own header and in CLAUDE.md, and two
+tracking systems that both claim it is how a roadmap starts lying.
+
 This is the single tracking document. It reconciles three things that had been
 living in separate places: the original design brief's deliverables, the phased
 roadmap with its go/no-go gates (design doc 07), and what has actually been
@@ -58,7 +65,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. Thirty-four providers across ten
-capabilities feed eight document recipes. The engine has 154 unit tests, 39
+capabilities feed eight document recipes. The engine has 156 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
@@ -100,7 +107,7 @@ through `11`). The constraints are where the honest scoring lives.
 ### v0.1 — the loop, proven on one ecosystem
 
 Everything in the v0.1 scope table shipped. It is tagged `v0.1.0-rc.1`. The line
-that ships to users is now stable `0.2.0` on npm, so promoting the v0.1 tag is a
+that ships to users is now stable `0.3.0` on npm, so promoting the v0.1 tag is a
 bookkeeping decision rather than a blocked one.
 
 | Item | Status |
@@ -132,7 +139,7 @@ bookkeeping decision rather than a blocked one.
 | module-guide + onboarding-verify recipes | **Done** |
 | Interview (`interview` / `answer`) + `mine` | **Done** |
 | Windows red → green | **Done, after a regression caught 2026-08-03** — the posix-emit contract, `fileURLToPath` roots and LF-pinned harness always held; what broke was the harness feeding a bare `C:/...` path to dynamic `import()`, which node rejects as a URL scheme. Green on all five jobs at `db47d6b` |
-| Cut `0.2.0` release | **Done 2026-08-03** — `keeldocs@0.2.0` on npm as `latest`, SLSA v1 provenance naming `release.yml` at `refs/tags/v0.2.0`, no publish token. Verified cold from the registry: 130 files, 0 `.pyc`, and `meta.engine` finally reports `keeldocs@0.2.0` |
+| Cut `0.2.0` release, then `0.3.0` | **Done 2026-08-03/04** — `0.3.0` adds `keeldocs skills install` and ships the rewritten README; npm serves the README from the tarball, so the page could not be corrected without a release. — `keeldocs@0.2.0` on npm as `latest`, SLSA v1 provenance naming `release.yml` at `refs/tags/v0.2.0`, no publish token. Verified cold from the registry: 130 files, 0 `.pyc`, and `meta.engine` finally reports `keeldocs@0.2.0` |
 
 ### v0.3 — breadth, each behind its own gate
 
@@ -426,7 +433,7 @@ re-measure the same missing cache on a lumpier tree.
 35 shipped providers across 10 capabilities (workspace-layout, module-graph,
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
-agent skills · 154 unit tests · 39 byte-compared extractor goldens · ~25
+agent skills · 156 unit tests · 39 byte-compared extractor goldens · ~25
 end-to-end integration blocks · 13 ADRs · 15 experiments.
 
 Field deployment: one real production application (Next.js App Router +
