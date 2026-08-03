@@ -37,6 +37,12 @@ jobs:
             || { echo "npm $v < $req - trusted publishing would fail at the publish step"; exit 1; }
       - name: Install extractor runtime (pinned)
         run: pip install -r providers/requirements.txt
+      # ci.yml has always done this and release.yml never did, so the suite that
+      # gates the publish was a WEAKER suite than the one that gates a push:
+      # sql-replay needs pglite, an optionalDependency, and 7 checks fail without
+      # it. The gate must be the same gate or it is not a gate.
+      - name: Install engine runtime (pglite for sql-replay, lockfile-pinned)
+        run: npm ci --no-fund --no-audit
       - name: Full suite
         run: npm test
       - name: Tag must match package.json version
