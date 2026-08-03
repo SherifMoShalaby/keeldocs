@@ -1,7 +1,8 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-02, end of session.** 90 commits on `main` · engine
-`0.2.0-dev.0` · tagged `v0.1.0-rc.1` at `927b4cb` · 3-OS CI green (Windows
+**As of 2026-08-03.** Published: **`keeldocs@0.2.0-rc.4` on npm**, built by
+`release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
+provenance attestation and no publish token anywhere. 3-OS CI green (Windows
 non-blocking) · 151 unit tests · 39 extractor goldens · 80 harness checks.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -26,8 +27,8 @@ R10 honestly needs one run on stable hardware plus its two-real-monorepo clause
 — a measurement, in section 4, not more code. **No public material should quote
 a p50 until then.**
 
-**What is left is five owner actions, all in section 4**, and the first gates
-three of the others.
+**What is left is four owner actions, all in section 4.** The one that gated
+three others — publication — is done.
 
 This is the single tracking document. It reconciles three things that had been
 living in separate places: the original design brief's deliverables, the phased
@@ -74,7 +75,7 @@ through `11`). The constraints are where the honest scoring lives.
 | # | Constraint | Status | Evidence / gap |
 |---|---|---|---|
 | 1 | Stack-agnostic | **Partial by roadmap** | TS/JS, Python, Java, Go, C#, Ruby, Dart shipped; Postgres/Supabase/MySQL-static/SQLite. Mongo and MySQL *live* are gated, not missing by accident |
-| 2 | Agent-native distribution | **Partial (blocked)** | 6 skills, plugin + marketplace manifests, CLI envelope contract all ship; cross-agent smoke (E7) needs a published package |
+| 2 | Agent-native distribution | **Partial** | 6 skills, plugin + marketplace manifests, CLI envelope contract all ship; the package is published, so cross-agent smoke (E7) is now runnable and simply has not been run |
 | 3 | Deterministic-first | **Done** | Zero model-calling code in the engine. Byte-identical output across 3 OSes × 2 runs, enforced every CI run |
 | 4 | Git-native | **Done** | Markdown in-repo, anchors in HTML comments, no service dependency, no lock-in |
 | 5 | Local-first inference | **Done** | The host agent is the model; headless BYO-key prose is gated on a measurement, not shipped half-done |
@@ -89,8 +90,9 @@ through `11`). The constraints are where the honest scoring lives.
 
 ### v0.1 — the loop, proven on one ecosystem
 
-Everything in the v0.1 scope table shipped. It is tagged `v0.1.0-rc.1` and has
-not been promoted to `v0.1.0` only because publication is blocked.
+Everything in the v0.1 scope table shipped. It is tagged `v0.1.0-rc.1`. The
+line that ships to users is now the `0.2.0` pre-release on npm, so promoting the
+v0.1 tag is a bookkeeping decision rather than a blocked one.
 
 | Item | Status |
 |---|---|
@@ -102,7 +104,8 @@ not been promoted to `v0.1.0` only because publication is blocked.
 | Live Postgres via tbls behind `--live` | **Done** (reclassified OBSERVED once replay landed) |
 | Fixture harness (`test-provider`), noise SLO, redaction barrier, slot-write | **Done** |
 | Coverage as ratchet, never a gate | **Done** |
-| npm/PyPI publish + org transfer | **Blocked (you)** |
+| npm publish | **Done 2026-08-03** — `keeldocs@0.2.0-rc.4`, trusted publishing + provenance |
+| PyPI placeholder + org transfer | **Blocked (you)** — name still free, and R14's lesson is that registries move |
 
 ### v0.2 — Python GA, interview, replay, trust machinery
 
@@ -120,7 +123,7 @@ not been promoted to `v0.1.0` only because publication is blocked.
 | module-guide + onboarding-verify recipes | **Done** |
 | Interview (`interview` / `answer`) + `mine` | **Done** |
 | Windows red → green | **Done** — posix-emit contract, `fileURLToPath` roots, LF-pinned harness |
-| Cut `0.2.0` release | **Blocked (you)** — waits on E7, which waits on publication |
+| Cut `0.2.0` release | **Blocked (you)** — waits on E7 only; the release path itself is proven (4 rc's, green on rc.4) |
 
 ### v0.3 — breadth, each behind its own gate
 
@@ -152,7 +155,7 @@ remaining v1.0 gate is about people, publication or elapsed time.
 | Gate | Status |
 |---|---|
 | Anchor spec frozen at 1.0, published standalone with a migration policy | **Open** — spec is stable in practice, not yet frozen |
-| ≥500 public repos with committed anchors | **Blocked (you)** — needs publication |
+| ≥500 public repos with committed anchors | **Blocked (you)** — now measurable: the package is installable |
 | ≥2 non-founder maintainers with merge rights | **Blocked (you)** — hard gate, no v1.0 at bus factor 1 |
 | Survived one breaking agent-API change, adapters-only fix ≤1 week | **Not yet exercised** |
 | Noise SLO holding in the wild (accept-rate ≥30% sustained) | **Blocked (evidence)** |
@@ -161,29 +164,40 @@ remaining v1.0 gate is about people, publication or elapsed time.
 
 ## 4. Blocked on you — the critical path
 
-These five items gate more than they look like they do. The first one gates a
-chain of three, and none of them can be moved from a build environment. This is
-the whole of what is left; section 6 is closed and section 5 is a set of
-refusals, not a backlog.
+Four items, none of which can be moved from a build environment. Section 6 is
+closed and section 5 is a set of refusals, so this is the whole of what is left.
 
-1. **npm Trusted Publishing, then re-run the release job.** `release.yml` is
-   written and runs the full suite at the tag; it needs credentials configured
-   in repo settings. Until the package publishes, E7 (cross-agent skill smoke)
-   cannot run; until E7 passes on two agents, `0.2.0` should not cut; until
-   there is a published package, every adoption and contribution-economics
-   number stays unmeasurable.
-2. **Merge the four open Tareeqna branches**, in this order because the last
+**~~1. npm publication~~ — DONE 2026-08-03.** `keeldocs` is on npm.
+`0.2.0-rc.4` publishes from `.github/workflows/release.yml` on a `v*` tag under
+npm Trusted Publishing, with a SLSA v1 provenance attestation naming the tag,
+the repo and the workflow path — **and no publish token in existence**, which is
+the form R9 asked for. `latest` and `rc` both point at `0.2.0-rc.4`;
+`npx keeldocs init` works from a cold machine. **E7 is unblocked**, and with it
+the `0.2.0` cut and every adoption number.
+
+*What it cost, because the lesson is about gates and not about npm:* four
+release candidates. rc.1 by hand (trusted publishing configures on a per-package
+page that does not exist until the package does). rc.2 died because `npm@latest`
+is npm 12 and declares node ≥22.22 — "install the newest CLI" is not
+version-pin-independent, and the workflow now pins npm 11 and *asserts* the
+11.5.1 floor. rc.3 died because `release.yml` never ran `npm ci`, so the suite
+gating publication was a strictly weaker suite than the one gating every push —
+seven checks silently absent. rc.4 green. Every one of those was invisible to
+review and only findable by releasing; the throwaway rc is what kept them out of
+the `0.2.0` cut.
+
+1. **Merge the four open Tareeqna branches**, in this order because the last
    two stack: `keeldocs/ci-drift-gate` (report-only CI gate),
    `keeldocs/tsd-search-rides-fix` (the RPC correction plus the two-overload
    note), `keeldocs/postgrest-surface` (REST + routine docs), then
    `keeldocs/views-and-put` (views, PUT, PK markers — branched off the
    previous one).
-3. **Recruit an interview beta cohort** — the ≥50% card-completion gate has no
+2. **Recruit an interview beta cohort** — the ≥50% card-completion gate has no
    data.
-4. **Windows promotion to a blocking lane** — a scheduled task fires 2026-08-29
+3. **Windows promotion to a blocking lane** — a scheduled task fires 2026-08-29
    to check the four-week green streak and remind you it is a one-line deletion
    in `ci.yml`.
-5. **Run E8 once on hardware that is not this container** (was "D10"). Not a
+4. **Run E8 once on hardware that is not this container** (was "D10"). Not a
    build — a measurement. This container's timing drifts up to 2.3× between
    sessions on identical code paths, which is more than any optimisation in the
    scale work, so R10's warm-check budgets currently have **no verdict**. One
@@ -296,7 +310,7 @@ alongside the build rather than after.
 | E4 lie-detector wow | "deterministic verification wows on first run" | **Directional pass** — full user test needs users |
 | E5 determinism goldens | "byte-identical output across OSes" | **Passed, permanent** — runs every CI push |
 | E6 redaction adversarial corpus | "the write barrier catches realistic leaks" | **Passed** |
-| E7 agent adapter smoke matrix | the distribution bet | **Blocked (you)** — needs a published package |
+| E7 agent adapter smoke matrix | the distribution bet | **Runnable 2026-08-03, not yet run** — `npx keeldocs` resolves; this is the next experiment |
 | E8 scale benchmark (1M LOC) | "warm check ≤5s p50" | **Run 2026-08-01 → FAILED; D1 and D2 built and re-measured after each → 3 of 4 budgets now pass at every size including 1M LOC.** No incremental cache existed (D1 built one: 100k warm 9.66s → 2.23s); then 1M LOC died on a constant output cap (D2 made it input-proportional: 1M now completes CLEAN at 8.9s warm, 914 MB). One budget still fails — warm p50 at 1M — and the one-file-edit case (6.24s @100k, 39.70s @1M) is D4. Budgets never moved. Both fixes departed from the mitigation the register named, on measurement, and both departures are recorded in the ADRs |
 | E9 noise SLO field trial | the adoption bet | **Four rounds run** on a real production repo; the 4-week accept-rate number still needs a cohort |
 | E10 injection red-team | "artifact-borne injection cannot reach an action" | **Passed, permanent CI gate** |
@@ -309,8 +323,9 @@ alongside the build rather than after.
 ---
 
 **Validation debt, precisely.** Two experiments have never run. **E7**
-(cross-agent smoke) needs a published package — owner-blocked, on the critical
-path. **E12** (full text of the ~46% study) must happen before that number
+(cross-agent smoke) stopped being blocked on 2026-08-03 — `npx keeldocs`
+resolves — so it is now simply the next experiment, and the last thing between
+here and a `0.2.0` cut. **E12** (full text of the ~46% study) must happen before that number
 appears in any public positioning material — a writing gate, not a build one.
 
 E8 and E11 came off this list on 2026-08-01, and they are worth reading as a
