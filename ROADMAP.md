@@ -2,8 +2,8 @@
 
 **As of 2026-08-03.** Published: **`keeldocs@0.2.0-rc.4` on npm**, built by
 `release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
-provenance attestation and no publish token anywhere. 3-OS CI green (Windows
-non-blocking) · 152 unit tests · 39 extractor goldens · 80 harness checks ·
+provenance attestation and no publish token anywhere. Linux and macOS CI green;
+**the non-blocking Windows lane is RED and has been all day — see §4** · 152 unit tests · 39 extractor goldens · 80 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -129,7 +129,7 @@ v0.1 tag is a bookkeeping decision rather than a blocked one.
 | T2 trust machinery + E10 red-team | **Done** — unsigned / untrusted-signer / tampered all provably refused, permanent CI gate |
 | module-guide + onboarding-verify recipes | **Done** |
 | Interview (`interview` / `answer`) + `mine` | **Done** |
-| Windows red → green | **Done** — posix-emit contract, `fileURLToPath` roots, LF-pinned harness |
+| Windows red → green | **Regressed** — the posix-emit contract, `fileURLToPath` roots and LF-pinned harness all shipped and hold, but four D-series harness checks now fail on Windows with `list index out of range`; the lane is non-blocking so nothing surfaced it. See §4 item 6 |
 | Cut `0.2.0` release | **Unblocked 2026-08-03** — E7 passed 2 of 3, which was the only gate; the release path itself is proven (4 rc's, green on rc.4). A decision now, not a blocker |
 
 ### v0.3 — breadth, each behind its own gate
@@ -240,9 +240,17 @@ to orient an agent that has no skill support.
    previous one).
 5. **Recruit an interview beta cohort** — the ≥50% card-completion gate has no
    data.
-6. **Windows promotion to a blocking lane** — a scheduled task fires 2026-08-29
-   to check the four-week green streak and remind you it is a one-line deletion
-   in `ci.yml`.
+6. **Windows is RED, and the promotion premise is false.** Found 2026-08-03. The
+   scheduled task firing 2026-08-29 is written to check a *four-week green
+   streak* and then delete one line in `ci.yml`. There is no streak: the Windows
+   lane failed on **all twelve of the most recent runs on `main`**. Because it is
+   `continue-on-error`, every one of those runs reported success and this
+   document's header read "3-OS CI green". Four D-series checks die with
+   `list index out of range` — a harness portability bug, not an engine one, and
+   unrelated to anything the D-series measured. **Promoting the lane on 2026-08-29
+   without fixing them first would convert a silently red lane into a blocking
+   red one and stop every merge.** Green is the precondition for promotion, not
+   its consequence.
 7. **Run E8 once on hardware that is not this container** (was "D10"). Not a
    build — a measurement. This container's timing drifts up to 2.3× between
    sessions on identical code paths, which is more than any optimisation in the

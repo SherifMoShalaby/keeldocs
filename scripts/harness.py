@@ -2322,7 +2322,11 @@ def main():
     # any Python executes, so it could never have caught this. Packing a cold tree
     # here would reproduce that same vacuous gate.
     try:
-        r = subprocess.run(["npm", "pack", "--dry-run", "--json"],
+        # npm is npm.cmd on Windows; a bare "npm" raises WinError 2 under
+        # subprocess without a shell. Caught by the non-blocking Windows lane
+        # the first time this gate ran.
+        npm = "npm.cmd" if os.name == "nt" else "npm"
+        r = subprocess.run([npm, "pack", "--dry-run", "--json"],
                            cwd=ROOT, capture_output=True, text=True, timeout=180)
         assert r.returncode == 0, f"npm pack failed rc={r.returncode}: {r.stderr[-300:]}"
         shipped = [f["path"] for f in json.loads(r.stdout)[0]["files"]]
