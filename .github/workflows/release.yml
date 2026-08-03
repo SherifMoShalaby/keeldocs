@@ -1,6 +1,10 @@
-# Publish to npm with provenance on version tags (v0.1.0, v0.1.0-rc.1, ...).
-# Auth: either configure npm Trusted Publishing for this repo/workflow (then
-# NPM_TOKEN is unnecessary), or add an npm automation token as NPM_TOKEN.
+# Publish to npm with provenance on version tags (v0.1.0, v0.2.0-rc.1, ...).
+#
+# Auth is npm Trusted Publishing (OIDC): configure this repo + this workflow
+# FILENAME at npmjs.com/package/keeldocs/access. No NPM_TOKEN, no secret in the
+# repo - a stored publish token is precisely what R9 (supply-chain compromise of
+# the tool itself) is about.
+#
 # The full test suite gates the publish - a red harness cannot ship.
 name: release
 on:
@@ -19,6 +23,13 @@ jobs:
         with: { node-version: 20, registry-url: "https://registry.npmjs.org" }
       - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
+      # Trusted publishing needs npm >= 11.5.1; Node 20 bundles 10.9.x. Upgrading
+      # the CLI is version-pin-independent, which is why it is done here rather
+      # than by chasing whichever Node release happens to bundle a new enough npm.
+      - name: npm new enough for trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
       - name: Install extractor runtime (pinned)
         run: pip install -r providers/requirements.txt
       - name: Full suite
@@ -27,7 +38,15 @@ jobs:
         run: |
           v=$(node -p 'require("./package.json").version')
           test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != package version $v"; exit 1; }
-      - name: Publish (provenance)
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # npm REFUSES to publish a prerelease without an explicit --tag, so derive
+      # it from the version: 0.2.0-rc.1 -> rc, 0.3.0-beta.2 -> beta, 1.0.0 -> latest.
+      # Publishing a prerelease must never move `latest` on its own.
+      - name: Publish (provenance via OIDC, no token)
+        run: |
+          v=$(node -p 'require("./package.json").version')
+          case "$v" in
+            *-*) tag=$(printf '%s' "${v#*-}" | cut -d. -f1) ;;
+            *)   tag=latest ;;
+          esac
+          echo "publishing $v with dist-tag $tag"
+          npm publish --provenance --access public --tag "$tag"
