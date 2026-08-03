@@ -3,7 +3,8 @@
 **As of 2026-08-03.** Published: **`keeldocs@0.2.0-rc.4` on npm**, built by
 `release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
 provenance attestation and no publish token anywhere. 3-OS CI green (Windows
-non-blocking) · 151 unit tests · 39 extractor goldens · 80 harness checks.
+non-blocking) · 152 unit tests · 39 extractor goldens · 80 harness checks ·
+**E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
 become true. That happened four times in one day; the fix is to stop.)*
@@ -27,9 +28,9 @@ R10 honestly needs one run on stable hardware plus its two-real-monorepo clause
 — a measurement, in section 4, not more code. **No public material should quote
 a p50 until then.**
 
-**What is left is six owner actions, all in section 4, and all of them now
-happen on a physical machine** — real agent binaries (E7), stable hardware (E8),
-registry logins, people. The one that gated three others, publication, is done.
+**What is left is four owner actions, all in section 4, and all of them now
+happen on a physical machine** — stable hardware (E8), registry logins, people.
+The two that gated the rest, publication and E7, are both done.
 Each item names the file carrying its procedure; nothing lives only in a chat
 log.
 
@@ -55,15 +56,18 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. Thirty-five providers across ten
-capabilities feed five document recipes. The engine has 151 unit tests, 39
+capabilities feed eight document recipes. The engine has 152 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
 100% documented, `check` CLEAN, and 249 → 113 documentation lies found with
 accurate receipts across four hardening rounds. What is *not* done splits
-cleanly into three piles: a short list of owner actions that gate publication
-and therefore gate every adoption metric; a set of features deliberately
-refused until their evidence arrives. The scale work E8 opened is **closed**:
+cleanly into two piles: a short list of owner actions that need a registry
+login, stable hardware or people; and a set of features deliberately
+refused until their evidence arrives. The pile that gated the others — first
+publication, then E7 — is empty as of 2026-08-03, and the agent-native
+distribution bet the whole strategy rests on is now measured on two independent
+agents rather than assumed. The scale work E8 opened is **closed**:
 the tool is correct at every size up to a million lines, and what R10 still owes
 is a measurement on stable hardware, not more code.
 
@@ -78,7 +82,7 @@ through `11`). The constraints are where the honest scoring lives.
 | # | Constraint | Status | Evidence / gap |
 |---|---|---|---|
 | 1 | Stack-agnostic | **Partial by roadmap** | TS/JS, Python, Java, Go, C#, Ruby, Dart shipped; Postgres/Supabase/MySQL-static/SQLite. Mongo and MySQL *live* are gated, not missing by accident |
-| 2 | Agent-native distribution | **Partial** | 6 skills, plugin + marketplace manifests, CLI envelope contract all ship; the package is published, so cross-agent smoke (E7) is now runnable and simply has not been run |
+| 2 | Agent-native distribution | **Done on 2 of 3 agents** | 6 skills, plugin + marketplace manifests, CLI envelope contract all ship; E7 ran 2026-08-03 and Claude Code and Codex each discovered and invoked a skill unprompted, first action, both interactive and headless. Cursor untested |
 | 3 | Deterministic-first | **Done** | Zero model-calling code in the engine. Byte-identical output across 3 OSes × 2 runs, enforced every CI run |
 | 4 | Git-native | **Done** | Markdown in-repo, anchors in HTML comments, no service dependency, no lock-in |
 | 5 | Local-first inference | **Done** | The host agent is the model; headless BYO-key prose is gated on a measurement, not shipped half-done |
@@ -126,7 +130,7 @@ v0.1 tag is a bookkeeping decision rather than a blocked one.
 | module-guide + onboarding-verify recipes | **Done** |
 | Interview (`interview` / `answer`) + `mine` | **Done** |
 | Windows red → green | **Done** — posix-emit contract, `fileURLToPath` roots, LF-pinned harness |
-| Cut `0.2.0` release | **Blocked (you)** — waits on E7 only; the release path itself is proven (4 rc's, green on rc.4) |
+| Cut `0.2.0` release | **Unblocked 2026-08-03** — E7 passed 2 of 3, which was the only gate; the release path itself is proven (4 rc's, green on rc.4). A decision now, not a blocker |
 
 ### v0.3 — breadth, each behind its own gate
 
@@ -167,16 +171,16 @@ remaining v1.0 gate is about people, publication or elapsed time.
 
 ## 4. Blocked on you — the critical path
 
-Six items, none of which can be moved from a build environment. Section 6 is
-closed and section 5 is a set of refusals, so this is the whole of what is left.
+**Four items open; two are now done.** Section 6 is closed and section 5 is a
+set of refusals, so this is the whole of what is left.
 
 **The work has moved to a physical machine, and this is where it picks up.**
 Everything that could be built in a sandbox is built, tested and pushed; nothing
 is stranded in one. What remains needs things a cloud session structurally
-cannot have: real agent binaries signed into real accounts (E7), hardware whose
-clock does not drift (E8), a registry login (PyPI), and people (the cohort).
-Each item below names the file that carries its procedure, so no step lives only
-in a chat log.
+cannot have: hardware whose clock does not drift (E8), a registry login (PyPI),
+and people (the cohort). The two that gated everything else — publication, then
+E7 — are both closed, **and with them the `0.2.0` cut**. Each item below names
+the file that carries its procedure, so no step lives only in a chat log.
 
 **~~1. npm publication~~ — DONE 2026-08-03.** `keeldocs` is on npm.
 `0.2.0-rc.4` publishes from `.github/workflows/release.yml` on a `v*` tag under
@@ -197,32 +201,49 @@ seven checks silently absent. rc.4 green. Every one of those was invisible to
 review and only findable by releasing; the throwaway rc is what kept them out of
 the `0.2.0` cut.
 
-1. **Run E7 — the cross-agent skill smoke matrix.** The last gate before a
-   `0.2.0` cut, and the only outstanding experiment that must happen on your own
-   machine: it tests whether Claude Code, Codex and Cursor *discover and invoke*
-   a skill unprompted, which needs the real agents, not a sandbox that can only
-   place the files. Procedure, scripts and a results skeleton:
-   **`experiments/e7-agent-matrix/RUNBOOK.md`** — two commands to build a repo
-   whose committed docs are provably lying, one per agent to install the skills,
-   then two tests each. ≥2 of 3 green clears the gate. **Record a failure in
-   full if you get one**: it falsifies R7's uniformity assumption while there is
-   still time to change the distribution strategy, which is the entire reason
-   this experiment is ordered before a launch rather than after one.
-2. **Claim `keeldocs` on PyPI and crates.io.** Five minutes, both still free as
+**~~2. Run E7~~ — DONE 2026-08-03, PASSED 2 of 3. The `0.2.0` gate is cleared.**
+Claude Code 2.1.220 and Codex 0.146.0 each passed Test A and Test B. Six runs;
+in every one the agent discovered the skill and invoked it as its **first**
+action, then reported drift from the engine's envelope rather than from its own
+reading of the code. Codex never opened `docs/` or `routes/` at all, so it could
+not have hand-derived its answer. R7's uniformity assumption is a measurement
+now, not a bet — on two implementations. Cursor is untested and remains R7's
+third column, along with the breaking-change drill; neither is on the critical
+path. **Cutting `0.2.0` is now a decision, not a blocker.**
+
+*What it cost, because the lesson is about instrumentation and not about agents:*
+seven defects, three of which would have produced a **confidently wrong verdict**
+rather than no verdict. `prep-fixture.py` left its own answer in the tree — doc,
+line, state and both fact hashes — where an agent could have quoted the engine's
+receipts having never invoked it, a false pass more convincing than the
+markdown-hand-reading one the runbook warns about. A missing extractor runtime
+makes `check` return `TOOL_ERROR` instead of `DRIFT_FOUND`, and the first Codex
+run failed exactly that way while behaving *correctly* — it refused to claim the
+docs were accurate. Codex also runs commands through a login shell that discards
+a `PATH` set at launch, so the fix that works for Claude Code does not work for
+it. All of it is now in `prep-fixture.py` and `RUNBOOK.md`, including the
+three-signal method for telling a real pass from a false one, rather than in
+anyone's memory.
+
+*Still worth doing, unblocked, small:* the shipped `AGENTS.md` tells agents that
+skills live in `skills/`, and no adapter installs there — it is `.claude/skills`,
+`.agents/skills`, `.cursor/skills`. One word, in the one file whose whole job is
+to orient an agent that has no skill support.
+3. **Claim `keeldocs` on PyPI and crates.io.** Five minutes, both still free as
    of 2026-08-03, and R14 exists because "undrift" was taken between the pick
    and the lock. Publication made the name findable; that cuts both ways.
-3. **Merge the four open Tareeqna branches**, in this order because the last
+4. **Merge the four open Tareeqna branches**, in this order because the last
    two stack: `keeldocs/ci-drift-gate` (report-only CI gate),
-   `keeldocs/tsd-search-rides-fix` (the RPC correction plus the two-overload
+   `keeldocs/tsd-rpc-fix` (the RPC correction plus the two-overload
    note), `keeldocs/postgrest-surface` (REST + routine docs), then
    `keeldocs/views-and-put` (views, PUT, PK markers — branched off the
    previous one).
-4. **Recruit an interview beta cohort** — the ≥50% card-completion gate has no
+5. **Recruit an interview beta cohort** — the ≥50% card-completion gate has no
    data.
-5. **Windows promotion to a blocking lane** — a scheduled task fires 2026-08-29
+6. **Windows promotion to a blocking lane** — a scheduled task fires 2026-08-29
    to check the four-week green streak and remind you it is a one-line deletion
    in `ci.yml`.
-6. **Run E8 once on hardware that is not this container** (was "D10"). Not a
+7. **Run E8 once on hardware that is not this container** (was "D10"). Not a
    build — a measurement. This container's timing drifts up to 2.3× between
    sessions on identical code paths, which is more than any optimisation in the
    scale work, so R10's warm-check budgets currently have **no verdict**. One
@@ -230,11 +251,11 @@ the `0.2.0` cut.
    "2 real monorepos" clause, is the only thing that can close that row. Until
    then no public material should quote a p50 figure.
 
-Two things worth deciding while you are in there, both cheap: whether to **cut
-`0.2.0` on E7's evidence or on your own judgement** (the gate was yours, and the
-tree has moved a long way past what `0.2.0` originally meant), and whether the
-**`users_public` view being writable through PostgREST** is intended — keeldocs
-surfaced it, but it is a schema decision, not a docs one.
+One thing left to decide, and it is now the easy version of the question: E7
+supplied the evidence, so **cutting `0.2.0` no longer needs to rest on
+judgement**. Also still open and unrelated: whether a **public-facing
+view being writable through PostgREST** is intended — keeldocs surfaced it, but it is
+a schema decision, not a docs one.
 
 ---
 
@@ -306,8 +327,9 @@ A/B toggling one variable is trustworthy here, and the R10 budget verdicts are
 **not established** by anything measured in it.
 
 The honest statement of what keeldocs handles: **a million lines / 200 packages,
-correct at every size**, with a warm check around 2s at 100k. A p50 figure should
-not appear in public material until it is measured somewhere stable.
+correct at every size**. No absolute timing figure belongs in public material
+until it is measured somewhere stable — including this one, which is why the
+sentence that used to quote a 100k warm check here has been removed.
 
 `experiments/e8-scale/RESULTS.md` holds every baseline, profile and A/B behind
 the table above. `KEELDOCS_TIME=1` prints per-provider timings to stderr and
@@ -335,7 +357,7 @@ alongside the build rather than after.
 | E4 lie-detector wow | "deterministic verification wows on first run" | **Directional pass** — full user test needs users |
 | E5 determinism goldens | "byte-identical output across OSes" | **Passed, permanent** — runs every CI push |
 | E6 redaction adversarial corpus | "the write barrier catches realistic leaks" | **Passed** |
-| E7 agent adapter smoke matrix | the distribution bet | **Runnable 2026-08-03, not yet run** — `npx keeldocs` resolves. Procedure, scripts and results skeleton: `experiments/e7-agent-matrix/RUNBOOK.md`. Needs real agent binaries, so it runs on your machine |
+| E7 agent adapter smoke matrix | the distribution bet | **Run 2026-08-03 → PASSED at threshold, 2 of 3; gate cleared.** Claude Code 2.1.220 and Codex 0.146.0 each green on Test A and Test B — six runs, the skill discovered and invoked as the **first** action in every one, drift reported from the engine's envelope rather than from the agent's own reading. Codex never opened `docs/` or `routes/` at all. Cursor untested (absent; no trustworthy unattended install), so R7's third column is still open, as is its breaking-change drill. Seven defects found first, three of which would have produced a *wrong* verdict rather than none — a fixture leak letting an agent quote the engine's receipts having never run it, and two environment faults that make a correctly-behaving agent look like a failure. `experiments/e7-agent-matrix/RESULTS.md` |
 | E8 scale benchmark (1M LOC) | "warm check ≤5s p50" | **Run 2026-08-01 → FAILED; D1 and D2 built and re-measured after each → 3 of 4 budgets now pass at every size including 1M LOC.** No incremental cache existed (D1 built one: 100k warm 9.66s → 2.23s); then 1M LOC died on a constant output cap (D2 made it input-proportional: 1M now completes CLEAN at 8.9s warm, 914 MB). One budget still fails — warm p50 at 1M — and the one-file-edit case (6.24s @100k, 39.70s @1M) is D4. Budgets never moved. Both fixes departed from the mitigation the register named, on measurement, and both departures are recorded in the ADRs |
 | E9 noise SLO field trial | the adoption bet | **Four rounds run** on a real production repo; the 4-week accept-rate number still needs a cohort |
 | E10 injection red-team | "artifact-borne injection cannot reach an action" | **Passed, permanent CI gate** |
@@ -347,11 +369,24 @@ alongside the build rather than after.
 
 ---
 
-**Validation debt, precisely.** Two experiments have never run. **E7**
-(cross-agent smoke) stopped being blocked on 2026-08-03 — `npx keeldocs`
-resolves — so it is now simply the next experiment, and the last thing between
-here and a `0.2.0` cut. **E12** (full text of the ~46% study) must happen before that number
-appears in any public positioning material — a writing gate, not a build one.
+**Validation debt, precisely.** One experiment has never run: **E12** (full text
+of the ~46% study), which must happen before that number appears in any public
+positioning material — a writing gate, not a build one. **E7** came off this
+list on 2026-08-03, unblocked and then run the same day, passing 2 of 3. Its
+residual is named rather than dropped: Cursor is untested, so "uniform across
+the matrix" is a two-thirds claim; the runs are single samples, not a
+reliability rate, which is why R7 specifies a weekly re-run; and the
+breaking-change drill has not been exercised.
+
+E7 is also the third entry in this document's small collection of experiments
+that paid by finding something other than what they were looking for. It was
+pointed at the agents and found seven defects in the *harness around* them —
+three of which would have produced a confident wrong answer rather than an
+obvious failure. The worst was self-inflicted: the prep script left its own
+verification output in the fixture, so an agent could have quoted the engine's
+receipts having never run the engine, and that pass would have been
+indistinguishable from a real one. A gate that can be satisfied by an artifact
+the gate itself created is not a gate.
 
 E8 and E11 came off this list on 2026-08-01, and they are worth reading as a
 pair, because they are the two ways an experiment pays. E11 found a defect that
@@ -371,10 +406,10 @@ re-measure the same missing cache on a lumpier tree.
 
 ## 8. Inventory, for orientation
 
-34 shipped providers across 10 capabilities (workspace-layout, module-graph,
+35 shipped providers across 10 capabilities (workspace-layout, module-graph,
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
-agent skills · 110 unit tests · 39 byte-compared extractor goldens · ~25
+agent skills · 152 unit tests · 39 byte-compared extractor goldens · ~25
 end-to-end integration blocks · 13 ADRs · 15 experiments.
 
 Field deployment: one real production application (Next.js App Router +

@@ -16,7 +16,7 @@ everything in it needs a physical machine (real agent binaries, stable hardware,
 a registry login, people). §5 is refusals with written evidence thresholds, not
 backlog. §6 is closed and is a record, not a queue.
 
-Current: `keeldocs@0.2.0-rc.4` on npm, 151 unit tests, 39 extractor goldens,
+Current: `keeldocs@0.2.0-rc.4` on npm, 152 unit tests, 39 extractor goldens,
 80 harness checks, 3-OS CI green (Windows non-blocking).
 
 ## Never
@@ -41,8 +41,10 @@ Current: `keeldocs@0.2.0-rc.4` on npm, 151 unit tests, 39 extractor goldens,
 
 The project's own thesis makes an unverified claim worse here than elsewhere.
 
-- Run `node --test tests/` and `python3 scripts/harness.py` before saying
-  anything passes. Both, not one.
+- Run `node --test tests/*.test.js` and `python3 scripts/harness.py` before
+  saying anything passes. Both, not one. The glob is not optional: Node >=25
+  resolves the bare directory form as a module and reports one failing test
+  having run none. And check the exit code, not a `| tail` pipeline's.
 - Check the artifact, not the log that says the artifact was made. Pull the
   published tarball; decode the attestation; run the binary cold.
 - A residual is not a measurement. Two D-items were opened on a number derived
@@ -55,11 +57,15 @@ The project's own thesis makes an unverified claim worse here than elsewhere.
 Tag `v*` → `.github/workflows/release.yml` publishes via npm Trusted Publishing
 with an OIDC provenance attestation. **No publish token exists; do not create
 one.** The workflow pins npm 11 (npm 12 needs Node ≥22.22) and asserts the
-11.5.1 floor. Prereleases publish under their own dist-tag and never move
-`latest` — until a stable `0.2.0` ships, move it by hand:
-`npm dist-tag add keeldocs@<version> latest`.
+11.5.1 floor. Prereleases publish under their own dist-tag and never move `latest`; a
+hyphen-free version takes `latest` automatically (`release.yml` maps it), so
+there is no manual `dist-tag` step to remember at the `0.2.0` cut.
 
-Cutting `0.2.0` waits on E7 only. See `experiments/e7-agent-matrix/RUNBOOK.md`.
+**E7 passed 2 of 3 on 2026-08-03, so nothing gates `0.2.0` any more** — cutting
+it is a decision. Evidence and the seven defects the run surfaced:
+`experiments/e7-agent-matrix/RESULTS.md`. Re-running E7 is not a matter of
+typing the two commands: read that file first, because three of those defects
+produce a *confidently wrong* verdict rather than an obviously broken one.
 
 ## Style
 

@@ -5,7 +5,7 @@ disable-model-invocation: true
 ---
 # keeldocs sync
 
-1. `keeldocs sync --json` previews proposals (kinds: regenerate, restore, rebind, tombstone, unrenderable), each with evidence. Nothing is written.
+1. `keeldocs sync --json` previews proposals (kinds: regenerate, restore, rebind, tombstone, unrenderable), each with evidence. Nothing is written. If `keeldocs` is not on `PATH`, prefix every command here with `npx` — the documented `npx keeldocs init` install leaves no binary on `PATH`.
 2. Walk the user through them; apply decisions via the CLI, never by editing docs directly:
    - `keeldocs sync --apply <id>` (rebind honors `--to <fact-id>` to pick a different candidate)
    - `keeldocs sync --apply-all` for the regenerate/restore set

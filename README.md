@@ -2,7 +2,7 @@
 
 **Test coverage for your docs.** keeldocs anchors every doc section to the code it describes, deterministically flags drift with receipts — *"README references `scripts/setup.sh` — deleted in `8f21ac9`, 4 months ago"* — and proposes reviewable, section-level patches. Any stack, any agent, no SaaS.
 
-> Status: **`0.2.0-rc.1` on npm** — `npx keeldocs init` works today. Design (nine-expert panel, 13 ADRs) → validation experiments on real repos → all four commands live, **35 providers across 10 capabilities** feeding 5 doc recipes, real-app beta, cross-OS CI determinism matrix, GitHub Action with SARIF, publish-ready packaging. **151 unit tests + 39 extractor goldens + 80 harness checks**, double-run determinism gates on every one.
+> Status: **published on npm** (see the badge for the current version) — `npx keeldocs init` works today. Design (nine-expert panel, 13 ADRs) → validation experiments on real repos → all four commands live, **35 providers across 10 capabilities** feeding 8 doc recipes, real-app beta, cross-OS CI determinism matrix, GitHub Action with SARIF, publish-ready packaging. **152 unit tests + 39 extractor goldens + 80 harness checks**, double-run determinism gates on every one.
 
 ## Why
 
@@ -27,7 +27,7 @@ npx keeldocs check         # drift + verify + coverage; exit 0/1/2
 npx keeldocs sync          # review section-level proposals; --apply/--reject/--snooze
 ```
 
-Published as a pre-release: `latest` and `rc` both point at `0.2.0-rc.1`. Running from a clone works identically — `node bin/keeldocs.js <command>`.
+Published as a pre-release; `npm view keeldocs dist-tags` shows what `latest` and `rc` currently resolve to. Running from a clone works identically — `node bin/keeldocs.js <command>`.
 
 ### CI (GitHub Action)
 
@@ -102,7 +102,7 @@ fixtures/       27 tiny fixture repos + 39 golden fact files - the contribution 
 scripts/        harness.py (fixture matrix + determinism double-runs), sarif.js
 spec/           anchor specification (versioned, standalone)
 docs/design/    the full panel design: architecture, 13 ADRs, scope, risks
-experiments/    11 experiment dirs + VALIDATION-REPORT.md - receipts, including the two that failed first (E8 scale, E11 ERD)
+experiments/    12 experiment dirs + VALIDATION-REPORT.md - receipts, including the two that failed first (E8 scale, E11 ERD)
 ```
 
 ## Contributing

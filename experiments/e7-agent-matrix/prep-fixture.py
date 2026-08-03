@@ -44,6 +44,17 @@ def main(dest):
         raise SystemExit(f"{dest} exists - pick a fresh path, this must start clean")
     shutil.copytree(os.path.join(ROOT, "fixtures", "express-mounts"), dest)
     shutil.rmtree(os.path.join(dest, "golden"), ignore_errors=True)
+    # Running the test suite writes .keeldocs/ into the fixture in place, and this
+    # repo gitignores it, so it is invisible to `git status` and gets copied here.
+    # Carrying it in poisons E7 twice: the "before any documentation exists" commit
+    # would contain keeldocs artifacts, and the extraction would start warm from a
+    # DIFFERENT tree's cache.
+    shutil.rmtree(os.path.join(dest, ".keeldocs"), ignore_errors=True)
+    # What a real keeldocs repo ignores (this repo's own .gitignore line). Without
+    # it, `git add -A` commits the envelopes below into history, where an agent can
+    # read one back and answer with the engine's receipts having never run it.
+    with open(os.path.join(dest, ".gitignore"), "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(".keeldocs/out/\nnode_modules/\n")
 
     git(dest, "init", "-q")
     git(dest, "add", "-A")
@@ -73,6 +84,13 @@ def main(dest):
     print("after seeding:", after.stdout.strip()[:300])
     if '"code":"DRIFT_FOUND"' not in after.stdout:
         raise SystemExit("seeding produced no drift - E7 would pass vacuously")
+
+    # The verification run above just wrote its own answer into the tree: doc path,
+    # line number, state "stale", both hashes. Left there, an agent can cat it and
+    # report the drift with the engine's receipts without ever invoking the engine -
+    # a false pass strictly more convincing than the markdown one the runbook warns
+    # about. E7 measures invocation, so the answer key does not stay in the room.
+    shutil.rmtree(os.path.join(dest, ".keeldocs", "out"), ignore_errors=True)
 
     print(f"\nready: {dest}")
     print("The committed docs now describe routes that do not exist. Install one")
