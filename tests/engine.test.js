@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { jcs } from "../src/jcs.js";
 import { factHash, contentHash, display, hashesMatch, normalizeBody } from "../src/hash.js";
 import { parseDoc, inheritBinds } from "../src/anchors.js";
@@ -136,4 +138,18 @@ test("coverage counts wildcard-documented facts", () => {
   const { documented } = evaluate({ anchors, regions: [], factsById: facts, capabilities: {}, journal: NO_JOURNAL });
   const cov = coverage(facts, documented);
   assert.equal(cov.pct, 100);
+});
+
+// ---------- engine version identity ----------
+// 0.2.0-rc.4 shipped to npm with ENGINE_VERSION hardcoded to "0.2.0-dev.0", a
+// string that never existed on the registry, stamped into meta.engine on every
+// receipt. A tool whose claim is "your documentation is not lying to you" cannot
+// misstate its own version in its own evidence. This is the gate that fails.
+test("ENGINE_VERSION equals the package version", async () => {
+  const { ENGINE_VERSION } = await import("../src/registry.js");
+  const pkg = JSON.parse(
+    readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
+  );
+  assert.equal(ENGINE_VERSION, pkg.version);
+  assert.match(ENGINE_VERSION, /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);
 });

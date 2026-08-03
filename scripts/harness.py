@@ -314,6 +314,22 @@ def canonical(text):
 
 
 
+def pin_meta(rep):
+    """Null what is volatile across commits and releases; ASSERT what must be
+    right rather than frozen. meta.engine used to be baked into every golden,
+    which is why nothing caught 0.2.0-rc.4 shipping with ENGINE_VERSION
+    "0.2.0-dev.0" stamped on every receipt: the golden agreed with the bug.
+    A frozen version string can only ever confirm itself; checking it against
+    package.json is the gate that actually fails."""
+    ver = json.load(open(os.path.join(ROOT, "package.json")))["version"]
+    assert rep["meta"]["engine"] == f"keeldocs@{ver}", \
+        f'meta.engine {rep["meta"]["engine"]!r} != keeldocs@{ver}'
+    rep["meta"]["head"] = None            # volatile across commits
+    rep["meta"]["providerSetHash"] = None  # cache identity, not golden identity
+    rep["meta"]["engine"] = None           # release identity, asserted above
+    return rep
+
+
 def why(e):
     """A bare `assert x` carries no message; without the line number a failure
     here is a scavenger hunt. Report where it fired, always."""
@@ -382,8 +398,7 @@ def main():
         assert len(files) == 1, f"expected exactly one fresh report, found {files}"
         report_file = files[0]
         report = json.load(open(os.path.join(out_dir, report_file)))
-        report["meta"]["head"] = None  # volatile across commits
-        report["meta"]["providerSetHash"] = None  # cache identity, not golden identity
+        pin_meta(report)
         golden = json.load(open(os.path.join(ROOT, "fixtures", "drift-scenario", "golden", "check-report.json")))
         if canonical(json.dumps(report)) != canonical(json.dumps(golden)):
             raise AssertionError("full report != golden/check-report.json (regenerate deliberately if behavior changed)")
@@ -491,8 +506,7 @@ def main():
             assert got == want, f"{rel} differs from {golden}"
         # init report matches golden (volatile head stripped)
         rep = json.load(open(os.path.join(dst1, ".keeldocs", "out", "init-nogit.json")))
-        rep["meta"]["head"] = None
-        rep["meta"]["providerSetHash"] = None
+        pin_meta(rep)
         gold = json.load(open(os.path.join(ROOT, "fixtures", "init-scenario", "golden", "init-report.json")))
         assert canonical(json.dumps(rep)) == canonical(json.dumps(gold)), "init report != golden"
         assert len(rep["lies"]["findings"]) == 4 and rep["coverage"]["after"]["pct"] == 100
@@ -672,8 +686,7 @@ def main():
         assert got == want, "system-map.md differs from golden"
         assert "${PG_TAG}" in got, "unresolvable compose interpolation must be preserved verbatim"
         rep = json.load(open(os.path.join(dst, ".keeldocs", "out", "init-nogit.json")))
-        rep["meta"]["head"] = None
-        rep["meta"]["providerSetHash"] = None
+        pin_meta(rep)
         gold = json.load(open(os.path.join(ROOT, "fixtures", "compose-scenario", "golden", "init-report.json")))
         assert canonical(json.dumps(rep)) == canonical(json.dumps(gold)), "init report != golden"
         # born clean
@@ -1130,13 +1143,13 @@ def main():
         for verb in ("GET", "POST", "PATCH", "DELETE"):
             assert f"| {verb} | `/rest/v1/profiles`" in ep, f"exposed tables answer {verb}"
         assert "| PUT | `/rest/v1/profiles`" in ep, "a keyed table answers PUT"
-        assert "| PUT | `/rest/v1/ride_events`" not in ep, "a keyless one does not"
-        assert "| GET | `/rest/v1/ride_counts`" in ep and \
-               "| PATCH | `/rest/v1/ride_counts`" not in ep, "an aggregate view is GET-only"
-        assert "| PATCH | `/rest/v1/active_rides`" in ep, "an auto-updatable view is writable"
-        assert "| GET | `/rest/v1/rpc/search_rides`" in ep and \
-               "| POST | `/rest/v1/rpc/search_rides`" in ep, "a STABLE rpc answers both"
-        assert "| GET | `/rest/v1/rpc/claim_ride`" not in ep, "a VOLATILE rpc is POST-only"
+        assert "| PUT | `/rest/v1/item_events`" not in ep, "a keyless one does not"
+        assert "| GET | `/rest/v1/item_counts`" in ep and \
+               "| PATCH | `/rest/v1/item_counts`" not in ep, "an aggregate view is GET-only"
+        assert "| PATCH | `/rest/v1/active_items`" in ep, "an auto-updatable view is writable"
+        assert "| GET | `/rest/v1/rpc/search_items`" in ep and \
+               "| POST | `/rest/v1/rpc/search_items`" in ep, "a STABLE rpc answers both"
+        assert "| GET | `/rest/v1/rpc/claim_item`" not in ep, "a VOLATILE rpc is POST-only"
         assert "/rest/v1/rpc/rebuild_stats" not in ep, "procedures are named as a gap, never guessed"
         rep = json.load(open([os.path.join(dst, ".keeldocs", "out", f)
                               for f in os.listdir(os.path.join(dst, ".keeldocs", "out"))
@@ -2301,6 +2314,42 @@ def main():
         rmtree(tmp)
     except Exception as e:
         failures.append(f"ERD scale: {why(e)}")
+
+    # ---- packaged-artifact gates: what npm actually ships, not what git holds ----
+    # Deliberately last. Every provider above has now run, so __pycache__ exists
+    # exactly as it does on a CI runner - which is the state that let compiled
+    # bytecode into the signed 0.2.0-rc.4 tarball. CI's own `pack` job runs before
+    # any Python executes, so it could never have caught this. Packing a cold tree
+    # here would reproduce that same vacuous gate.
+    try:
+        r = subprocess.run(["npm", "pack", "--dry-run", "--json"],
+                           cwd=ROOT, capture_output=True, text=True, timeout=180)
+        assert r.returncode == 0, f"npm pack failed rc={r.returncode}: {r.stderr[-300:]}"
+        shipped = [f["path"] for f in json.loads(r.stdout)[0]["files"]]
+        bad = [f for f in shipped if f.endswith(".pyc") or "__pycache__" in f]
+        assert not bad, f"compiled bytecode would ship: {bad[:4]}"
+        pkg = json.load(open(os.path.join(ROOT, "package.json")))
+        plug = json.load(open(os.path.join(ROOT, ".claude-plugin", "plugin.json")))
+        assert plug.get("version") == pkg["version"], \
+            f'plugin.json {plug.get("version")} != package.json {pkg["version"]}'
+        # R9's budgets were stated in the risk register and enforced by nothing:
+        # no dep count, no install-script check, in harness or either workflow.
+        # The transitive walk is the part that matters - a direct-dep count cannot
+        # see the Shai-Hulud class, which arrives through a lifecycle script in a
+        # dependency-of-a-dependency.
+        deps = {**pkg.get("dependencies", {}), **pkg.get("optionalDependencies", {})}
+        assert len(deps) <= 5, f"R9 dep budget: {len(deps)} runtime deps > 5 ({sorted(deps)})"
+        for stage in ("preinstall", "install", "postinstall"):
+            assert stage not in pkg.get("scripts", {}), f"R9: package.json defines a {stage} script"
+        lock = json.load(open(os.path.join(ROOT, "package-lock.json")))
+        offenders = [name for name, meta in lock.get("packages", {}).items()
+                     if isinstance(meta, dict) and meta.get("hasInstallScript")]
+        assert not offenders, f"R9: lockfile entries carry install scripts: {offenders[:4]}"
+        print(f"  PASS  R9 supply-chain budget: {len(deps)} runtime deps, "
+              f"0 install scripts across {len(lock.get('packages', {}))} lockfile entries")
+        print(f"  PASS  packaged artifact: {len(shipped)} files, no bytecode, plugin version matches")
+    except Exception as e:
+        failures.append(f"packaged artifact: {why(e)}")
 
     if failures:
         print("\nFAILURES:")
