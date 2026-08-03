@@ -8,9 +8,17 @@ For every registered provider fixture:
 Also smoke-tests the CLI envelope contract (exit codes + JSON shape).
 Exit 0 = all green; 1 = mismatch/failure. No network, no clock, no LLM - by design.
 """
-import json, os, subprocess, sys, traceback
+import json, os, pathlib, subprocess, sys, traceback
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The node -e snippets below feed this to dynamic import(). A path is NOT a URL:
+# on Windows `C:/x/src/facts.js` makes node read `c:` as a protocol and throw
+# ERR_UNSUPPORTED_ESM_URL_SCHEME, so the child prints nothing and dies. as_uri()
+# yields file:///Users/... and file:///C:/Users/..., both of which import()
+# accepts. Four D-series checks failed this way on the non-blocking Windows lane
+# for at least twelve consecutive runs, reported only as "list index out of
+# range" because the reason was on the stderr nobody read.
+ROOT_URL = pathlib.Path(ROOT).as_uri()
 
 
 def W(path, text, mode="w"):
@@ -328,6 +336,19 @@ def pin_meta(rep):
     rep["meta"]["providerSetHash"] = None  # cache identity, not golden identity
     rep["meta"]["engine"] = None           # release identity, asserted above
     return rep
+
+
+def node_json(r, what):
+    """Parse the single JSON line a node -e snippet prints. Empty stdout means the
+    child died, and the reason is on stderr - which `splitlines()[-1]` discarded,
+    raising IndexError and naming nothing. A harness that reports "list index out
+    of range" for a crashed subprocess is not reporting; it is guessing."""
+    lines = (r.stdout or "").strip().splitlines()
+    if not lines:
+        raise AssertionError(
+            f"{what}: node wrote no stdout (rc={r.returncode}); "
+            f"stderr: {(r.stderr or '').strip()[-400:] or '(empty)'}")
+    return json.loads(lines[-1])
 
 
 def why(e):
@@ -1958,10 +1979,10 @@ def main():
                 ' provenance: f.provenance})).sort((a,b) => a.id.localeCompare(b.id)));'
                 'console.log(JSON.stringify({n: r.factsById.size, reparsed: r.cache.reparsed,'
                 ' err: r.toolError ?? null, dump: d}));'
-                '});') % (ROOT.replace("\\", "/"), ROOT.replace("\\", "/")), repo],
+                '});') % (ROOT_URL, ROOT_URL), repo],
                 capture_output=True, text=True, timeout=900,
                 env={**os.environ, **({"KEELDOCS_NO_CACHE": "1"} if extra else {})})
-            return json.loads(r.stdout.strip().splitlines()[-1])
+            return node_json(r, "node -e extract")
 
         cold = facts()
         assert cold["err"] is None, cold["err"]
@@ -2010,12 +2031,12 @@ def main():
                 ' err: r.toolError ?? null,'
                 ' dump: jcs(e.map(f => ({id: f.id, hash: f.hash, payload: f.payload, provenance: f.provenance}))'
                 '.sort((a,b) => a.id.localeCompare(b.id)))}));'
-                '});') % (ROOT.replace("\\", "/"), ROOT.replace("\\", "/"))
+                '});') % (ROOT_URL, ROOT_URL)
 
         def eps(no_cache=False):
             r = subprocess.run(["node", "-e", SNIP, repo], capture_output=True, text=True, timeout=600,
                                env={**os.environ, **({"KEELDOCS_NO_CACHE": "1"} if no_cache else {})})
-            return json.loads(r.stdout.strip().splitlines()[-1])
+            return node_json(r, "node -e extract")
 
         base = eps()
         assert base["err"] is None and base["n"] == 4, base
@@ -2074,12 +2095,12 @@ def main():
                  ' err: r.toolError ?? null,'
                  ' dump: jcs(e.map(f => ({id: f.id, hash: f.hash, payload: f.payload, provenance: f.provenance}))'
                  '.sort((a,b) => a.id.localeCompare(b.id)))}));'
-                 '});') % (ROOT.replace("\\", "/"), ROOT.replace("\\", "/"))
+                 '});') % (ROOT_URL, ROOT_URL)
 
         def envs(no_cache=False):
             r = subprocess.run(["node", "-e", SNIP9, repo], capture_output=True, text=True, timeout=600,
                                env={**os.environ, **({"KEELDOCS_NO_CACHE": "1"} if no_cache else {})})
-            return json.loads(r.stdout.strip().splitlines()[-1])
+            return node_json(r, "node -e extract")
 
         base = envs()
         assert base["err"] is None and base["n"] == 2, base
@@ -2142,16 +2163,24 @@ def main():
             f"a {len(direct.stdout) // 1048576}MB provider still cannot complete: {r.stdout[:300]}"
         # completing is not enough - NOTHING may be lost on the way through
         rc = subprocess.run(["node", KD, "check", "--json"], cwd=big, capture_output=True, text=True, timeout=900)
-        rep = json.load(open(os.path.join(big, ".keeldocs", "out",
-                        [f for f in os.listdir(os.path.join(big, ".keeldocs", "out")) if f.startswith("check-")][0])))
+        # `check` writing no envelope is a real failure with a real reason on
+        # stdout; indexing [0] into an empty listing reports IndexError and buries
+        # it. Name what actually happened.
+        out_dir = os.path.join(big, ".keeldocs", "out")
+        spilled = sorted(f for f in os.listdir(out_dir)) if os.path.isdir(out_dir) else []
+        checks = [f for f in spilled if f.startswith("check-")]
+        assert checks, (f"check wrote no envelope to .keeldocs/out (rc={rc.returncode}); "
+                        f"dir holds {spilled or '(nothing)'}; stdout: {(rc.stdout or '').strip()[:300]}; "
+                        f"stderr: {(rc.stderr or '').strip()[-200:]}")
+        rep = json.load(open(os.path.join(out_dir, checks[0])))
         assert "toolError" not in rep, rep.get("toolError")
         counted = subprocess.run(["node", "-e", (
             'import("%s/src/facts.js").then(({extractAll}) => {'
             'const r = extractAll(process.argv[1], {});'
             'const t = (k) => [...r.factsById.values()].filter(f => f.payload.type === k).length;'
             'console.log(JSON.stringify({modules: t("module"), symbols: t("symbol"), err: r.toolError ?? null}));'
-            '});') % ROOT.replace("\\", "/"), big], capture_output=True, text=True, timeout=900)
-        got = json.loads(counted.stdout.strip().splitlines()[-1])
+            '});') % ROOT_URL, big], capture_output=True, text=True, timeout=900)
+        got = node_json(counted, "D2 fact count")
         assert got["err"] is None, got["err"]
         # the module-graph contract accepts two symbol shapes (D11): flat
         # `symbols`, or `symbolFiles` grouped under their file. Count either,
