@@ -2,8 +2,9 @@
 
 **As of 2026-08-03.** Published: **`keeldocs@0.2.0` on npm** — `latest` — built by
 `release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
-provenance attestation and no publish token anywhere. Linux and macOS CI green;
-**the non-blocking Windows lane is RED and has been all day — see §4** · 152 unit tests · 39 extractor goldens · 80 harness checks ·
+provenance attestation and no publish token anywhere. 3-OS CI green as of
+`db47d6b` — including the non-blocking Windows lane, red for at least twelve
+runs before it and fixed the same day (§4 item 6) · 152 unit tests · 39 extractor goldens · 80 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -129,7 +130,7 @@ v0.1 tag is a bookkeeping decision rather than a blocked one.
 | T2 trust machinery + E10 red-team | **Done** — unsigned / untrusted-signer / tampered all provably refused, permanent CI gate |
 | module-guide + onboarding-verify recipes | **Done** |
 | Interview (`interview` / `answer`) + `mine` | **Done** |
-| Windows red → green | **Regressed** — the posix-emit contract, `fileURLToPath` roots and LF-pinned harness all shipped and hold, but four D-series harness checks now fail on Windows with `list index out of range`; the lane is non-blocking so nothing surfaced it. See §4 item 6 |
+| Windows red → green | **Done, after a regression caught 2026-08-03** — the posix-emit contract, `fileURLToPath` roots and LF-pinned harness always held; what broke was the harness feeding a bare `C:/...` path to dynamic `import()`, which node rejects as a URL scheme. Green on all five jobs at `db47d6b` |
 | Cut `0.2.0` release | **Done 2026-08-03** — `keeldocs@0.2.0` on npm as `latest`, SLSA v1 provenance naming `release.yml` at `refs/tags/v0.2.0`, no publish token. Verified cold from the registry: 130 files, 0 `.pyc`, and `meta.engine` finally reports `keeldocs@0.2.0` |
 
 ### v0.3 — breadth, each behind its own gate
@@ -240,17 +241,21 @@ to orient an agent that has no skill support.
    previous one).
 5. **Recruit an interview beta cohort** — the ≥50% card-completion gate has no
    data.
-6. **Windows is RED, and the promotion premise is false.** Found 2026-08-03. The
-   scheduled task firing 2026-08-29 is written to check a *four-week green
-   streak* and then delete one line in `ci.yml`. There is no streak: the Windows
-   lane failed on **all twelve of the most recent runs on `main`**. Because it is
-   `continue-on-error`, every one of those runs reported success and this
-   document's header read "3-OS CI green". Four D-series checks die with
-   `list index out of range` — a harness portability bug, not an engine one, and
-   unrelated to anything the D-series measured. **Promoting the lane on 2026-08-29
-   without fixing them first would convert a silently red lane into a blocking
-   red one and stop every merge.** Green is the precondition for promotion, not
-   its consequence.
+6. **Windows: fixed 2026-08-03, and the promotion clock starts now.** The lane
+   had failed on **all twelve of the most recent runs on `main`** while every one
+   of those runs reported success, because `continue-on-error` masks it and the
+   only symptom was `list index out of range` — a message naming neither the
+   subprocess nor the ESM error on the stderr the harness discarded. Cause: the
+   harness passed a bare `C:/...` path to dynamic `import()`, where node reads
+   `c:` as a URL protocol. Fixed with `pathlib.as_uri()`, and the subprocess
+   boundary now reports rc and stderr instead of an IndexError. **Green on all
+   five jobs at `db47d6b`.**
+
+   The scheduled task on **2026-08-29** checks a four-week green streak before
+   deleting the `continue-on-error` line. That streak began today — one green run
+   is not four weeks, and the reminder should be read as a question, not a
+   go-ahead. Had it fired against the previous state it would have promoted a
+   silently red lane to a blocking one and stopped every merge.
 7. **Run E8 once on hardware that is not this container** (was "D10"). Not a
    build — a measurement. This container's timing drifts up to 2.3× between
    sessions on identical code paths, which is more than any optimisation in the
