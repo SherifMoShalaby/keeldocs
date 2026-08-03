@@ -75,6 +75,28 @@ function parseBinds(raw) {
   return binds.length ? binds : null;
 }
 
+/** Anchors inside fenced code blocks are EXAMPLES, not document structure.
+ *  Without this, documenting keeldocs in your own README creates a live anchor
+ *  that immediately drifts - keeldocs found exactly that in its own README the
+ *  first time the dogfood gate was not vacuous, reporting README.md:114 stale
+ *  against an illustration. Mask fence interiors, preserving LENGTH so every
+ *  index derived below (line numbers, region body slices) still points into the
+ *  original text. Backtick and tilde fences; indented code blocks are not
+ *  treated as fences, matching CommonMark only loosely and deliberately. */
+function maskFences(text) {
+  let fence = null;
+  return text.split("\n").map((line) => {
+    const m = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+    if (fence !== null) {
+      const closes = m && m[1][0] === fence[0] && m[1].length >= fence.length;
+      if (closes) fence = null;
+      return " ".repeat(line.length);
+    }
+    if (m) { fence = m[1]; return " ".repeat(line.length); }
+    return line;
+  }).join("\n");
+}
+
 export function parseDoc(text, docPath) {
   const anchors = [];
   const regions = [];
@@ -84,9 +106,11 @@ export function parseDoc(text, docPath) {
 
   // Tag grammar: "keeldocs:" = section anchor, "keeldocs:gen"/"keeldocs:slot" = regions.
   const MARKER = /<!--\s*(\/?)keeldocs(:gen|:slot|:)\s*([^>]*?)\s*-->/g;
+  // scan the masked copy; slice bodies from the original (indices are identical)
+  const scan = maskFences(text);
   const openStack = [];
   let m;
-  while ((m = MARKER.exec(text)) !== null) {
+  while ((m = MARKER.exec(scan)) !== null) {
     const [whole, closing, kind, body] = m;
     const line = lineOf(m.index);
     if (closing === "/") {
