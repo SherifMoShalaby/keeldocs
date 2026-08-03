@@ -23,13 +23,18 @@ jobs:
         with: { node-version: 20, registry-url: "https://registry.npmjs.org" }
       - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
-      # Trusted publishing needs npm >= 11.5.1; Node 20 bundles 10.9.x. Upgrading
-      # the CLI is version-pin-independent, which is why it is done here rather
-      # than by chasing whichever Node release happens to bundle a new enough npm.
+      # Trusted publishing needs npm >= 11.5.1; Node 20 bundles 10.x. `npm@latest`
+      # does NOT work here - npm 12 declares node ^22.22.2 || ^24.15.0 || >=26,
+      # so it dies EBADENGINE before doing anything (measured, 2026-08-03). Pin
+      # the newest major that runs on the Node this job tests with, and assert the
+      # floor so a future engine bump fails HERE, loudly, instead of at publish.
       - name: npm new enough for trusted publishing
         run: |
-          npm install -g npm@latest
-          npm --version
+          npm install -g npm@11
+          v=$(npm --version); req=11.5.1
+          echo "npm $v on node $(node --version)"
+          test "$(printf '%s\n%s\n' "$req" "$v" | sort -V | head -1)" = "$req" \
+            || { echo "npm $v < $req - trusted publishing would fail at the publish step"; exit 1; }
       - name: Install extractor runtime (pinned)
         run: pip install -r providers/requirements.txt
       - name: Full suite
