@@ -1,13 +1,22 @@
 #!/usr/bin/env node
 // keeldocs CLI - init/check/sync/new + slot-write/approve, all live (v0.1).
-// Exit codes (ADR-010): 0 clean | 1 findings | 2 tool/config error | 3 budget-degraded
+// Exit codes (ADR-010): 0 clean | 1 findings | 2 tool/config error | 3 degraded.
+//
+// 3 was documented here, in AGENTS.md and in the core skill as "budget-degraded"
+// from v0.1 and NOTHING in src/ ever returned it: three agent-facing files
+// described an unreachable state, which is the exact failure this project
+// exists to refuse. It is now produced by `keeldocs doctor` and means what the
+// architecture doc always said degraded means - the run is usable but partial,
+// so warn rather than fail. `check` still never returns 3; its budget-degraded
+// case is a design intent with no implementation, and saying so is cheaper than
+// a code that no caller can ever observe.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8"));
-const COMMANDS = ["init", "check", "sync", "new", "interview", "answer", "mine", "provider", "skills", "slot-write", "approve"]; // answer/mine/provider/slot-write/approve: plumbing (ADR-012)
+const COMMANDS = ["init", "check", "sync", "new", "interview", "doctor", "answer", "mine", "provider", "skills", "slot-write", "approve"]; // answer/mine/provider/slot-write/approve: plumbing (ADR-012)
 const args = process.argv.slice(2);
 const cmd = args[0];
 const json = args.includes("--json");
@@ -26,7 +35,7 @@ function envelope(ok, code, summary, next = []) {
 if (cmd === "--version" || cmd === "-v") { console.log(pkg.version); process.exit(0); }
 
 if (!COMMANDS.includes(cmd)) {
-  const msg = `usage: keeldocs <init|check|sync|new|interview|skills> [--json] [--ci] [--no-cache]  (v${pkg.version})`;
+  const msg = `usage: keeldocs <init|check|sync|new|interview|doctor|skills> [--json] [--ci] [--no-cache]  (v${pkg.version})`;
   if (json) console.log(envelope(false, "USAGE", msg));
   else console.error(msg);
   process.exit(2);
@@ -39,6 +48,14 @@ if (cmd === "check") {
     live: args.includes("--live"),
     since: sIdx !== -1 ? args[sIdx + 1] ?? null : null });
   process.exit(exit);
+}
+
+// The preflight. Separate command, never a phase of `check`: it probes the
+// ENVIRONMENT (spawns interpreters, reads PATH), and `check` is a pure function
+// of the tree. Exits 0 ready / 1 blocked / 2 doctor itself failed / 3 degraded.
+if (cmd === "doctor") {
+  const { runDoctor } = await import("../src/doctor.js");
+  process.exit(runDoctor({ root: process.cwd(), json }));
 }
 
 if (cmd === "init") {

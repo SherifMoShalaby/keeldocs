@@ -65,6 +65,7 @@ That section is stale because a route it documents was renamed — not because s
 | `keeldocs check` | Reports drift, verification and coverage. Exit `0` clean, `1` findings, `2` error. Built for CI. |
 | `keeldocs sync` | Proposes section-level fixes with evidence — `--apply`, `--reject`, `--snooze`, or interactive. Your prose is never overwritten. `--upgrade` migrates docs written by an older recipe. |
 | `keeldocs new <type>` | Generates a document: `erd`, `endpoint-inventory`, `config-reference`, `system-map`, `module-guide`, `data-flow`, `screens`, `adr`. |
+| `keeldocs doctor` | Preflight: checks Node, git, Python and every provider's declared requirements, then prints the exact install command for your machine. Run it first, or when `check` reports a tooling error. Exit `0` ready, `1` blocked, `3` degraded. |
 | `keeldocs skills install` | Installs the Agent Skills for your coding agent — see [below](#use-it-from-your-coding-agent). |
 
 ## Install

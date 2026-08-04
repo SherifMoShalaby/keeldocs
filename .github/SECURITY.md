@@ -168,14 +168,8 @@ knows what is already covered and what is not.
   distinction between "we intend to keep dependencies near zero" and "the build
   fails if we do not" is drawn here explicitly.
 
-**Not guaranteed, and stated rather than left to be discovered:**
-
-- **No external security review has been performed.** One is scheduled against
-  the v1.0 gates rather than earlier, on the reasoning that a review's value
-  scales with the size of the user base it protects. Everything above is the
-  work of the people who wrote the code.
-- **The Python extractor runtime is version-pinned but not hash-pinned.**
-  `providers/requirements.txt` is **hash-pinned**, and every install site
+- **The Python extractor runtime is hash-pinned.**
+  `providers/requirements.txt` is hash-pinned, and every install site
   uses `pip install --require-hashes`: `ci.yml` (twice), `release.yml`,
   `action.yml` and `rollup/action.yml`. All 173 published sha256 digests for
   the eight pinned versions are listed, so all three CI operating systems
@@ -183,6 +177,13 @@ knows what is already covered and what is not.
   eight - none declares a runtime dependency. `scripts/harness.py` asserts
   both properties on every push, so a pin cannot silently lose its hashes
   and an install site cannot silently drop the flag.
+
+**Not guaranteed, and stated rather than left to be discovered:**
+
+- **No external security review has been performed.** One is scheduled against
+  the v1.0 gates rather than earlier, on the reasoning that a review's value
+  scales with the size of the user base it protects. Everything above is the
+  work of the people who wrote the code.
 
 - **Workflow actions are pinned to commit SHAs**, not tags. Every third-party
   `uses:` in `ci.yml`, `release.yml`, `action.yml` and `rollup/action.yml`
@@ -197,13 +198,15 @@ knows what is already covered and what is not.
   consumer's CI runner via `action.yml` and in `release.yml`, which holds
   `id-token: write` for the provenance attestation. "Zero install scripts"
   was only ever true of the npm half.
+- **Hash pinning proves integrity, not intent.** `--require-hashes` guarantees
+  you receive the exact artifact that was pinned; it cannot tell you that
+  artifact was benign when it was pinned, and it does not defend against PyPI
+  itself. Bumping a pin is a review decision, not a mechanical one.
 - **The lockfile walk is only as deep as the lockfile.** Today
   `package-lock.json` holds two entries — the root and pglite — so the check is
   currently strong because the posture is narrow, not because the walk is
   exhaustive. It becomes load-bearing the moment a dependency is added, which is
   exactly when it is wanted.
-- **Workflow actions are pinned by tag, not by commit SHA.** Tags move. This is
-  a known gap in workflows that hold `id-token: write`.
 - **The provider sandbox degrades by host**, as described under Scope. keeldocs
   reports the tier it is actually enforcing; it does not claim the Linux tier
   elsewhere.
