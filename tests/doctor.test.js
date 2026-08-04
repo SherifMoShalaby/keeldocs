@@ -147,7 +147,15 @@ test("the remediation line carries --require-hashes and the resolved requirement
   assert.match(pip, /--require-hashes/, "requirements.txt is hash-pinned; every install site uses this flag");
   assert.match(pip, /-r .*providers\/requirements\.txt$/);
   assert.ok(!pip.includes("--break-system-packages"), "not an externally-managed interpreter here");
-  assert.ok(rem.notes.some((n) => /PEP 668/.test(n)), "but PEP 668 must still be signposted");
+  // PEP 668 is a Linux-distro and Homebrew condition; the marker does not occur
+  // on Windows, so doctor signposts the Windows launcher there instead. Asserting
+  // PEP 668 unconditionally is how this test went red on the Windows lane while
+  // passing on the machine it was written on.
+  if (process.platform === "win32") {
+    assert.ok(rem.notes.some((n) => /py -m pip/.test(n)), "Windows gets the launcher note instead");
+  } else {
+    assert.ok(rem.notes.some((n) => /PEP 668/.test(n)), "PEP 668 must be signposted where it can occur");
+  }
 });
 
 test("--break-system-packages appears only when THIS interpreter is PEP 668 externally-managed", () => {
