@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
       - name: Install extractor runtime (pinned)
-        run: pip install -r providers/requirements.txt
+        run: pip install --require-hashes -r providers/requirements.txt
       - name: Install engine runtime (pglite for sql-replay, lockfile-pinned)
         run: npm ci --no-fund --no-audit
       - name: Engine unit tests + fixture matrix (captured)
@@ -59,7 +59,7 @@ jobs:
         # the packed CLI's real requirement - without it every provider fails
         # and check now honestly exits 2 (it used to lie CLEAN; the fail-closed
         # fix in 850a7aa exposed this job as under-provisioned)
-        run: pip install -q -r providers/requirements.txt
+        run: pip install -q --require-hashes -r providers/requirements.txt
       - name: Pack and consume the tarball
         run: |
           npm pack

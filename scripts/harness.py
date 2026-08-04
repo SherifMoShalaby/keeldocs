@@ -2378,6 +2378,29 @@ def main():
         offenders = [name for name, meta in lock.get("packages", {}).items()
                      if isinstance(meta, dict) and meta.get("hasInstallScript")]
         assert not offenders, f"R9: lockfile entries carry install scripts: {offenders[:4]}"
+        # The npm half was gated and the Python half was not, which made "zero
+        # install scripts" a half-truth: pip executes build/install code, and
+        # `pip install -r` runs on every consumer's runner (action.yml), on the
+        # rollup runner, and in release.yml - which holds `id-token: write`.
+        req = os.path.join(ROOT, "providers", "requirements.txt")
+        lines = [l.strip() for l in open(req, encoding="utf-8") if l.strip() and not l.lstrip().startswith("#")]
+        pinned = [l for l in lines if "==" in l]
+        assert pinned, "providers/requirements.txt declares no pins"
+        unhashed = [l.split()[0] for l in pinned if "--hash=sha256:" not in l and not l.rstrip().endswith("\\")]
+        assert not unhashed, f"R9: extractor pins without hashes: {unhashed}"
+        assert sum(1 for l in lines if l.startswith("--hash=sha256:")) >= len(pinned), \
+            "R9: fewer hash lines than pinned packages"
+        sites = {os.path.join(".github", "workflows", "ci.yml"): 2,
+                 os.path.join(".github", "workflows", "release.yml"): 1,
+                 "action.yml": 1, os.path.join("rollup", "action.yml"): 1}
+        for rel, want in sites.items():
+            body = open(os.path.join(ROOT, rel), encoding="utf-8").read()
+            got = body.count("pip install")
+            hashed = body.count("--require-hashes")
+            assert got == want and hashed == want, \
+                f"R9: {rel} has {got} pip install(s) and {hashed} --require-hashes (want {want}/{want})"
+        print(f"  PASS  R9 extractor runtime: {len(pinned)} pins hash-locked, "
+              f"--require-hashes on all {sum(sites.values())} install sites")
         print(f"  PASS  R9 supply-chain budget: {len(deps)} runtime deps, "
               f"0 install scripts across {len(lock.get('packages', {}))} lockfile entries")
         print(f"  PASS  packaged artifact: {len(shipped)} files, no bytecode, plugin version matches")

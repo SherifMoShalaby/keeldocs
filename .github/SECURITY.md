@@ -175,11 +175,21 @@ knows what is already covered and what is not.
   scales with the size of the user base it protects. Everything above is the
   work of the people who wrote the code.
 - **The Python extractor runtime is version-pinned but not hash-pinned.**
-  `providers/requirements.txt` pins eight packages to exact versions, and the
-  Action and both workflows install them with a plain `pip install -r`. Exact
-  versions are not a hash lock, and pip executes package build and install code.
-  This is the largest ungated part of the dependency surface: the harness's
-  supply-chain check covers the npm side only.
+  `providers/requirements.txt` is **hash-pinned**, and every install site
+  uses `pip install --require-hashes`: `ci.yml` (twice), `release.yml`,
+  `action.yml` and `rollup/action.yml`. All 173 published sha256 digests for
+  the eight pinned versions are listed, so all three CI operating systems
+  resolve to a covered wheel, and the dependency closure is exactly those
+  eight - none declares a runtime dependency. `scripts/harness.py` asserts
+  both properties on every push, so a pin cannot silently lose its hashes
+  and an install site cannot silently drop the flag.
+
+  This closes what was previously the largest ungated part of the dependency
+  surface. Exact versions alone are not a supply-chain control: pip executes
+  package build and install code, and `pip install -r` runs on every
+  consumer's CI runner via `action.yml` and in `release.yml`, which holds
+  `id-token: write` for the provenance attestation. "Zero install scripts"
+  was only ever true of the npm half.
 - **The lockfile walk is only as deep as the lockfile.** Today
   `package-lock.json` holds two entries — the root and pglite — so the check is
   currently strong because the posture is narrow, not because the walk is

@@ -41,7 +41,7 @@ runs:
       with: { python-version: "3.12" }
     - name: Install extractor runtime (pinned)
       shell: bash
-      run: pip install -q -r "${{ github.action_path }}/../providers/requirements.txt"
+      run: pip install -q --require-hashes -r "${{ github.action_path }}/../providers/requirements.txt"
     - name: keeldocs sync --apply-all
       id: sync
       shell: bash
