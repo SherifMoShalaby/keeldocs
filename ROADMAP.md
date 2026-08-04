@@ -171,7 +171,7 @@ remaining v1.0 gate is about people, publication or elapsed time.
 | Gate | Status |
 |---|---|
 | Anchor spec frozen at 1.0, published standalone with a migration policy | **Open** — spec is stable in practice, not yet frozen |
-| ≥500 public repos with committed anchors | **Blocked (you)** — now measurable: the package is installable |
+| ≥500 public repos with committed anchors | **Blocked, and NOT yet measurable** — `scripts/dev/adoption.py` is the instrument, and as of 2026-08-04 it returns `UNMEASURABLE` rather than a number: GitHub code search does not index this repository, which is known to carry anchors in `docs/reference/configuration.md`, so "no adopters" and "index cannot see us" produce the same 0. The previous claim here — *now measurable: the package is installable* — was wrong: being installable is not the same as being countable. Re-run the script; it reports a floor once its own control passes |
 | ≥2 non-founder maintainers with merge rights | **Blocked (you)** — hard gate, no v1.0 at bus factor 1 |
 | Survived one breaking agent-API change, adapters-only fix ≤1 week | **Not yet exercised** |
 | Noise SLO holding in the wild (accept-rate ≥30% sustained) | **Blocked (evidence)** |
