@@ -2382,6 +2382,22 @@ def main():
         # install scripts" a half-truth: pip executes build/install code, and
         # `pip install -r` runs on every consumer's runner (action.yml), on the
         # rollup runner, and in release.yml - which holds `id-token: write`.
+        # Every third-party action is SHA-pinned. A tag is mutable, and these run
+        # in release.yml, which holds `id-token: write` - the tj-actions class.
+        # Local `uses: ./` refs are this repo and are exempt by definition.
+        import re as _re
+        floating = []
+        for rel in (os.path.join(".github", "workflows", "ci.yml"),
+                    os.path.join(".github", "workflows", "release.yml"),
+                    "action.yml", os.path.join("rollup", "action.yml")):
+            for ref in _re.findall(r"uses:\s*(\S+)", open(os.path.join(ROOT, rel), encoding="utf-8").read()):
+                if ref.startswith("./") or "@" not in ref:
+                    continue
+                if not _re.fullmatch(r"[0-9a-f]{40}", ref.split("@", 1)[1]):
+                    floating.append(f"{rel}: {ref}")
+        assert not floating, f"R9: actions pinned to a mutable tag: {floating}"
+        print("  PASS  R9 action pinning: every third-party `uses:` is a 40-char commit SHA")
+
         req = os.path.join(ROOT, "providers", "requirements.txt")
         lines = [l.strip() for l in open(req, encoding="utf-8") if l.strip() and not l.lstrip().startswith("#")]
         pinned = [l for l in lines if "==" in l]

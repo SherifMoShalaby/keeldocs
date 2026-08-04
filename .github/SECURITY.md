@@ -184,6 +184,13 @@ knows what is already covered and what is not.
   both properties on every push, so a pin cannot silently lose its hashes
   and an install site cannot silently drop the flag.
 
+- **Workflow actions are pinned to commit SHAs**, not tags. Every third-party
+  `uses:` in `ci.yml`, `release.yml`, `action.yml` and `rollup/action.yml`
+  is a 40-character commit SHA with the version in a trailing comment, and
+  `scripts/harness.py` fails the build if any of them reverts to a tag. A
+  tag is mutable and these run in a workflow holding `id-token: write`;
+  this is the `tj-actions/changed-files` class of compromise.
+
   This closes what was previously the largest ungated part of the dependency
   surface. Exact versions alone are not a supply-chain control: pip executes
   package build and install code, and `pip install -r` runs on every

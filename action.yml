@@ -30,9 +30,9 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-node@v6
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
       with: { node-version: 20 }
-    - uses: actions/setup-python@v7
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
       with: { python-version: "3.12" }
     - name: Install extractor runtime (pinned)
       shell: bash
@@ -79,14 +79,14 @@ runs:
       run: node "${{ github.action_path }}/scripts/sarif.js" "${{ steps.check.outputs.full }}" > keeldocs.sarif
     - name: Upload SARIF
       if: ${{ inputs.sarif == 'true' && steps.check.outputs.full != '' }}
-      uses: github/codeql-action/upload-sarif@v4
+      uses: github/codeql-action/upload-sarif@d1ba80a13dd99fba24a470575428917156a28b43 # v4
       continue-on-error: true # code scanning may be off for this repo - never fail the check for that
       with:
         sarif_file: ${{ inputs.working-directory }}/keeldocs.sarif
         category: keeldocs
     - name: Sticky PR comment
       if: ${{ inputs.comment == 'true' && github.event_name == 'pull_request' }}
-      uses: actions/github-script@v7
+      uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
       continue-on-error: true # commenting needs pull-requests: write; absence must not fail the check
       env:
         WORKDIR: ${{ inputs.working-directory }}
