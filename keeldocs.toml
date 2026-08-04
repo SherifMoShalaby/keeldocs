@@ -1,0 +1,30 @@
+# keeldocs, running on keeldocs.
+#
+# The point of this file is that the dogfood gate in ci.yml must be able to FAIL.
+# Before this repo had a config and committed anchors, `action-smoke` asserted
+# `code = CLEAN` against a tree with zero anchors, where CLEAN was the only
+# reachable verdict. CLAUDE.md's own rule: if a gate would pass vacuously, it is
+# not a gate.
+#
+# Every provider disabled below fires only on `fixtures/`, which are sample
+# applications for the test harness, not this project's surface. keeldocs is a
+# CLI: it serves no HTTP endpoints, owns no database, and deploys no services.
+# Documenting a fixture's REST API as though it were keeldocs' own would be noise
+# scored as coverage - the exact failure this tool exists to argue against. What
+# is left is what keeldocs actually has: its own module graph, the env vars it
+# reads, its workspace shape, and its decision history.
+[providers]
+disable = ["aspnet", "django", "fastapi", "gin", "rails", "spring", "express", "nestjs", "supabase-functions", "supabase-postgrest", "drizzle", "prisma", "sql-replay", "sql-policies", "tbls-live", "compose", "helm", "kustomize", "next-routes", "react-router", "vue-router", "angular-router", "go-symbols", "java-symbols", "kafka", "rabbitmq", "redis-pubsub", "sqs-sns", "supabase-realtime"]
+
+# KNOWN LIMITATION, found by this very file on its first run: keeldocs has no
+# way to exclude a PATH from extraction. `disable` removes a whole provider, so
+# the fixture apps' endpoints, schemas and routes are gone - but `env-readers`
+# legitimately runs here, and it reads `fixtures/` too. The generated
+# docs/reference/configuration.md is therefore accurate and noisy: every row
+# carries a true receipt, and several point at a fixture rather than at keeldocs.
+#
+# Nothing in src/config.js scopes paths - SCHEMA is providers/docs/live/trust/
+# resolve. Any repo with fixtures/, examples/, vendor/ or testdata/ has the same
+# problem, so this is a product gap rather than a quirk of this repo. Filed on
+# the board; not worked around here, because a hand-pruned generated table is
+# exactly the hand-maintenance this tool exists to remove.

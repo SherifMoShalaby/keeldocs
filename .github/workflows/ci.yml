@@ -82,6 +82,23 @@ jobs:
         with: { comment: "false" }
       - name: Assert clean
         run: test "${{ steps.kd.outputs.code }}" = "CLEAN"
+      # CLEAN alone is not a gate. Until this repo carried a keeldocs.toml and
+      # committed anchors, CLEAN was the ONLY reachable verdict here - zero
+      # anchors cannot drift - so this job passed for months while proving
+      # nothing. Assert that the run actually bound something, or the next time
+      # the anchors vanish the gate goes quiet instead of red.
+      - name: Assert the dogfood is not vacuous
+        run: |
+          set -euo pipefail
+          f=$(ls -t .keeldocs/out/check-*.json | head -1)
+          python - "$f" <<'PY'
+          import json, sys
+          cov = json.load(open(sys.argv[1]))["coverage"]
+          documented, total = cov["documented"], cov["total"]
+          assert total > 0, "keeldocs found no surfaces in its own repo - config or providers broke"
+          assert documented > 0, f"CLEAN with 0/{total} documented: nothing is anchored, so CLEAN is vacuous"
+          print(f"dogfood is real: {documented}/{total} surfaces documented")
+          PY
       - name: Rollup dry-run smoke (clean repo -> nothing to sync, nothing pushed)
         id: rollup
         uses: ./rollup
