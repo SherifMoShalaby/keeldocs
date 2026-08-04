@@ -178,6 +178,19 @@ knows what is already covered and what is not.
   both properties on every push, so a pin cannot silently lose its hashes
   and an install site cannot silently drop the flag.
 
+  Exact versions alone are not a supply-chain control: pip executes package
+  build and install code, and `pip install -r` runs on every consumer's CI
+  runner via `action.yml` and in `release.yml`, which holds `id-token: write`
+  for the provenance attestation. "Zero install scripts" was only ever true of
+  the npm half.
+
+- **Workflow actions are pinned to commit SHAs**, not tags. Every third-party
+  `uses:` in `ci.yml`, `release.yml`, `action.yml` and `rollup/action.yml` is a
+  40-character commit SHA with the version in a trailing comment, and
+  `scripts/harness.py` fails the build if any of them reverts to a tag. A tag is
+  mutable and these run in a workflow holding `id-token: write`; this is the
+  `tj-actions/changed-files` class of compromise.
+
 **Not guaranteed, and stated rather than left to be discovered:**
 
 - **No external security review has been performed.** One is scheduled against
@@ -185,19 +198,11 @@ knows what is already covered and what is not.
   scales with the size of the user base it protects. Everything above is the
   work of the people who wrote the code.
 
-- **Workflow actions are pinned to commit SHAs**, not tags. Every third-party
-  `uses:` in `ci.yml`, `release.yml`, `action.yml` and `rollup/action.yml`
-  is a 40-character commit SHA with the version in a trailing comment, and
-  `scripts/harness.py` fails the build if any of them reverts to a tag. A
-  tag is mutable and these run in a workflow holding `id-token: write`;
-  this is the `tj-actions/changed-files` class of compromise.
-
-  This closes what was previously the largest ungated part of the dependency
-  surface. Exact versions alone are not a supply-chain control: pip executes
-  package build and install code, and `pip install -r` runs on every
-  consumer's CI runner via `action.yml` and in `release.yml`, which holds
-  `id-token: write` for the provenance attestation. "Zero install scripts"
-  was only ever true of the npm half.
+- **A pinned SHA is frozen, not vetted.** Pinning proves you run the exact
+  commit that was reviewed; it does not prove that commit was benign, and it
+  stops security fixes arriving until someone bumps the pin deliberately. The
+  trade is made knowingly: a mutable tag in a workflow holding `id-token: write`
+  is the larger risk.
 - **Hash pinning proves integrity, not intent.** `--require-hashes` guarantees
   you receive the exact artifact that was pinned; it cannot tell you that
   artifact was benign when it was pinned, and it does not defend against PyPI
