@@ -29,7 +29,7 @@ R10 honestly needs one run on stable hardware plus its two-real-monorepo clause
 — a measurement, in section 4, not more code. **No public material should quote
 a p50 until then.**
 
-**What is left is four owner actions, all in section 4, and all of them now
+**What is left is five owner actions, all in section 4, and all of them now
 happen on a physical machine** — stable hardware (E8), a registry login, people,
 and one scheduled check. The three that gated the rest — publication, E7 and the
 downstream merges — are done.
@@ -91,7 +91,7 @@ through `11`). The constraints are where the honest scoring lives.
 | # | Constraint | Status | Evidence / gap |
 |---|---|---|---|
 | 1 | Stack-agnostic | **Partial by roadmap** | TS/JS, Python, Java, Go, C#, Ruby, Dart shipped; Postgres/Supabase/MySQL-static/SQLite. Mongo and MySQL *live* are gated, not missing by accident |
-| 2 | Agent-native distribution | **Done on 2 of 3 agents** | 6 skills, plugin + marketplace manifests, CLI envelope contract all ship; E7 ran 2026-08-03 and Claude Code and Codex each discovered and invoked a skill unprompted, first action, both interactive and headless. Cursor untested |
+| 2 | Agent-native distribution | **Done on 2 of the brief's 5 named agents** | The brief names *"Claude Code, Codex, Cursor, Gemini CLI, Copilot"*. Adapters exist for three; **Gemini CLI and Copilot have never been built and, until 2026-08-04, appeared in no section of this document — not done, not deferred, not refused.** E7 ran 2026-08-03: Claude Code 2.1.220 and Codex 0.146.0 each discovered and invoked a skill unprompted, as their first action, interactive and headless. Cursor has an adapter and is untested (no trustworthy CLI install path on the test host). 6 skills, plugin + marketplace manifests, CLI envelope contract and `keeldocs skills install` all ship. See §4 item 7 |
 | 3 | Deterministic-first | **Done** | Zero model-calling code in the engine. Byte-identical output across 3 OSes × 2 runs, enforced every CI run |
 | 4 | Git-native | **Done** | Markdown in-repo, anchors in HTML comments, no service dependency, no lock-in |
 | 5 | Local-first inference | **Done** | The host agent is the model; headless BYO-key prose is gated on a measurement, not shipped half-done |
@@ -180,7 +180,7 @@ remaining v1.0 gate is about people, publication or elapsed time.
 
 ## 4. Blocked on you — the critical path
 
-**Four items open; three are now done.** Section 6 is closed and section 5 is a
+**Five items open; three are now done.** Section 6 is closed and section 5 is a
 set of refusals, so this is the whole of what is left.
 
 **The work has moved to a physical machine, and this is where it picks up.**
@@ -252,7 +252,7 @@ to orient an agent that has no skill support.
    were simply never proposed.
 5. **Recruit an interview beta cohort** — the ≥50% card-completion gate has no
    data.
-6. **Windows: fixed 2026-08-03, and the promotion clock starts now.** The lane
+6. **Windows: fixed 2026-08-03; the promotion check is dated two days early.** The lane
    had failed on **all twelve of the most recent runs on `main`** while every one
    of those runs reported success, because `continue-on-error` masks it and the
    only symptom was `list index out of range` — a message naming neither the
@@ -262,12 +262,30 @@ to orient an agent that has no skill support.
    boundary now reports rc and stderr instead of an IndexError. **Green on all
    five jobs at `db47d6b`.**
 
-   The scheduled task on **2026-08-29** checks a four-week green streak before
-   deleting the `continue-on-error` line. That streak began today — one green run
+   The scheduled task fires **2026-08-29**, which is 26 days after the fix, so
+   it lands two days BEFORE the four weeks it claims to check (2026-08-03 green
+   → 2026-08-31). Either move the task to 2026-08-31 or read its result as
+   "26 days green" and decide on that. It checks a four-week green streak before
+   deleting the `continue-on-error` line. That streak began 2026-08-03 — one green run
    is not four weeks, and the reminder should be read as a question, not a
    go-ahead. Had it fired against the previous state it would have promoted a
    silently red lane to a blocking one and stopped every merge.
-7. **Run E8 once on hardware that is not this container** (was "D10"). Not a
+7. **Decide Gemini CLI and Copilot: adapter, or refusal with a threshold.** The
+   brief's constraint 2 names five agents; three have adapters and two have
+   never been mentioned anywhere in this document. That is the one place the
+   brief asked for something and the tracking silently lost it, rather than a
+   decision being made and recorded.
+
+   It is now cheap and de-risked: E7 proved the adapter contract on two
+   independent implementations, `keeldocs skills install` reads
+   `adapters/<agent>/manifest.yaml` generically, and an adapter is that one
+   file. But the sequencing argument against building them immediately is
+   sound and came from the team lead — **Cursor already has an adapter nobody
+   has tested**, so adding a fourth and fifth multiplies an unmeasured surface.
+   Test Cursor first, then decide. Either outcome is acceptable; leaving them
+   untracked is not.
+
+8. **Run E8 once on hardware that is not this container** (was "D10"). Not a
    build — a measurement. This container's timing drifts up to 2.3× between
    sessions on identical code paths, which is more than any optimisation in the
    scale work, so R10's warm-check budgets currently have **no verdict**. One
@@ -294,6 +312,27 @@ MySQL/Mongo live · headless prose · portfolio export · MCP shim · C4-compone
 recipe (cut: component boundaries are human abstractions) · runbook generation
 (cut: remediation knowledge is not in code) · BRD/PRD generation (**cut
 permanently** — intent precedes code).
+
+**`auth-model` — cut, and missing from this list until 2026-08-04.** The
+original brief names it as a capability (keycloak-oidc, supabase-auth, auth0,
+firebase, custom) and the panel cut it unanimously: design doc 07 records
+*"auth-model (cut until determinism proven — unanimous)"*. The decision was
+sound and the bookkeeping was not — this section claims to be the record of
+such decisions, and for months it did not contain this one, so the only place
+a reader could learn the capability had been considered at all was a table
+cell in a design doc. Threshold to revive: a provider that can determine an
+auth model deterministically, on a labeled corpus, without inferring intent
+from configuration that merely looks like an auth setup.
+
+**Fenced code blocks in the lie-detector — exempted, not overlooked.**
+`src/anchors.js` masks fences so an anchor shown as an example is not parsed
+as structure (that bug shipped, and the dogfood gate caught it). `src/lies.js`
+deliberately does NOT do the same. An anchor inside a fence is unambiguously a
+parser error; a *claim* inside a fence may be a real instruction to the reader
+— `npm run deploy` in a README fence is a claim. Blanket-suppressing fenced
+claims would trade precision measured over four E9 rounds for a guess.
+Threshold to revisit: a field-measured false-positive rate attributable to
+fenced examples, on a real corpus, not a hypothetical.
 
 The standing kill list is unchanged and refuses even on request: hosted
 dashboard, docs-site generation, auto-merge of generated content, general code
