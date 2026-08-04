@@ -1,0 +1,78 @@
+# Who has to look at what — and, just as deliberately, what is left open.
+#
+# There is no `*` rule here on purpose. A blanket owner would put the founder in
+# front of every provider, fixture and doc PR, which is the exact bottleneck R12
+# (maintainer burnout, bus factor 1) describes and the exact path a new
+# contributor arrives through. Ownership is claimed only where a mistake is
+# SILENT rather than loud: the hash and anchor identity core, the security
+# boundary, the anchor spec, and everything that decides what gets published.
+# Providers, fixtures, recipes, docs, adapters and skills are the contribution
+# funnel and are intentionally absent — the harness, the goldens and the
+# cross-OS determinism matrix are their review, and those gates do not get tired.
+#
+# Honest note about enforcement, so this does not become another budget that is
+# written down and enforced by nothing (see SECURITY.md on how R9's dependency
+# budgets sat unguarded): as of this file's creation `main` carries no branch
+# protection and no ruleset, and only one person can merge. So this file is a
+# statement of intent, not a control. It becomes a control the day branch
+# protection on `main` turns on "Require review from Code Owners" — which is the
+# same day the first non-founder maintainer receives a commit bit
+# (CONTRIBUTING.md, "Becoming a maintainer"). Turning it on before then would
+# only block the sole maintainer from their own repository.
+#
+# Last matching pattern wins. Order below is grouped by reason, not by path.
+
+# ---- Identity and determinism core -----------------------------------------
+# Change one of these and every anchor in every downstream repository can
+# re-hash at once. Drift becomes noise, or worse, stops being reported at all.
+/src/hash.js            @SherifMoShalaby
+/src/jcs.js             @SherifMoShalaby
+/src/facts.js           @SherifMoShalaby
+/src/anchors.js         @SherifMoShalaby
+/src/drift.js           @SherifMoShalaby
+/src/resolve.js         @SherifMoShalaby
+/src/reanchor.js        @SherifMoShalaby
+
+# The anchor spec is the compatibility contract, and it freezes at 1.0 with a
+# written migration policy. Until then, every change to it is a change to
+# something other people have committed into their repositories.
+/spec/                  @SherifMoShalaby
+
+# ---- Security boundary ------------------------------------------------------
+# The redaction barrier (R8: a leaked DSN or key from a DOCS tool), the T2 trust
+# machinery that decides whether third-party code runs at all, and the two files
+# that determine what a provider can actually read.
+/src/redact.js          @SherifMoShalaby
+/src/trust.js           @SherifMoShalaby
+/src/permissions.js     @SherifMoShalaby
+/src/scope.js           @SherifMoShalaby
+
+# The tests that guard those four. A PR that weakens the gate is harder to see
+# than a PR that weakens the thing being gated.
+/tests/redact.test.js       @SherifMoShalaby
+/tests/trust.test.js        @SherifMoShalaby
+/tests/permissions.test.js  @SherifMoShalaby
+
+# ---- What gets published, and what proves it -------------------------------
+# release.yml holds `id-token: write` and is the only path to npm. action.yml
+# and rollup/action.yml run inside other people's CI holding their tokens.
+# harness.py carries the R9 supply-chain budget; a change here can turn a gate
+# vacuous without turning it red.
+/.github/workflows/release.yml  @SherifMoShalaby
+/.github/workflows/ci.yml       @SherifMoShalaby
+/action.yml                     @SherifMoShalaby
+/rollup/action.yml              @SherifMoShalaby
+/scripts/harness.py             @SherifMoShalaby
+/package.json                   @SherifMoShalaby
+/package-lock.json              @SherifMoShalaby
+
+# The extractor runtime lives under providers/ but is not a provider: it is
+# eight pinned packages that `pip install` executes on every CI runner that uses
+# the Action. Listed after the funnel it sits inside, so it stays owned.
+/providers/requirements.txt     @SherifMoShalaby
+
+# ---- Governance -------------------------------------------------------------
+/.github/SECURITY.md    @SherifMoShalaby
+/.github/CODEOWNERS     @SherifMoShalaby
+/CONTRIBUTING.md        @SherifMoShalaby
+/LICENSE                @SherifMoShalaby
