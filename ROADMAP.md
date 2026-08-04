@@ -114,7 +114,7 @@ bookkeeping decision rather than a blocked one.
 |---|---|
 | `init` / `check` / `sync` / `new` command surface | **Done** |
 | Anchors, regions, slots; fact-hash drift; six disjoint drift states | **Done** |
-| Doc lie-detector with receipts | **Done** — 8 finding classes, four rounds of field-measured precision rules |
+| Doc lie-detector with receipts | **Done** — 7 finding classes, four rounds of field-measured precision rules |
 | Recipes: system-map, erd, endpoint-inventory, config-reference, `new adr` | **Done** |
 | Providers: workspace-layout, module-graph, http-endpoints, db-schema, config-surface, services-topology, decision-history | **Done** |
 | Live Postgres via tbls behind `--live` | **Done** (reclassified OBSERVED once replay landed) |
@@ -329,7 +329,7 @@ other things only the owner can do.
 |---|---|---|
 | D1 | Incremental extraction, keyed on the resolved input set by content hash | **The one that mattered.** Warm check 5.61s → 1.40s @10k, 9.66s → **2.23s** @100k; 33 ms overhead. Content hashes, not git blob hashes — the index needs stat-based dirty detection, whose failure mode is a silently stale answer |
 | D2 | Input-proportional output cap, `clamp(6 × declared input bytes, 5MB, 256MB)` | **The other one that mattered. 1M LOC completes**: rc 0, CLEAN, 38,047 surfaces. The register's named remedy — sharding — was measured and rejected as *unsound*: a shard boundary silently turns 1,000 internal edges external |
-| D4 | Per-file parse cache (`incremental: per-file`), `ts-imports` | Past the point of need. 28.0s → 13.7s on a 1M edit. Cost +300 MB RSS. *Its filed premise ("12 providers re-run") was wrong — three do* |
+| D4 | Per-file parse cache (`incremental: per-file`), `ts-imports` | Past the point of need. 28.0s → 13.7s on a 1M edit. Cost +300 MB RSS. *Its filed premise ("12 providers re-run") was wrong — three do* | <!-- counts:ignore -->
 | D6 | `express` adopts it | 11,288 ms → 737 ms on a 1M edit. Refactor proven byte-identical on every fixture before any cache existed |
 | D9 | `env-readers` adopts it | 4,663 → 4,136 ms at 100k. The one case where the advance description held, and only because it was checked |
 | D8 | `ts-imports` wire format | 46.86 → 25.81 MB. Two of the three largest things on the wire were not information |
@@ -343,7 +343,7 @@ other things only the owner can do.
 
 Two items were filed on numbers that turned out to be wrong, both the same way:
 a residual was subtracted from a total and named after the most plausible
-suspect. D4's "12 providers re-run" (three do) and D7's "29% is sandbox setup"
+suspect. D4's "12 providers re-run" (three do) and D7's "29% is sandbox setup" <!-- counts:ignore -->
 (2–6%). **A residual is not a measurement.** The third correction is larger: the
 container's own timing drifts up to 2.3× between sessions on identical code
 paths — more than any single optimisation in this list — so only same-session
@@ -385,7 +385,7 @@ alongside the build rather than after.
 | E8 scale benchmark (1M LOC) | "warm check ≤5s p50" | **Run 2026-08-01 → FAILED; D1 and D2 built and re-measured after each → 3 of 4 budgets now pass at every size including 1M LOC.** No incremental cache existed (D1 built one: 100k warm 9.66s → 2.23s); then 1M LOC died on a constant output cap (D2 made it input-proportional: 1M now completes CLEAN at 8.9s warm, 914 MB). One budget still fails — warm p50 at 1M — and the one-file-edit case (6.24s @100k, 39.70s @1M) is D4. Budgets never moved. Both fixes departed from the mitigation the register named, on measurement, and both departures are recorded in the ADRs |
 | E9 noise SLO field trial | the adoption bet | **Four rounds run** on a real production repo; the 4-week accept-rate number still needs a cohort |
 | E10 injection red-team | "artifact-borne injection cannot reach an action" | **Passed, permanent CI gate** |
-| E11 ERD scale rendering | "the flagship diagram survives 500 tables" | **Run 2026-08-01 → FAILED, REDESIGNED, PASSES.** The flat ERD crossed `maxTextSize` between 100 and 250 tables — real Supabase and Rails schemas live there, and the failure renders *nothing*. Chunking shipped; 1,000 tables now render with every table drawn. Gated by 8 unit tests against Mermaid's real ceilings plus a 260-table end-to-end harness check |
+| E11 ERD scale rendering | "the flagship diagram survives 500 tables" | **Run 2026-08-01 → FAILED, REDESIGNED, PASSES.** The flat ERD crossed `maxTextSize` between 100 and 250 tables — real Supabase and Rails schemas live there, and the failure renders *nothing*. Chunking shipped; 1,000 tables now render with every table drawn. Gated by 8 unit tests against Mermaid's real ceilings <!-- counts:ignore --> plus a 260-table end-to-end harness check |
 | E12 study full-text verification | the ~46% positioning claim | **Not run** — must happen before that number appears in any public material |
 | E13 replay vs live equivalence | "WASM Postgres matches real DDL semantics" | **Passed** — 10/10 byte-identical to PostgreSQL 16 |
 | E14 JVM/Go probes | tier choice per framework | **Passed** — spring 17/17, gin 15/15 |

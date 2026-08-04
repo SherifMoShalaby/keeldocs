@@ -215,7 +215,7 @@ Secrets are structurally excluded: env **values** never enter a fact, and every 
 
 ## Status
 
-`0.2.0`, Apache-2.0. Covered by 154 unit tests, 39 byte-compared extractor goldens and 80 end-to-end harness checks, with double-run determinism gates on Linux and macOS. Windows runs the same matrix and reports rather than gates.
+`0.3.0`, Apache-2.0. Covered by 172 unit tests, 39 byte-compared extractor goldens and 82 end-to-end harness checks, with double-run determinism gates on Linux and macOS. Windows runs the same matrix and reports rather than gates.
 
 Verified at scale: a synthetic 200-package, 1M-line repository extracts and checks end to end inside a 2 GB memory budget. Warm and cold runs produce byte-identical facts, gated on every fixture in the harness. **No speed figure is claimed** — that measurement is not yet trustworthy.
 

@@ -8,7 +8,7 @@ For every registered provider fixture:
 Also smoke-tests the CLI envelope contract (exit codes + JSON shape).
 Exit 0 = all green; 1 = mismatch/failure. No network, no clock, no LLM - by design.
 """
-import json, os, pathlib, subprocess, sys, traceback
+import glob, json, os, pathlib, re, subprocess, sys, traceback
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The node -e snippets below feed this to dynamic import(). A path is NOT a URL:
@@ -2343,6 +2343,51 @@ def main():
         rmtree(tmp)
     except Exception as e:
         failures.append(f"ERD scale: {why(e)}")
+
+    # ---- the tracking documents must agree with the tree ----
+    # These counts were hand-maintained and rotted continuously. In ONE day the
+    # provider count was wrong (35 vs 34), the finding-class count was wrong
+    # (8 vs 7), and the unit-test figure was stale in four places across three
+    # files while the real number moved 151 -> 172 - including in a paragraph
+    # that shipped inside a published npm tarball. A project arguing that
+    # hand-maintained documentation lies cannot hand-maintain its own counts.
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "scripts", "dev"))
+        from counts import counts as _counts  # noqa: E402
+        truth = _counts()
+        tap = subprocess.run(["node", "--test", "--test-reporter=tap"] +
+                             sorted(glob.glob(os.path.join(ROOT, "tests", "*.test.js"))),
+                             cwd=ROOT, capture_output=True, text=True, timeout=1800).stdout
+        units = len(re.findall(r"^ok \d+ ", tap, re.M))
+        PHRASE = {"providers": r"(\d+) providers",
+                  "recipes": r"(\d+) (?:document |doc )recipes",
+                  "skills": r"(\d+) (?:agent )?skills",
+                  "goldens": r"(\d+) (?:byte-compared )?extractor goldens",
+                  "adrs": r"(\d+) ADRs",
+                  "finding_classes": r"(\d+) finding classes"}
+        bad = []
+        for rel in ("README.md", "ROADMAP.md", "CLAUDE.md", "AGENTS.md"):
+            path = os.path.join(ROOT, rel)
+            if not os.path.isfile(path):
+                continue
+            # A historical quote (D4's "12 providers re-run") and a scoped count
+            # ("8 unit tests against Mermaid's ceilings") are not claims about the
+            # current tree. They opt out explicitly, rather than the pattern being
+            # loosened until it catches nothing.
+            body = "\n".join(l for l in open(path, encoding="utf-8").read().split("\n")
+                             if "counts:ignore" not in l)
+            for key, pat in PHRASE.items():
+                for m in re.finditer(pat, body):
+                    if int(m.group(1)) != truth[key]:
+                        bad.append(f"{rel}: '{m.group(0)}' but the tree has {truth[key]}")
+            for m in re.finditer(r"(\d+) unit tests", body):
+                if int(m.group(1)) != units:
+                    bad.append(f"{rel}: '{m.group(0)}' but the suite has {units}")
+        assert not bad, "stale counts in the tracking documents:\n    " + "\n    ".join(bad)
+        print(f"  PASS  tracking-document counts: {units} unit tests, {truth['providers']} providers, "
+              f"{truth['goldens']} goldens agree with the tree")
+    except Exception as e:  # noqa: BLE001
+        failures.append(f"tracking-document counts: {why(e)}")
 
     # ---- packaged-artifact gates: what npm actually ships, not what git holds ----
     # Deliberately last. Every provider above has now run, so __pycache__ exists
