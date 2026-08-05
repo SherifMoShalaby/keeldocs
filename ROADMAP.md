@@ -207,6 +207,40 @@ while the gate rows under its phase are blank.**
 | N7 Portfolio (`export --backstage`) | **Gated** | needs ≥3 distinct real multi-repo users asking |
 | N8 MCP shim | **Gated** | needs a named shell-less surface with ≥25 requesting users |
 
+**Upgrade-vs-drift (`rebaseline`) — the next engine item, and deliberately not
+started on 2026-08-05.** ADR-008 promises silent re-baselining when a fact-type
+`schema_version` changes and R2's mitigation is "re-baseline on provider-set
+change". Neither is implemented: the only trigger compares the `h1:` algorithm
+prefix, which has never changed, and `src/drift.js` reads `providerSetHash` zero
+times. The first real upgrade — every `0.2.0` user taking `0.3.0` — is where this
+lands, and it lands as R1, noise death, arriving through the upgrade path.
+
+Two things were established before writing any of it, and both change the shape
+of the work rather than merely adding to it.
+
+*The state it would produce is currently a dead end.* `rebaseline` exists in
+`src/drift.js` and is reachable from three places, but it is not in
+`DRIFT_STATES`, so it never fails CI, and `buildProposals` handles `stale`,
+`tampered` and `dead` only — so a re-baselined section gets **no proposal** and
+no way to clear itself. It would report `rebaseline` forever, and the only way
+out would be a hand edit, which the next run flags as `tampered`. That path has
+never executed: the prefix has never moved and no test references the state. A
+trigger must not be wired to it until the exit exists.
+
+*A provider-set re-baseline can hide real drift, and that is the wrong way for a
+drift detector to fail.* Re-baselining accepts the current facts as the new
+truth. A user who upgrades keeldocs and edits code in the same commit — which is
+exactly what a `npm update` plus a day's work looks like — would have both
+absorbed silently. The honest form is an annotation on a `stale` finding ("the
+provider set also changed since this was written"), not a state that accepts.
+
+*And the sequencing in the ticket is backwards.* Carrying the previous
+provider-set fingerprint requires committing it, and the only committed place is
+the anchor. The anchor grammar rejects unknown keys — it quarantines them — so a
+document written by a keeldocs that emits a new key is **quarantined by every
+older keeldocs that reads it**. The compatibility policy has to exist before the
+key does, which puts the spec-freeze work *before* the field, not after it.
+
 ### v1.0 — the gates that are not about features
 
 None of these can be met from a build environment. **They are now the only
