@@ -66,6 +66,7 @@ That section is stale because a route it documents was renamed — not because s
 | `keeldocs sync` | Proposes section-level fixes with evidence — `--apply`, `--reject`, `--snooze`, or interactive. Your prose is never overwritten. `--upgrade` migrates docs written by an older recipe. |
 | `keeldocs new <type>` | Generates a document: `erd`, `endpoint-inventory`, `config-reference`, `system-map`, `module-guide`, `data-flow`, `screens`, `adr`. |
 | `keeldocs doctor` | Preflight: checks Node, git, Python and every provider's declared requirements, then prints the exact install command for your machine. Run it first, or when `check` reports a tooling error. Exit `0` ready, `1` blocked, `3` degraded. |
+| `keeldocs noise` | Prints how many proposals you accepted and rejected, in counts only — no paths, no titles, no ids. For sharing a noise report without sharing your repo. Nothing is sent anywhere. |
 | `keeldocs skills install` | Installs the Agent Skills for your coding agent — see [below](#use-it-from-your-coding-agent). |
 
 ## Install
@@ -182,6 +183,7 @@ Optional, in `keeldocs.toml`:
 ```toml
 [providers]
 disable = ["compose"]              # skip a provider in this repo
+exclude-paths = ["fixtures/**"]    # paths that never become facts
 
 [docs]
 dirs = ["docs", "handbook"]        # scan roots (default ["docs"]); README.md always scanned
@@ -194,6 +196,14 @@ keys = ["acme:<spki-base64>"]      # trusted signers for third-party providers
 ```
 
 A misspelled key is an error, never a silent no-op.
+
+`exclude-paths` is what you want for `fixtures/`, `examples/`, `vendor/` or
+`testdata/`: those directories are real code, so providers extract them, and your
+docs end up describing your test fixtures as though they were your application.
+Disabling the provider is too blunt — you still want your own env vars. A fact
+read from both an excluded and an included path survives with the excluded read
+site dropped, and `check` reports how many facts the scope removed, because a
+blind spot the report does not name is indistinguishable from an empty one.
 
 ### Live database introspection (opt-in)
 
@@ -215,7 +225,7 @@ Secrets are structurally excluded: env **values** never enter a fact, and every 
 
 ## Status
 
-`0.3.0`, Apache-2.0. Covered by 174 unit tests, 39 byte-compared extractor goldens and 86 end-to-end harness checks, with double-run determinism gates on Linux and macOS. Windows runs the same matrix and reports rather than gates.
+`0.3.0`, Apache-2.0. Covered by 175 unit tests, 39 byte-compared extractor goldens and 89 end-to-end harness checks, with double-run determinism gates on Linux and macOS. Windows runs the same matrix and reports rather than gates.
 
 Verified at scale: a synthetic 200-package, 1M-line repository extracts and checks end to end inside a 2 GB memory budget. Warm and cold runs produce byte-identical facts, gated on every fixture in the harness. **No speed figure is claimed** — that measurement is not yet trustworthy.
 

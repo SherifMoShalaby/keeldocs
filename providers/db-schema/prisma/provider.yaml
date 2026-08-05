@@ -9,4 +9,7 @@ argMode: schemaFile
 inputs: ["**/schema.prisma"]
 requires: []
 timeout_class: D
-emits: [table, column, relation, enum]
+emits: [table, enum]   # columns and relations are ATTRIBUTES of a table fact, not
+                       # fact types. This line said [table, column, relation, enum]
+                       # from v0.1 until the day `emits` became enforceable, and it
+                       # was printed verbatim in the consent manifest.

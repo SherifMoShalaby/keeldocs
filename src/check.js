@@ -12,7 +12,7 @@ import { loadJournal, effective, noiseStats } from "./journal.js";
 import { extractAll } from "./facts.js";
 import { evaluate, coverage, classifySelfCaused } from "./drift.js";
 import { planUpgrade } from "./upgrade.js";
-import { loadConfig, docPathsOf } from "./config.js";
+import { loadConfig, docPathsOf, extractOpts } from "./config.js";
 import { toPosix } from "./paths.js";
 import { changedFilesSince, changedFactsSince } from "./gitx.js";
 import { ENGINE_VERSION } from "./registry.js";
@@ -96,8 +96,8 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     ? (git(repoRoot, ["show", "-s", "--format=%cI", "HEAD"]) ?? "9999-12-31T00:00:00Z")
     : new Date().toISOString();
 
-  const { factsById, capabilities, gaps, providerSetHash, toolError, conflicts, cache } =
-    extractAll(repoRoot, { disable: config.providers.disable, trustKeys: config.trust.keys, resolvePins: config.resolve.pin,
+  const { factsById, capabilities, gaps, providerSetHash, toolError, conflicts, cache, scopedOut } =
+    extractAll(repoRoot, { ...extractOpts(config),
       live: live ? { dsnEnv: config.live["dsn-env"] } : null });
   const rawJournal = loadJournal(repoRoot);
   const journal = effective(rawJournal, nowIso);
@@ -128,8 +128,7 @@ function buildReport(repoRoot, ci, config, since, live = false) {
   let sinceInfo = null;
   if (since) {
     const { changed, base } = changedFilesSince(repoRoot, since);
-    const changedFactIds = changedFactsSince(repoRoot, base, factsById,
-      { disable: config.providers.disable, trustKeys: config.trust.keys });
+    const changedFactIds = changedFactsSince(repoRoot, base, factsById, extractOpts(config));
     classifySelfCaused({ findings, anchors, regions, factsById, changed, changedFactIds });
     sinceInfo = { ref: since, changedFiles: changed.size, changedFacts: changedFactIds.size };
   }
@@ -143,6 +142,11 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     v: 1,
     meta: { engine: `keeldocs@${ENGINE_VERSION}`, head, providerSetHash,
             docsScanned: docPaths.length, mode: ci ? "ci" : "local",
+            // A path scope is a deliberate blind spot, and a blind spot the
+            // report does not name is indistinguishable from a repo that simply
+            // has nothing there. Coverage is a ratio; both of its terms have to
+            // be legible.
+            ...(scopedOut ? { scopedOut, excludePaths: config.providers["exclude-paths"] } : {}),
             ...(sinceInfo ? { since: sinceInfo } : {}) },
     // fail closed: a provider failure must surface as TOOL_ERROR exit 2, never
     // as a smaller-but-CLEAN report (this line was missing once - check said

@@ -4,7 +4,7 @@
 `release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
 provenance attestation and no publish token anywhere. 3-OS CI green including
 `action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
-runs before it and fixed the same day (§4 item 6) · 174 unit tests · 39 extractor goldens · 86 harness checks ·
+runs before it and fixed the same day (§4 item 6) · 175 unit tests · 39 extractor goldens · 89 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -29,10 +29,12 @@ R10 honestly needs one run on stable hardware plus its two-real-monorepo clause
 — a measurement, in section 4, not more code. **No public material should quote
 a p50 until then.**
 
-**What is left is five owner actions, all in section 4, and all of them now
-happen on a physical machine** — stable hardware (E8), a registry login, people,
-and one scheduled check. The three that gated the rest — publication, E7 and the
-downstream merges — are done.
+**What is left is seven owner actions, all in section 4, and all of them now
+happen on a physical machine** — stable hardware (E8), a registry login and a
+trademark sweep, people, one scheduled check, and a recurring E7 re-run. The three that gated the rest
+— publication, E7 and the downstream merges — are done. The longest clock among
+them is co-maintainer recruitment at 120 days (§4 item 9), which is why it is
+listed even though nothing about it is code.
 Each item names the file carrying its procedure; nothing lives only in a chat
 log.
 
@@ -65,7 +67,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. 34 providers across 10
-capabilities feed 8 document recipes. The engine has 174 unit tests, 39
+capabilities feed 8 document recipes. The engine has 175 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
@@ -123,6 +125,23 @@ bookkeeping decision rather than a blocked one.
 | npm publish | **Done 2026-08-03** — four rc's, then `keeldocs@0.2.0` as `latest`; trusted publishing + provenance, no token |
 | PyPI placeholder + org transfer | **Blocked (you)** — name still free, and R14's lesson is that registries move |
 
+**v0.1 → v0.2 go/no-go gates** (design doc 07 §2). Every table above is
+features. The gates were half-scored: the engineering half was measured and
+recorded, the adoption half was never scored at all — not passed, not failed,
+not waived — and v0.2 shipped anyway. A gate that is silently skipped is not a
+gate, which is this project's own argument about documentation.
+
+| Gate | Threshold | Result |
+|---|---|---|
+| Latency: `init`, cold extraction, warm `check` | doc 07 §2 | **No verdict** — the container's timing drifts up to 2.3× between sessions, so R10's budgets have no trustworthy measurement. §4 item 8 |
+| Drift false-positive rate | <10% across 5 fixture repos | **Partial** — four E9 rounds on **one** real repo, not five |
+| Lie-detector precision | ≥95% verifiable, on fixtures + 5 real brownfield repos | **Partial** — every finding carries a receipt by construction, but the ≥95% figure was never computed against a labeled set, and one brownfield repo was used, not five |
+| Anchor survival / false auto-rebind | ≥95% over a 6-month replay; <0.5% | **Passed** — E2: 99.5% and 98.5%. The rebind bar is met trivially: the engine never auto-rebinds |
+| Determinism, 3 OSes × 2 runs | byte-identical | **Passed, permanent** — every CI push |
+| Public repos with committed anchors | ≥50 | **0, and not measurable** — `scripts/dev/adoption.py` returns `UNMEASURABLE`; GitHub code search does not index this repository |
+| Opt-in installs running `check`/`sync` in week 4 | ≥30% | **Never measured, and no instrument exists** — the opt-in ping doc 07 assumed was never built, and required telemetry is on the standing kill list |
+| Externally-filed issues | ≥20 | **0** — the tracker has received none |
+
 ### v0.2 — Python GA, interview, replay, trust machinery
 
 | Item | Status |
@@ -141,6 +160,29 @@ bookkeeping decision rather than a blocked one.
 | Windows red → green | **Done, after a regression caught 2026-08-03** — the posix-emit contract, `fileURLToPath` roots and LF-pinned harness always held; what broke was the harness feeding a bare `C:/...` path to dynamic `import()`, which node rejects as a URL scheme. Green on all five jobs at `db47d6b` |
 | Cut `0.2.0` release, then `0.3.0` | **Done 2026-08-03/04** — `0.3.0` adds `keeldocs skills install` and ships the rewritten README; npm serves the README from the tarball, so the page could not be corrected without a release. — `keeldocs@0.2.0` on npm as `latest`, SLSA v1 provenance naming `release.yml` at `refs/tags/v0.2.0`, no publish token. Verified cold from the registry: 130 files, 0 `.pyc`, and `meta.engine` finally reports `keeldocs@0.2.0` |
 
+**v0.2 → v0.3 go/no-go gates** (design doc 07 §2). Same split, and the
+contribution half is the one that matters most, because it is the gate that
+measures whether anyone but the founder can extend this.
+
+| Gate | Threshold | Result |
+|---|---|---|
+| Python | fixture matrix green; drift FP <10% on 2 real Python repos | **Partial** — matrix green, E6 23/23; the two-real-repo FP number was never taken |
+| First external provider merged | <4h total maintainer effort | **Never started** — no external provider has ever been proposed |
+| External providers merged | ≥3 | **0** — `git shortlog -sne --all` resolves to the founder and bots, across the whole history |
+| Time to first merged provider | ≤7 days | **No clock** — it starts on the first outside PR, and there has not been one |
+| Drift false-positive rate | <5% | **Not measured** — E9's rounds predate this threshold and ran on one repo |
+| Public repos running `check --ci` | ≥10 | **0, same instrument problem as the anchor count** |
+| Interview | resumable from files; ≤5 cards / ≤1,500 tokens; rejected never re-asked; ≥50% card-batch completion | **Engineering passed and tested; the ≥50% completion rate has no cohort to measure it on** — §4 item 5 |
+| Replay engine | byte-identical on ≥10 chains across flyway/alembic/liquibase | **Passed on the SQL class, and the spread was not covered** — E13 is 10/10 against real PostgreSQL 16 on raw-SQL chains; alembic and liquibase chains are *programs*, so replaying them means executing repo code, which is R2 sandbox territory. The limit is recorded in the experiment, not discovered here |
+| T2 trust machinery | signed E2E green; unsigned/tampered provably refused; E10 passed | **Passed** — permanent CI gate |
+
+Both phases shipped with their adoption and contribution gates unscored. That
+was a judgement — the engineering was ready and the gates need people who do not
+exist yet — but it was never written down as one, and an unwritten waiver is
+indistinguishable from an oversight to the second maintainer §4 item 9 is trying
+to recruit. It is written down now. **No feature row above should move to Done
+while the gate rows under its phase are blank.**
+
 ### v0.3 — breadth, each behind its own gate
 
 | Item | Status | Note |
@@ -154,6 +196,9 @@ bookkeeping decision rather than a blocked one.
 | PostgREST views + PUT (catalog-verified) | **Done** | writability and keys read from the catalog, never assumed; field repo 438 → 482 surfaces |
 | Recipe migration (`sync --upgrade`) | **Done** | validated retroactively: byte-identical to a delete-and-regenerate, without the delete |
 | Per-glob read scoping | **Done** | `inputs` is now an enforced contract; undeclared files do not exist inside a provider's namespace |
+| Path scope (`[providers] exclude-paths`) | **Done 2026-08-05** | The gap this repo's own `keeldocs.toml` recorded on its first run. `disable` removes a whole provider, which is the wrong shape when `env-readers` legitimately runs and also reads `fixtures/`. Applied to **provenance**, not to the repo walk: a walk filter only bites where the sandbox builds a view, so the same setting would have scoped on Linux and silently done nothing on macOS and Windows. A fact read from both sides survives with the excluded site pruned; `check` reports the count it removed. Dogfooded here — 24 surfaces became 16, all 8 of them fixtures |
+| Noise report (`keeldocs noise`) | **Done 2026-08-05** | E9's gate is an accept rate over four weeks across a cohort, and the kill list forbids required telemetry — so the measurement travels by hand or not at all. Counts and rates only, from the journal, gated against leaking any of the document paths, section ids or fact ids the journal is *made of*. No clock: the window anchors on the newest entry, so two people running it on one journal get the same bytes. Invoked by nothing else, and the harness checks that too |
+| `emits:` enforced at extraction | **Done 2026-08-05** | It reached the consent manifest `provider add` prints and stopped there — never entered the registry entry, so a user agreed to a list nothing held the provider to. Now fails closed like a crashed extractor. `prisma` had declared `column` and `relation` since v0.1: attributes of a table fact, not fact types. Capability dispatch became a table at the same time; its last `else` was `schemaFacts`, so an unknown capability was silently normalized as a database schema instead of failing |
 | Package-scoped fact identity (`pkg:<name>#<cap>/*` binds) | **Done** | monorepo guides are disjoint; editing one package leaves the others byte-identical |
 | Sandbox minimal root | **Done** | the host outside the repository is masked; probed per host, degrades with a named reason; ~0.5s/run |
 | Permission-manifest display at `provider trust` | **Done** | `provider show`; `add` stops at `CONSENT_REQUIRED` and states the enforcement this host really applies |
@@ -180,7 +225,7 @@ remaining v1.0 gate is about people, publication or elapsed time.
 
 ## 4. Blocked on you — the critical path
 
-**Five items open; three are now done.** Section 6 is closed and section 5 is a
+**Seven items open; three are now done.** Section 6 is closed and section 5 is a
 set of refusals, so this is the whole of what is left.
 
 **The work has moved to a physical machine, and this is where it picks up.**
@@ -303,6 +348,40 @@ status line — just in the document that records them.
    run of `experiments/e8-scale/bench.py` on a stable machine, plus R10's own
    "2 real monorepos" clause, is the only thing that can close that row. Until
    then no public material should quote a p50 figure.
+
+9. **Start co-maintainer recruitment, and treat it as the longest clock here.**
+   v1.0 has a hard gate at ≥2 non-founder maintainers with merge rights, and
+   `CONTRIBUTING.md` now states a real threshold — six merged PRs, four or more
+   providers or fixtures, sustained across 120 days, three reviews, one security
+   read, with a public written answer owed in 14 days and an emeritus rule. The
+   machinery exists; nobody is in it. **120 days is longer than every other
+   clock in this section combined**, and it cannot start before a first
+   candidate does a first thing, so it is the one item where a week of delay
+   costs a week of v1.0. `.github/CODEOWNERS` deliberately leaves `providers/`
+   and `fixtures/` unowned so a scope maintainer has somewhere to land.
+
+10. **Re-run E7 on a cadence, and record the versions each time.** R7's pass
+    condition is *weekly* — auto-invoke plus headless drift detection green on
+    Claude Code, Codex and Cursor. Nothing schedules it, and nothing can: E7
+    needs real agent binaries on a physical machine, so this is an owner
+    commitment rather than a workflow. What belongs here is the commitment and
+    the version stamp, because a one-day-old measurement of the distribution bet
+    becomes a one-year-old claim without anyone deciding that it should.
+
+    Procedure: `experiments/e7-agent-matrix/RUNBOOK.md`. **Read `RESULTS.md`
+    first** — three of the seven defects that run surfaced produce a
+    *confidently wrong* verdict rather than an obvious failure.
+
+    | Run | keeldocs | Agents | Result |
+    |---|---|---|---|
+    | 2026-08-03 | `0.2.0-rc.4` | Claude Code 2.1.220, Codex 0.146.0 (Cursor absent) | **2 of 3, gate cleared** |
+    | *owed* | `0.3.0` published build, installed with the shipped `keeldocs skills install` | same, plus Cursor if a trustworthy install path exists | — |
+
+    The owed run is not a formality: E7 ran against `rc.4` and a hand-written
+    installer, and both have changed. The tree is `0.3.0` and the installer users
+    actually get is `src/skillscmd.js`, which did not exist when E7 passed. Until
+    that run happens, the honest form of the claim is "measured once, on an
+    earlier build, with a different installer".
 
 One thing left to decide, and it is now the easy version of the question: E7
 supplied the evidence, so **cutting `0.2.0` no longer needs to rest on
@@ -494,7 +573,7 @@ re-measure the same missing cache on a lumpier tree.
 34 shipped providers across 10 capabilities (workspace-layout, module-graph,
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
-agent skills · 174 unit tests · 39 byte-compared extractor goldens · ~25
+agent skills · 175 unit tests · 39 byte-compared extractor goldens · ~25
 end-to-end integration blocks · 13 ADRs · 15 experiments.
 
 Field deployment: one real production application (Next.js App Router +

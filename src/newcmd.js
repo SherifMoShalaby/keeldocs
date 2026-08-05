@@ -9,7 +9,7 @@ import { mkdirSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { extractAll } from "./facts.js";
 import { renderEndpointsDoc, renderModuleGuideDoc, renderDataFlowDoc, renderScreensDoc, renderDataModelDoc, renderConfigDoc, renderSystemMapDoc } from "./render.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, extractOpts } from "./config.js";
 import { redact } from "./redact.js";
 
 const TYPES = ["erd", "endpoint-inventory", "adr", "system-map", "config-reference", "module-guide", "data-flow", "screens"];
@@ -74,8 +74,7 @@ export function runNew({ root, json, args }) {
     if (!cfg.ok) {
       return emit(json, 2, { v: 1, ok: false, code: "CONFIG", summary: cfg.error.slice(0, 300), data: {}, next: [] });
     }
-    const { factsById, toolError } = extractAll(root,
-    { disable: cfg.config.providers.disable, trustKeys: cfg.config.trust.keys, resolvePins: cfg.config.resolve.pin });
+    const { factsById, toolError } = extractAll(root, extractOpts(cfg.config));
     if (toolError) {
       return emit(json, 2, { v: 1, ok: false, code: "TOOL_ERROR", summary: `tooling error: ${toolError}`, data: {}, next: [] });
     }

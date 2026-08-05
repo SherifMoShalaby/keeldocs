@@ -182,6 +182,10 @@ function entryOf(y, cap, id, dir, relFile) {
     // an incremental run and a from-scratch run agree byte for byte.
     ...(y.incremental === "per-file" ? { incremental: "per-file" } : {}),
     ...(y.exec === "node" ? { exec: "node" } : {}), // default python stays implicit
+    // `emits` reached the permission manifest a human consents to and stopped
+    // there - it never entered the registry entry, so the engine could not have
+    // enforced it even if it had tried. It does now (src/facts.js).
+    emits: Array.isArray(y.emits) ? y.emits.filter((e) => typeof e === "string") : [],
     timeoutClass: y.timeout_class ?? "D",
     needs: [...new Set([...(y.needs ?? []), ...factInputs])],
   };

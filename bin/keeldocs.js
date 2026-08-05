@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8"));
-const COMMANDS = ["init", "check", "sync", "new", "interview", "doctor", "answer", "mine", "provider", "skills", "slot-write", "approve"]; // answer/mine/provider/slot-write/approve: plumbing (ADR-012)
+const COMMANDS = ["init", "check", "sync", "new", "interview", "doctor", "noise", "answer", "mine", "provider", "skills", "slot-write", "approve"]; // answer/mine/provider/slot-write/approve: plumbing (ADR-012)
 const args = process.argv.slice(2);
 const cmd = args[0];
 const json = args.includes("--json");
@@ -35,7 +35,7 @@ function envelope(ok, code, summary, next = []) {
 if (cmd === "--version" || cmd === "-v") { console.log(pkg.version); process.exit(0); }
 
 if (!COMMANDS.includes(cmd)) {
-  const msg = `usage: keeldocs <init|check|sync|new|interview|doctor|skills> [--json] [--ci] [--no-cache]  (v${pkg.version})`;
+  const msg = `usage: keeldocs <init|check|sync|new|interview|doctor|noise|skills> [--json] [--ci] [--no-cache]  (v${pkg.version})`;
   if (json) console.log(envelope(false, "USAGE", msg));
   else console.error(msg);
   process.exit(2);
@@ -93,6 +93,21 @@ if (cmd === "mine") {
 if (cmd === "provider") {
   const { runProviderCmd } = await import("../src/providercmd.js");
   process.exit(runProviderCmd({ root: process.cwd(), json, args }));
+}
+
+// Reads the journal, prints counts, exits. No extraction, no clock, no network -
+// the whole point is that a cohort member can look at every byte before deciding
+// to share it. Opt-in by construction: nothing else in the CLI calls this.
+if (cmd === "noise") {
+  const { loadJournal } = await import("../src/journal.js");
+  const { noiseReport, renderNoise } = await import("../src/noise.js");
+  const r = noiseReport(loadJournal(process.cwd()));
+  const summary = `${r.entries} decision(s) over ${r.windowWeeks} weeks; accept rate `
+    + (r.acceptRate === null ? "n/a (nothing decided yet)" : `${Math.round(r.acceptRate * 100)}%`)
+    + `; nudge level ${r.nudgeLevel}`;
+  if (json) console.log(JSON.stringify({ v: 1, ok: true, code: "NOISE", summary: summary.slice(0, 300), data: r, next: [] }));
+  else console.log(renderNoise(r));
+  process.exit(0);
 }
 
 if (cmd === "skills") {

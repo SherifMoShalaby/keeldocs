@@ -8,6 +8,7 @@
 //
 //   [providers]
 //   disable = ["compose", "git-log"]   # provider ids to skip this repo
+//   exclude-paths = ["fixtures/**"]    # paths no provider may see (KEEL-30)
 //
 //   [docs]
 //   dirs = ["docs", "handbook"]        # scan roots (default ["docs"]); README.md is always scanned
@@ -19,14 +20,19 @@ import { parsePins } from "./resolve.js";
 import { REGISTRY, REGISTRY_ERROR } from "./registry.js";
 
 const SCHEMA = {
-  providers: { disable: "string[]" },
+  // `exclude-paths` is the path scope. `disable` removes a whole PROVIDER, which
+  // is the wrong shape for the common case: a repo with fixtures/, examples/,
+  // vendor/ or testdata/ wants env-readers to run - just not over its test data.
+  // Without this, the choice was to lose the provider everywhere or document the
+  // fixtures as though they were the application.
+  providers: { disable: "string[]", "exclude-paths": "string[]" },
   docs: { dirs: "string[]" },
   live: { "dsn-env": "string" }, // the NAME of the env var holding the DSN - never the DSN
   trust: { keys: "string[]" },   // T2: trusted signer keys, `name:spki-base64` (R2)
   resolve: { pin: "string[]" },  // ADR-003 pins, `capability:provider-id` (N1)
 };
 
-const DEFAULTS = () => ({ providers: { disable: [] }, docs: { dirs: ["docs"] },
+const DEFAULTS = () => ({ providers: { disable: [], "exclude-paths": [] }, docs: { dirs: ["docs"] },
   live: { "dsn-env": "DATABASE_URL" }, trust: { keys: [] }, resolve: { pin: [] } });
 
 function parseValue(raw, where) {
@@ -109,8 +115,29 @@ export function loadConfig(root) {
   if (cfg.docs.dirs.some((d) => d.startsWith("/") || d.includes(".."))) {
     return { ok: false, error: "keeldocs.toml: [docs] dirs must be repo-relative paths without `..`" };
   }
+  // Same rule as [docs] dirs, and for a sharper reason: an absolute or escaping
+  // pattern in a path SCOPE would silently widen or misdirect what the engine is
+  // allowed to look at, and a scope that does not mean what it says is worse than
+  // no scope.
+  const badScope = cfg.providers["exclude-paths"].filter((g) => g.startsWith("/") || g.includes(".."));
+  if (badScope.length) {
+    return { ok: false, error: `keeldocs.toml: [providers] exclude-paths must be repo-relative globs without \`..\` (got ${badScope.join(", ")})` };
+  }
   return { ok: true, config: cfg };
 }
+
+// Every command's extraction options, in ONE place. They were spelled out at
+// six call sites, and the copies had already diverged: `check --since` built its
+// base extraction without `resolvePins`, so with a pin configured the base and
+// the head resolved conflicts by different rules and the diff manufactured
+// changed facts. A fourth option (`exclude-paths`) spread across six sites by
+// hand would have gone the same way.
+export const extractOpts = (config) => ({
+  disable: config.providers.disable,
+  excludePaths: config.providers["exclude-paths"],
+  trustKeys: config.trust.keys,
+  resolvePins: config.resolve.pin,
+});
 
 // Shared doc discovery for every command: configured scan roots + README.md,
 // repo-relative, deduped, sorted (was triplicated across check/init/sync).

@@ -28,7 +28,7 @@ import { parseDoc } from "./anchors.js";
 import { loadJournal, effective, appendDecisions } from "./journal.js";
 import { extractAll } from "./facts.js";
 import { evaluate } from "./drift.js";
-import { loadConfig, docPathsOf } from "./config.js";
+import { loadConfig, docPathsOf, extractOpts } from "./config.js";
 import { buildPlan } from "./init.js";
 import { redact } from "./redact.js";
 
@@ -178,7 +178,7 @@ function assemble(root) {
   const cfg = loadConfig(root);
   if (!cfg.ok) return { error: { code: "CONFIG", summary: cfg.error } };
   const { factsById, capabilities, toolError } =
-    extractAll(root, { disable: cfg.config.providers.disable, trustKeys: cfg.config.trust.keys, resolvePins: cfg.config.resolve.pin });
+    extractAll(root, extractOpts(cfg.config));
   if (toolError) return { error: { code: "TOOL_ERROR", summary: `interview needs a healthy extraction: ${toolError}` } };
   const anchors = [], regions = [];
   for (const p of docPathsOf(root, cfg.config.docs.dirs)) {

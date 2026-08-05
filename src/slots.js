@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseDoc, inheritBinds } from "./anchors.js";
 import { extractAll } from "./facts.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, extractOpts } from "./config.js";
 import { resolveBindIds, aggregateHash } from "./drift.js";
 import { display, hashesMatch } from "./hash.js";
 import { patchSlot } from "./patch.js";
@@ -96,8 +96,7 @@ export function runSlotWrite({ root, json, args }) {
 
     const cfg = loadConfig(root);
     if (!cfg.ok) throw new Error(cfg.error);
-    const { factsById, toolError } = extractAll(root,
-    { disable: cfg.config.providers.disable, trustKeys: cfg.config.trust.keys, resolvePins: cfg.config.resolve.pin });
+    const { factsById, toolError } = extractAll(root, extractOpts(cfg.config));
     if (toolError) throw new Error(`tooling error: ${toolError}`);
     const binds = slot.binds?.length ? slot.binds : inheritBinds(slot, parsed.anchors);
     const ids = resolveBindIds(binds, factsById);

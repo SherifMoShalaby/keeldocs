@@ -14,7 +14,7 @@ import { detectLies } from "./lies.js";
 import { parseDoc } from "./anchors.js";
 import { evaluate, coverage, isCoverageSurface } from "./drift.js";
 import { loadJournal, effective } from "./journal.js";
-import { loadConfig, docPathsOf } from "./config.js";
+import { loadConfig, docPathsOf, extractOpts } from "./config.js";
 import { toPosix } from "./paths.js";
 import { ENGINE_VERSION } from "./registry.js";
 
@@ -131,7 +131,7 @@ export function runInit({ root, json, yes, live = false }) {
 
 function doInit(root, yes, config, live = false) {
   const { factsById, capabilities, providerSetHash, toolError, conflicts, gaps } =
-    extractAll(root, { disable: config.providers.disable, trustKeys: config.trust.keys, resolvePins: config.resolve.pin,
+    extractAll(root, { ...extractOpts(config),
       live: live ? { dsnEnv: config.live["dsn-env"] } : null });
   const pkgPath = join(root, "package.json");
   const pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf8")) : null;

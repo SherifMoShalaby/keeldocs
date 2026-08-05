@@ -16,15 +16,29 @@
 [providers]
 disable = ["aspnet", "django", "fastapi", "gin", "rails", "spring", "express", "nestjs", "supabase-functions", "supabase-postgrest", "drizzle", "prisma", "sql-replay", "sql-policies", "tbls-live", "compose", "helm", "kustomize", "next-routes", "react-router", "vue-router", "angular-router", "go-symbols", "java-symbols", "kafka", "rabbitmq", "redis-pubsub", "sqs-sns", "supabase-realtime"]
 
-# KNOWN LIMITATION, found by this very file on its first run: keeldocs has no
-# way to exclude a PATH from extraction. `disable` removes a whole provider, so
-# the fixture apps' endpoints, schemas and routes are gone - but `env-readers`
-# legitimately runs here, and it reads `fixtures/` too. The generated
-# docs/reference/configuration.md is therefore accurate and noisy: every row
-# carries a true receipt, and several point at a fixture rather than at keeldocs.
+# The limitation this file recorded on its first run is closed. `disable` removes
+# a whole PROVIDER, which was the wrong shape for the case this repo is in:
+# `env-readers` legitimately runs here, and it also read `fixtures/`, so
+# docs/reference/configuration.md was accurate and noisy - every row carried a
+# true receipt and a third of them pointed at a fixture app rather than at
+# keeldocs. The choice was to lose the provider everywhere or to hand-prune a
+# generated table, which is exactly the hand-maintenance this tool exists to
+# remove.
 #
-# Nothing in src/config.js scopes paths - SCHEMA is providers/docs/live/trust/
-# resolve. Any repo with fixtures/, examples/, vendor/ or testdata/ has the same
-# problem, so this is a product gap rather than a quirk of this repo. Filed on
-# the board; not worked around here, because a hand-pruned generated table is
-# exactly the hand-maintenance this tool exists to remove.
+# `exclude-paths` scopes by path instead. It is subtracted in the single repo
+# walk (src/scope.js), so an excluded path is invisible to provider detection, to
+# `inputs`, and to the sandbox view alike - and, importantly, to the base-commit
+# extraction `--since` diffs against, or the exclusion itself would read as drift.
+# Any repo with fixtures/, examples/, vendor/ or testdata/ has this problem; it
+# was a product gap, not a quirk of this one.
+exclude-paths = ["fixtures/**", "experiments/**", "scripts/harness.py"]
+
+# `scripts/harness.py` is in the list for the same reason and is worth naming,
+# because it is a FILE rather than a directory and because it is real project
+# code: the harness builds fixture repositories inline, so every `process.env.X`
+# it writes as test input was extracted and documented as keeldocs' own
+# configuration. Six rows of scaffolding - D9_ADDED, D9_PROBE, ITEMS_FLAG and the
+# three the path-scope gate itself introduced - sat in
+# docs/reference/configuration.md next to the variables the CLI actually reads.
+# Every one of them carried a true receipt, which is the point: the receipts were
+# never wrong, the SCOPE was.

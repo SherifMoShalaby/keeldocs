@@ -8,7 +8,7 @@ For every registered provider fixture:
 Also smoke-tests the CLI envelope contract (exit codes + JSON shape).
 Exit 0 = all green; 1 = mismatch/failure. No network, no clock, no LLM - by design.
 """
-import glob, json, os, pathlib, re, subprocess, sys, traceback
+import glob, json, os, pathlib, re, subprocess, sys, time, traceback
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The node -e snippets below feed this to dynamic import(). A path is NOT a URL:
@@ -2562,6 +2562,208 @@ def main():
               f"{tpl_ids} template anchor id(s) matched to the renderer, 0 shipped")
     except Exception as e:
         failures.append(f"recipe specs: {why(e)}")
+
+    # KEEL-17. `keeldocs noise` - the counts-only report a cohort member can paste
+    # into a public issue. The journal it summarizes is made of document paths,
+    # section ids and fact ids, so "counts only" is a claim about the one thing
+    # that could leak a private repository's map into a public tracker. The
+    # fixture journal below is deliberately full of names that would be obvious
+    # in the output if any of them survived.
+    try:
+        import shutil as _sh17, tempfile as _tf17
+        tmp = _tf17.mkdtemp(prefix="keeldocs-noise-")
+        os.makedirs(os.path.join(tmp, ".keeldocs"))
+        SECRETS = ["acme-billing-internal", "GET /admin/keys/rotate",
+                   "docs/private/customer-migration.md", "payments.reconciliation.table"]
+        END = "2026-08-05T00:00:00.000Z"
+        rows = [
+            # (type, target, days before END) - week 1 is the oldest of the four
+            ("applied", f"docs/private/customer-migration.md#{SECRETS[0]}", 22),
+            ("rejection", f"fact:http-endpoints/{SECRETS[1]}", 15),
+            ("rejection", SECRETS[3], 15),
+            ("applied", SECRETS[2], 8),
+            ("rejection", SECRETS[3], 8),
+            ("snooze", SECRETS[0], 1),
+            ("tombstone", SECRETS[3], 1),
+            ("rejection", SECRETS[1], 1),
+            ("applied", SECRETS[2], 0),
+            ("applied", SECRETS[0], 40),   # outside the window - must not be counted
+        ]
+        end_ms = 1785888000000  # 2026-08-05T00:00:00Z, stated rather than computed
+        lines = []
+        for typ, target, ago in rows:
+            at = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime((end_ms - ago * 86400000) / 1000)) + ".000Z"
+            lines.append(json.dumps({"at": at, "target": target, "type": typ}, sort_keys=True))
+        lines.append("{ this line is not json")   # the malformed-line path
+        W(os.path.join(tmp, ".keeldocs", "decisions.jsonl"), "\n".join(lines) + "\n")
+
+        KDN = os.path.join(ROOT, "bin", "keeldocs.js")
+        r = subprocess.run(["node", KDN, "noise", "--json"], cwd=tmp,
+                           capture_output=True, text=True, timeout=120)
+        env = node_json(r, "keeldocs noise --json")
+        d = env["data"]
+        assert r.returncode == 0 and env["ok"], f"noise exited {r.returncode}: {env}"
+        assert d["windowEnd"] == END, f"window must anchor on the newest entry, got {d['windowEnd']}"
+        assert d["entries"] == 9, f"9 entries in window (one is 40 days old), got {d['entries']}"
+        assert d["counts"]["applied"] == 3 and d["counts"]["rejection"] == 4, \
+            f"counts wrong: {d['counts']}"
+        assert d["malformed"] == 1, "a malformed journal line must be counted, not silently dropped"
+        assert d["acceptRate"] == 0.429, f"3/7 = 0.429, got {d['acceptRate']}"
+        # The self-throttle needs rejections to OUTNUMBER applies 2:1, not merely
+        # to lead: 4 vs 3 stays normal. Both branches are checked, because a rule
+        # only ever observed on one side of its threshold is not observed.
+        assert d["nudgeLevel"] == "normal", f"4 rejections against 3 applies is not 2:1: {d['nudgeLevel']}"
+        assert [w["applied"] for w in d["weeks"]] == [1, 0, 1, 1], f"week buckets: {d['weeks']}"
+        assert [w["rejected"] for w in d["weeks"]] == [0, 2, 1, 1], f"week buckets: {d['weeks']}"
+
+        # The claim, checked against both output shapes.
+        plain = subprocess.run(["node", KDN, "noise"], cwd=tmp, capture_output=True, text=True, timeout=120)
+        assert plain.returncode == 0, f"noise (human) exited {plain.returncode}"
+        for blob, what in ((r.stdout, "--json"), (plain.stdout, "human")):
+            for s in SECRETS + ["docs/", "fact:", ".md", "admin"]:
+                assert s not in blob, f"{what} output leaked {s!r} - the journal's targets must not survive"
+        # Pure function of the journal: no clock, no extraction, so two runs match.
+        again = subprocess.run(["node", KDN, "noise", "--json"], cwd=tmp, capture_output=True, text=True, timeout=120)
+        assert again.stdout == r.stdout, "noise is not deterministic on an unchanged journal"
+        # The other side of the threshold: 3 rejections, nothing applied.
+        quiet_dir = os.path.join(tmp, "quiet", ".keeldocs")
+        os.makedirs(quiet_dir)
+        W(os.path.join(quiet_dir, "decisions.jsonl"), "\n".join(
+            json.dumps({"at": f"2026-08-0{i + 1}T00:00:00.000Z", "target": "x", "type": "rejection"},
+                       sort_keys=True) for i in range(3)) + "\n")
+        q = node_json(subprocess.run(["node", KDN, "noise", "--json"], cwd=os.path.dirname(quiet_dir),
+                                     capture_output=True, text=True, timeout=120), "noise (quiet)")
+        assert q["data"]["nudgeLevel"] == "quiet", f"3 rejections and 0 applies must throttle: {q['data']}"
+        assert q["data"]["acceptRate"] == 0.0, f"0 of 3 applied is a rate of 0, not null: {q['data']}"
+        # And the third case, which is the one a rate can lie about: decisions
+        # exist but none of them was an accept-or-reject. A rate of 0 there is a
+        # claim that everything proposed was refused; the answer is "no data".
+        none_dir = os.path.join(tmp, "undecided", ".keeldocs")
+        os.makedirs(none_dir)
+        W(os.path.join(none_dir, "decisions.jsonl"),
+          json.dumps({"at": "2026-08-01T00:00:00.000Z", "target": "x", "type": "snooze"}, sort_keys=True) + "\n")
+        u = node_json(subprocess.run(["node", KDN, "noise", "--json"], cwd=os.path.dirname(none_dir),
+                                     capture_output=True, text=True, timeout=120), "noise (undecided)")
+        assert u["data"]["acceptRate"] is None, \
+            f"nothing decided must report no rate, not a rate of zero: {u['data']['acceptRate']}"
+        assert "n/a" in u["summary"], f"the summary must say so in words: {u['summary']}"
+        # Opt-in means nothing else reaches for it.
+        for rel in ("check.js", "init.js", "sync.js"):
+            body = open(os.path.join(ROOT, "src", rel), encoding="utf-8").read()
+            assert "noise.js" not in body, f"src/{rel} imports the noise report - it must stay opt-in"
+        print("  PASS  noise report: counts only (7 decisions, 4 weekly buckets, 1 malformed line), "
+              "no journal target survives either output, deterministic, invoked by nothing else")
+        rmtree(tmp)
+    except Exception as e:
+        failures.append(f"noise report: {why(e)}")
+
+    # KEEL-30. `[providers] exclude-paths` - the path scope. Every assertion is
+    # paired with the same run WITHOUT the scope, because a gate that only checks
+    # "the fixture var is absent" passes just as happily when extraction found
+    # nothing at all.
+    try:
+        import shutil as _sh30, tempfile as _tf30
+        tmp = _tf30.mkdtemp(prefix="keeldocs-scope-")
+        W(os.path.join(tmp, "package.json"), '{"name":"scope-fixture","version":"1.0.0"}\n')
+        os.makedirs(os.path.join(tmp, "fixtures", "sample"))
+        # SHARED is read from both sides: the fact must survive with the fixture
+        # read site pruned, because an env var the application reads is the
+        # application's however many fixtures also touch it.
+        W(os.path.join(tmp, "app.js"),
+          "const a = process.env.APP_ONLY;\nconst b = process.env.SHARED;\n")
+        W(os.path.join(tmp, "fixtures", "sample", "demo.js"),
+          "const c = process.env.FIXTURE_ONLY;\nconst d = process.env.SHARED;\n")
+
+        def envfacts(exclude):
+            r = subprocess.run(["node", "-e", (
+                'import("%s/src/facts.js").then(({extractAll}) => {'
+                'const r = extractAll(process.argv[1], {excludePaths: JSON.parse(process.argv[2])});'
+                'const e = [...r.factsById.values()].filter(f => f.payload.type === "env-var");'
+                'console.log(JSON.stringify({err: r.toolError ?? null, scopedOut: r.scopedOut,'
+                ' names: e.map(f => f.payload.attrs.name).sort(),'
+                ' sites: Object.fromEntries(e.map(f => [f.payload.attrs.name,'
+                '   (f.provenance.source ?? []).map(s => s.file).sort()]))}));'
+                '});') % ROOT_URL, tmp, json.dumps(exclude)],
+                capture_output=True, text=True, timeout=600,
+                env={**os.environ, "KEELDOCS_NO_CACHE": "1"})
+            out = node_json(r, f"extract excludePaths={exclude}")
+            assert not out["err"], f"extraction failed: {out['err']}"
+            return out
+
+        wide = envfacts([])
+        assert "FIXTURE_ONLY" in wide["names"], \
+            f"control: without a scope the fixture var must be found, got {wide['names']}"
+        assert wide["scopedOut"] == 0, "control: nothing is scoped out when nothing is excluded"
+        assert len(wide["sites"]["SHARED"]) == 2, \
+            f"control: SHARED must have both read sites, got {wide['sites']['SHARED']}"
+
+        scoped = envfacts(["fixtures/**"])
+        assert "FIXTURE_ONLY" not in scoped["names"], "a fixture-only fact survived the scope"
+        assert "APP_ONLY" in scoped["names"], "the scope removed a fact it was never given"
+        assert scoped["scopedOut"] >= 1, "the report must count what the scope removed"
+        assert "SHARED" in scoped["names"], \
+            "a fact read from BOTH sides must survive with the excluded site pruned, not be dropped whole"
+        assert scoped["sites"]["SHARED"] == ["app.js"], \
+            f"SHARED must keep the app read site and lose the fixture one, got {scoped['sites']['SHARED']}"
+        # The scope is repo-relative and must not be satisfiable by a bare name.
+        assert "FIXTURE_ONLY" in envfacts(["demo.js"])["names"], \
+            "`demo.js` is a repo-root path, not a basename - matching it anywhere would make every scope over-broad"
+
+        # The other half: an excluded path must not reach the sandbox VIEW either,
+        # or a provider could still read what the repository owner scoped out on
+        # any host where a view is built. Checked through the resolver rather than
+        # through a mount, so it holds on every platform.
+        view = node_json(subprocess.run(["node", "-e", (
+            'import("%s/src/scope.js").then(({repoFiles, resolveInputs}) => {'
+            'const root = process.argv[1];'
+            'const wide = repoFiles(root), scoped = repoFiles(root, ["fixtures/**"]);'
+            'console.log(JSON.stringify({'
+            ' wide: resolveInputs(root, ["**/*.js"], wide).files,'
+            ' scoped: resolveInputs(root, ["**/*.js"], scoped).files}));'
+            '});') % ROOT_URL, tmp], capture_output=True, text=True, timeout=120), "resolveInputs")
+        assert "fixtures/sample/demo.js" in view["wide"], \
+            f"control: an unscoped view must contain the fixture, got {view['wide']}"
+        assert view["scoped"] == ["app.js"], \
+            f"an excluded path reached the provider's view: {view['scoped']}"
+        print("  PASS  path scope: fixture-only facts removed, shared read sites pruned, "
+              f"app facts and the unscoped control both intact ({scoped['scopedOut']} scoped out)")
+        rmtree(tmp)
+    except Exception as e:
+        failures.append(f"path scope: {why(e)}")
+
+    # KEEL-28. `emits:` reached the permission manifest a human reads before
+    # consenting to a third-party provider, and stopped there: it never entered
+    # the registry entry, so the engine could not have enforced it. The runtime
+    # half now fails closed (src/facts.js) and every golden exercises it. This is
+    # the static half - a token that is not a fact type cannot be emitted by
+    # anything, so no run would ever catch it. `prisma` declared `column` and
+    # `relation` from v0.1: attributes of a table fact, printed to users as fact
+    # types the provider would produce.
+    try:
+        import re as _re
+        facts_js = open(os.path.join(ROOT, "src", "facts.js"), encoding="utf-8").read()
+        vocab = set(_re.findall(r'type:\s*"([a-z-]+)"', facts_js)) | {"extraction-gap"}
+        assert len(vocab) > 10, f"fact-type vocabulary looks wrong: {sorted(vocab)}"
+        bad, declared_by, shipped = [], {}, 0
+        for yml in sorted(glob.glob(os.path.join(ROOT, "providers", "*", "*", "provider.yaml"))):
+            body = open(yml, encoding="utf-8").read()
+            rel = os.path.relpath(yml, ROOT).replace(os.sep, "/")
+            if _re.search(r"^status:\s*stub\b", body, _re.M):
+                continue  # declared, not shipped - the loader skips it too
+            shipped += 1
+            m = _re.search(r"^emits:\s*\[([^\]]*)\]", body, _re.M)
+            assert m, f"{rel}: no `emits:` - the consent manifest would print nothing"
+            toks = [t.strip() for t in m.group(1).split(",") if t.strip()]
+            assert toks, f"{rel}: `emits:` is empty"
+            for t in toks:
+                declared_by.setdefault(t, []).append(rel)
+                if t not in vocab:
+                    bad.append(f"{rel}: emits `{t}`, which is not a fact type")
+        assert not bad, "undeclarable emits:\n    " + "\n    ".join(bad)
+        print(f"  PASS  provider emits: {shipped} shipped providers declare only real fact types "
+              f"({len(declared_by)} of {len(vocab)} in the vocabulary), enforced at extraction")
+    except Exception as e:
+        failures.append(f"provider emits: {why(e)}")
 
     # KEEL-21. `skills/` and `adapters/` ship in the tarball and nothing had ever
     # run `skills install` from one. That is the precise blind spot the command

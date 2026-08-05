@@ -26,7 +26,7 @@ import { evaluate, classifySelfCaused } from "./drift.js";
 import { buildProposals } from "./proposals.js";
 import { patchRegion, patchBind } from "./patch.js";
 import { planUpgrade, applyInsertion } from "./upgrade.js";
-import { loadConfig, docPathsOf } from "./config.js";
+import { loadConfig, docPathsOf, extractOpts } from "./config.js";
 import { changedFilesSince, changedFactsSince, extractAtBase, renamesSince } from "./gitx.js";
 import { renameMapFromStatus } from "./reanchor.js";
 import { toPosix } from "./paths.js";
@@ -52,8 +52,7 @@ function resolveSelfBase(root, explicit) {
 }
 
 function collectState(root, config, selfScope = null) {
-  const { factsById, capabilities, toolError } = extractAll(root,
-    { disable: config.providers.disable, trustKeys: config.trust.keys, resolvePins: config.resolve.pin });
+  const { factsById, capabilities, toolError } = extractAll(root, extractOpts(config));
   if (toolError) throw new Error(`tooling error: ${toolError}`);
   const journal = effective(loadJournal(root), new Date().toISOString());
   const anchors = [], regions = [], docTexts = new Map();
@@ -81,8 +80,7 @@ function collectState(root, config, selfScope = null) {
     base = git(root, ["merge-base", ref, "HEAD"]) ?? git(root, ["rev-parse", "HEAD"]);
   }
   if (base !== null && (deadDs || selfScope)) {
-    baseFacts = extractAtBase(root, base,
-      { disable: config.providers.disable, trustKeys: config.trust.keys, resolvePins: config.resolve.pin });
+    baseFacts = extractAtBase(root, base, extractOpts(config));
     if (deadDs) {
       reanchor = { baseFacts, renames: renameMapFromStatus(renamesSince(root, base)) };
     }
@@ -91,7 +89,7 @@ function collectState(root, config, selfScope = null) {
   let proposals = buildProposals({ findings, regions, anchors, factsById, reanchor });
   if (selfScope) {
     const changedFactIds = changedFactsSince(root, selfScope.base, factsById,
-      { disable: config.providers.disable, trustKeys: config.trust.keys }, baseFacts);
+      extractOpts(config), baseFacts);
     classifySelfCaused({ findings, anchors, regions, factsById,
       changed: selfScope.changed, changedFactIds });
     const self = new Set(findings.filter((f) => f.selfCaused).map((f) => `${f.id}\x00${f.doc}`));

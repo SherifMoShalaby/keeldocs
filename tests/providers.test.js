@@ -107,6 +107,22 @@ test("loader: ${facts:cap} inputs become factInputs and imply needs edges", (t) 
   assert.deepEqual(r.map((e) => e.id), ["a1", "b1"], "topo respects the implied edge");
 });
 
+test("loader: emits reaches the registry entry, so extraction can enforce it", (t) => {
+  const root = tree({
+    "providers/alpha/a1/provider.yaml": OK("alpha", "a1", "emits: [table, enum]\n"),
+    "providers/alpha/a1/x.py": "",
+    "providers/beta/b1/provider.yaml": OK("beta", "b1"),
+    "providers/beta/b1/x.py": "",
+  });
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const r = loadProviders(root);
+  // `emits` was parsed, validated, and printed in the consent manifest, and then
+  // dropped on the floor here - so the engine held no copy of the list a human
+  // had agreed to, and could not have enforced it.
+  assert.deepEqual(r.find((e) => e.id === "a1").emits, ["table", "enum"]);
+  assert.deepEqual(r.find((e) => e.id === "b1").emits, [], "absent declares nothing, never undefined");
+});
+
 test("loader: entry path traversal is rejected (E10 containment)", (t) => {
   const root = tree({
     "providers/cap/t1/provider.yaml":

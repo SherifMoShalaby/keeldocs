@@ -86,7 +86,20 @@ function baseOf(glob) {
 
 // Every file under root, minus the default skips. Walked ONCE per extraction
 // and reused for every provider - the per-provider cost is a regex filter.
-export function repoFiles(root) {
+// `exclude` is the user's path scope (`[providers] exclude-paths`). Applied here,
+// in the ONE walk, so a scoped path is invisible to provider detection and to
+// `inputs` resolution - which is what keeps it out of the sandbox view, so that
+// on a host with a mount namespace an excluded file is not merely absent from
+// the output but absent from the provider's filesystem.
+//
+// This is not sufficient on its own and is not meant to be: where no view can be
+// built (macOS, Windows, any host without user namespaces) a provider walks the
+// real tree itself and would still find the file. The fact set is made uniform
+// across platforms in src/facts.js, which drops the provenance either way. Both
+// halves, for one reason each: this one restricts the read where the kernel can,
+// that one makes the ANSWER the same everywhere.
+export function repoFiles(root, exclude = []) {
+  const deny = exclude.map(globToRegExp);
   const out = [];
   const walk = (dir, rel) => {
     let names;
@@ -97,6 +110,7 @@ export function repoFiles(root) {
       let st;
       try { st = statSync(abs); } catch { continue; } // broken symlink
       const r = rel ? `${rel}/${name}` : name;
+      if (deny.some((re) => re.test(r))) continue;
       if (st.isDirectory()) walk(abs, r);
       else if (st.isFile()) out.push(r);
     }

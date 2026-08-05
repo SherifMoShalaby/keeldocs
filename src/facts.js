@@ -19,7 +19,7 @@ import { resolveClaims, parsePins } from "./resolve.js";
 import { loadExternalProviders, orderEntries } from "./providers.js";
 import { refusalOf, loadLock, parseTrustedKeys } from "./trust.js";
 import { REGISTRY, REGISTRY_ERROR, ENGINE_VERSION } from "./registry.js";
-import { repoFiles, resolveInputs, buildView } from "./scope.js";
+import { repoFiles, resolveInputs, buildView, globToRegExp } from "./scope.js";
 import { minimalRootPlan, STAGE } from "./minroot.js";
 import { cacheEnabled, clearHandoff, extractKey, fileDigest, hashAll, hashInputs, inputsUnmoved, loadPerFile,
          readEntry, savePerFile, uncacheableReason, writeEntry, writeHandoff } from "./cache.js";
@@ -754,7 +754,7 @@ export function isHostileFact(f) {
   return HOSTILE.test(f.id) || scan(f.payload?.attrs ?? {});
 }
 
-export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = [], resolvePins = [] } = {}) {
+export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = [], resolvePins = [], excludePaths = [] } = {}) {
   const repoRoot = resolve(repoRootIn); // subprocess cwd = repoRoot; args must be absolute
   if (REGISTRY_ERROR) {
     // fail closed and loudly - a half-loaded registry would masquerade as "no drift"
@@ -804,7 +804,10 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
   // ONE walk, now unconditional: scoping needs it to build views, detection
   // needs it to find manifests, and D1's cache needs it to know what each
   // provider could have read. Three consumers, one traversal.
-  const allFiles = repoFiles(repoRoot);
+  // KEEL-30: compiled once per extraction, not per fact.
+  const denyPaths = excludePaths.map(globToRegExp);
+  let scopedOut = 0;
+  const allFiles = repoFiles(repoRoot, excludePaths);
   let scope = null;
   if (SANDBOX === "rofs") {
     const engineRel = toPosix(relative(repoRoot, ENGINE_ROOT));
@@ -984,37 +987,86 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
     if (run.status !== "ok") { flushGroup(); continue; }
     const provenanceBase = { provider: `${reg.id}@${reg.semver}`,
       confidence: reg.confidence ?? (reg.tier === "declarative" ? "PATTERN" : "PARSED") };
-    const norm = reg.capability === "http-endpoints"
-      ? endpointFacts(run.raw, provenanceBase, repoRoot)
-      : reg.capability === "config-surface"
-      ? envFacts(run.raw, provenanceBase)
-      : reg.capability === "workspace-layout"
-      ? packageFacts(run.raw, provenanceBase)
-      : reg.capability === "services-topology"
-      ? serviceFacts(run.raw, provenanceBase)
-      : reg.capability === "module-graph"
-      ? moduleGraphFacts(run.raw, provenanceBase,
-          [...factsById.values()].filter((f) => f.payload.type === "package").map((f) => f.payload.attrs))
-      : reg.capability === "decision-history"
-      ? churnFacts(run.raw, provenanceBase)
-      : reg.capability === "db-policies"
-      ? policyFacts(run.raw, provenanceBase)
-      : reg.capability === "client-routes"
-      ? routeFacts(run.raw, provenanceBase)
-      : reg.capability === "async-messaging"
-      ? messagingFacts(run.raw, provenanceBase)
-      : reg.id === "sql-replay"
-      ? replayFacts(run.raw, provenanceBase,
-          [...factsById.values()].filter((f) => f.payload.type === "table").map((f) => f.payload.attrs.name),
-          [...factsById.values()].filter((f) => f.payload.type === "enum").map((f) => f.payload.attrs.name))
-      : reg.id === "tbls-live"
-      ? liveTableFacts(run.raw, provenanceBase,
-          [...factsById.values()].filter((f) => f.payload.type === "table").map((f) => f.payload.attrs.name))
-      : schemaFacts(run.raw, provenanceBase, toPosix(relative(repoRoot, d.file ?? "")));
+    // Dispatch is a table keyed by capability, not a ternary chain. The chain's
+    // last `else` was `schemaFacts`, so a capability nobody wrote a branch for
+    // did not fail - it was silently normalized as a database schema and emitted
+    // wrong-typed facts. A table has no last else: an unknown capability is a
+    // TOOL error, which is the only honest answer for "the engine does not know
+    // what these facts are".
+    const attrsOf = (type) => [...factsById.values()]
+      .filter((f) => f.payload.type === type).map((f) => f.payload.attrs);
+    const NORMALIZE = {
+      "http-endpoints": () => endpointFacts(run.raw, provenanceBase, repoRoot),
+      "config-surface": () => envFacts(run.raw, provenanceBase),
+      "workspace-layout": () => packageFacts(run.raw, provenanceBase),
+      "services-topology": () => serviceFacts(run.raw, provenanceBase),
+      "module-graph": () => moduleGraphFacts(run.raw, provenanceBase, attrsOf("package")),
+      "decision-history": () => churnFacts(run.raw, provenanceBase),
+      "db-policies": () => policyFacts(run.raw, provenanceBase),
+      "client-routes": () => routeFacts(run.raw, provenanceBase),
+      "async-messaging": () => messagingFacts(run.raw, provenanceBase),
+      // db-schema is the one capability whose normalizer depends on the provider:
+      // replay and live introspection carry a declared-beats-live join that a
+      // static parse has no use for.
+      "db-schema": () =>
+        reg.id === "sql-replay"
+          ? replayFacts(run.raw, provenanceBase,
+              attrsOf("table").map((a) => a.name), attrsOf("enum").map((a) => a.name))
+          : reg.id === "tbls-live"
+          ? liveTableFacts(run.raw, provenanceBase, attrsOf("table").map((a) => a.name))
+          : schemaFacts(run.raw, provenanceBase, toPosix(relative(repoRoot, d.file ?? ""))),
+    };
+    if (!NORMALIZE[reg.capability]) {
+      cap.status = "failed";
+      cap.reason = `no normalizer for capability '${reg.capability}'`;
+      toolError = `${reg.id}: ${cap.reason}`;
+      flushGroup();
+      continue;
+    }
+    const norm = NORMALIZE[reg.capability]();
+
+    // `emits:` was declaration only. `provider show` prints it in the permission
+    // manifest a human reads before consenting to a third-party provider, and
+    // nothing ever compared it to what the provider actually produced - so the
+    // consent was to a list the engine did not hold anyone to. Fail closed, the
+    // same way a crashed extractor does: a provider that emits outside its
+    // declaration is not a partial result, it is a broken contract.
+    if (reg.emits?.length) {
+      const declared = new Set(reg.emits);
+      const undeclared = [...new Set(norm.facts.map((f) => f.payload.type))]
+        .filter((t) => !declared.has(t)).sort();
+      if (undeclared.length) {
+        cap.status = "failed";
+        cap.reason = `emits undeclared fact type(s): ${undeclared.join(", ")} (declares ${reg.emits.join(", ")})`;
+        toolError = `${reg.id}: ${cap.reason}`;
+        flushGroup();
+        continue;
+      }
+    }
     for (const f of norm.facts) {
       if (isHostileFact(f)) { // E10: marker-forging content never becomes a fact
         gaps.push({ kind: "hostile-content", file: null });
         continue;
+      }
+      // KEEL-30, the path scope. Applied to PROVENANCE, not to the repo walk:
+      // filtering the walk would only bite where the sandbox builds a view, so
+      // the same config would scope on Linux and silently do nothing on macOS
+      // and Windows - a setting that means different things per platform is
+      // worse than no setting. Provenance is outside the hash (ADR-008), so
+      // pruning read sites cannot manufacture drift by itself.
+      //
+      // A fact keeps every site outside the scope and loses the ones inside it;
+      // a fact with nothing left never existed as far as this repo is concerned.
+      // That distinction is the whole point: an env var read by both a fixture
+      // and the application is the application's, with one fewer receipt.
+      //
+      // This is a DOCUMENTATION scope, not a read restriction. What a provider
+      // may read is `inputs` plus the sandbox, and that is unchanged.
+      if (denyPaths.length) {
+        const src = f.provenance?.source ?? [];
+        const kept = src.filter((s) => !s.file || !denyPaths.some((re) => re.test(toPosix(s.file))));
+        if (src.length && !kept.length) { scopedOut++; continue; }
+        if (kept.length !== src.length) f.provenance = { ...f.provenance, source: kept };
       }
       f.hash = factHash(f.payload);
       const prior = claimsById.get(f.id);
@@ -1059,5 +1111,5 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
     .update([...active.map((r) => `${r.id}@${r.semver}`)].sort().join(",") + `|engine:${ENGINE_VERSION.split(".")[0]}`)
     .digest("hex").slice(0, 16);
 
-  return { factsById, capabilities, gaps, providerSetHash, toolError, conflicts, cache: cacheStats };
+  return { factsById, capabilities, gaps, providerSetHash, toolError, conflicts, cache: cacheStats, scopedOut };
 }
