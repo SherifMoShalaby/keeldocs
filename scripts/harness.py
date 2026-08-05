@@ -2760,6 +2760,64 @@ def main():
                 if t not in vocab:
                     bad.append(f"{rel}: emits `{t}`, which is not a fact type")
         assert not bad, "undeclarable emits:\n    " + "\n    ".join(bad)
+
+        # The runtime half's harder case: a provider whose output is missing a
+        # field its fact type needs. `models: [{fields: []}]` used to produce
+        # `fact:db-schema/undefined` with an undefined `name`, and JSON.stringify
+        # drops undefined keys - so the fact reached the fact file, the golden and
+        # the document missing part of itself. Silent absence is the nastiest
+        # false-drift source the provider contract names.
+        #
+        # Installed through the real T2 path (keygen -> sign -> trust -> add),
+        # because a provider directory that the registry never loads would prove
+        # nothing. Paired with a well-formed record in the same payload, so the
+        # gate cannot pass by the provider dying outright.
+        import shutil as _sh28, tempfile as _tf28
+        mt = _tf28.mkdtemp(prefix="keeldocs-malformed-")
+        auth = os.path.join(mt, "author"); os.makedirs(auth)
+        pdir = os.path.join(auth, "halfwit"); os.makedirs(pdir)
+        W(os.path.join(pdir, "provider.yaml"),
+          "id: halfwit\ncapability: db-schema\nsemver: 1.0.0\ntier: code\n"
+          "entry: ./extract.py\ndetect: { files: [\"halfwit.schema\"] }\n"
+          "inputs: [\"**/*.schema\"]\ntimeout_class: A\nemits: [table]\n")
+        W(os.path.join(pdir, "extract.py"),
+          "import json, sys\n"
+          "sys.stdout.write(json.dumps({\"models\": [{\"name\": \"Good\", \"fields\": []},\n"
+          "                                          {\"fields\": []}], \"enums\": []}))\n")
+        work = os.path.join(mt, "repo")
+        _sh28.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), work,
+                       ignore=_sh28.ignore_patterns("golden", ".keeldocs"))
+        W(os.path.join(work, "halfwit.schema"), "x\n")
+        KDM = os.path.join(ROOT, "bin", "keeldocs.js")
+        menv = {**os.environ, "CI": ""}
+
+        def kdm(cwd, *a):
+            return subprocess.run(["node", KDM, *a], cwd=cwd, capture_output=True,
+                                  text=True, timeout=600, env=menv)
+        pub28 = json.loads(kdm(auth, "provider", "keygen", "--json").stdout)["data"]["publicKeyB64"]
+        assert kdm(auth, "provider", "sign", pdir, "--key",
+                   os.path.join(auth, "keeldocs-signing-key.pem"),
+                   "--signer", "acme", "--json").returncode == 0, "sign failed"
+        assert kdm(work, "provider", "trust", "acme", pub28, "--json").returncode == 0, "trust failed"
+        assert kdm(work, "provider", "add", pdir, "--yes", "--json").returncode == 0, "install failed"
+        # Through the CLI, so the trust keys the install just wrote are actually
+        # loaded - the raw extractAll would refuse the provider it installed.
+        rc28 = kdm(work, "check", "--json", "--no-cache")
+        env28 = node_json(rc28, "check on the malformed provider")
+        assert env28["code"] != "TOOL_ERROR", \
+            f"one malformed record must not fail the whole run: {env28['summary']}"
+        reports = sorted(glob.glob(os.path.join(work, ".keeldocs", "out", "check-*.json")),
+                         key=os.path.getmtime)
+        assert reports, "check wrote no report"
+        rep28 = json.load(open(reports[-1], encoding="utf-8"))
+        gaps28 = [g.get("kind", "") for g in rep28.get("extractionGaps", [])]
+        caps28 = rep28.get("capabilities", {}).get("db-schema", {})
+        assert any(k.startswith("malformed-fact: halfwit") for k in gaps28), \
+            f"the drop must be a NAMED gap in the report, not silence: {gaps28}"
+        assert "halfwit@1.0.0" in (caps28.get("providers") or []), \
+            f"control: the provider must actually have run: {caps28}"
+        _sh28.rmtree(mt, ignore_errors=True)
+
         print(f"  PASS  provider emits: {shipped} shipped providers declare only real fact types "
               f"({len(declared_by)} of {len(vocab)} in the vocabulary), enforced at extraction")
     except Exception as e:

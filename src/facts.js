@@ -1062,6 +1062,21 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
       //
       // This is a DOCUMENTATION scope, not a read restriction. What a provider
       // may read is `inputs` plus the sandbox, and that is unchanged.
+      // KEEL-28's other half. A normalizer reads named fields out of whatever
+      // the extractor printed, so an extractor that misspells one produces a
+      // fact with an undefined attr - and JSON.stringify drops undefined keys,
+      // so it lands in the fact file, the golden and the document as a fact that
+      // is simply missing part of itself. `fact:db-schema/undefined` was
+      // reachable from a `models` entry with no `name`. Silent absence is the
+      // nastiest false-drift source the provider contract names, so this is a
+      // named gap and a partial result - never a smaller-but-clean answer.
+      const missing = Object.entries(f.payload?.attrs ?? {})
+        .filter(([, v]) => v === undefined).map(([k]) => k);
+      if (!f.id || String(f.id).includes("undefined") || missing.length) {
+        gaps.push({ kind: `malformed-fact: ${reg.id} emitted a ${f.payload?.type ?? "?"} `
+          + `missing ${missing.length ? missing.join(", ") : "an identifier"}`, file: null });
+        continue;
+      }
       if (denyPaths.length) {
         const src = f.provenance?.source ?? [];
         const kept = src.filter((s) => !s.file || !denyPaths.some((re) => re.test(toPosix(s.file))));
