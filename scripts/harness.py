@@ -2563,6 +2563,135 @@ def main():
     except Exception as e:
         failures.append(f"recipe specs: {why(e)}")
 
+    # KEEL-11 groundwork: the three ways the parser used to fail silently. All
+    # three were found by designing the compatibility policy and then verifying
+    # its premises against the shipped code rather than taking them.
+    try:
+        import shutil as _sh11, tempfile as _tf11
+        tmp = _tf11.mkdtemp(prefix="keeldocs-failclosed-")
+        KDF = os.path.join(ROOT, "bin", "keeldocs.js")
+        fenv = {**os.environ, "CI": ""}
+
+        def repo(name, doc):
+            d = os.path.join(tmp, name)
+            os.makedirs(os.path.join(d, "docs"))
+            W(os.path.join(d, "package.json"), '{"name":"%s","version":"1.0.0"}\n' % name)
+            W(os.path.join(d, "app.js"), "const a = process.env.REAL_VAR;\n")
+            W(os.path.join(d, "docs", "x.md"), doc)
+            for c in (["init", "-q", "."], ["config", "user.email", "t@t"],
+                      ["config", "user.name", "t"], ["add", "-A"], ["commit", "-qm", "i"]):
+                subprocess.run(["git", *c], cwd=d, capture_output=True, timeout=60)
+            return d
+
+        def check(d):
+            r = subprocess.run(["node", KDF, "check", "--json"], cwd=d,
+                               capture_output=True, text=True, timeout=300, env=fenv)
+            return r.returncode, node_json(r, f"check in {os.path.basename(d)}")
+
+        # (1) A package scope naming a package this workspace does not contain.
+        # The empty set hashes to a constant that is the same in every repository
+        # and that no code change can move, so the section matched it forever.
+        gone = repo("gone", "# X\n\n<!-- keeldocs: id=x.root binds=pkg:@acme/gone#http-endpoints/* hash-kind=fact -->\n"
+                            "\n<!-- keeldocs:gen id=x.root.t hash=h1:838b60ffacdbdef4 -->\n| a |\n<!-- /keeldocs:gen -->\n")
+        rc, env = check(gone)
+        assert rc == 1 and env["code"] == "DRIFT_FOUND", \
+            f"a document scoped to an absent package must not certify clean: rc={rc} {env['code']}"
+        states = {t["state"] for t in env["data"]["top"]}
+        assert states == {"dead"}, f"absent package scope should be dead, got {states}"
+        assert any("@acme/gone" in m for t in env["data"]["top"] for m in t.get("missing", [])), \
+            "the finding must name the scope that does not resolve"
+        # Control: the SAME shape against a package that does exist stays clean,
+        # or the gate is just asserting that package binds never work.
+        ok = repo("present", "# X\n\n<!-- keeldocs: id=x.root binds=pkg:present#config-surface/* hash-kind=fact -->\n")
+        rc_ok, env_ok = check(ok)
+        assert env_ok["code"] == "CLEAN", \
+            f"control: a scope naming a real package must resolve, got {env_ok['code']} {env_ok['summary'][:120]}"
+
+        # (2) The unknown-key guard's name class has to be WIDER than any name a
+        # key could have. It was [A-Za-z][A-Za-z0-9-]*, so a name with `_`, `.`,
+        # `:` or a leading digit was not seen as an attempted key and was absorbed
+        # into the preceding value - reaching data.top[].missing verbatim, in the
+        # envelope an agent parses, in a format whose spec says no free text ever.
+        probe = subprocess.run(["node", "--input-type=module", "-e", (
+            'import {parseDoc} from "%s/src/anchors.js";'
+            'const out = {};'
+            'for (const [k, body] of JSON.parse(process.argv[1])) {'
+            '  const r = parseDoc(`<!-- keeldocs: ${body} -->\\n`, "d.md");'
+            '  out[k] = r.anchors.length ? ("accepted:" + r.anchors[0].binds.map(b => b.raw).join("|"))'
+            '                            : ("refused:" + r.quarantined[0].reason);'
+            '}'
+            'console.log(JSON.stringify(out));') % ROOT_URL, json.dumps([
+                ["dash", "id=a.b binds=fact:x/y provider-set=zzz"],
+                ["underscore", "id=a.b binds=fact:x/y provider_set=zzz"],
+                ["dotted", "id=a.b binds=fact:x/y provider.set=zzz"],
+                ["colon", "id=a.b binds=fact:x/y ext:v=zzz"],
+                ["digit", "id=a.b binds=fact:x/y 2fa=zzz"],
+                ["route", "id=a.b binds=fact:http-endpoints/GET /items?x=1 hash-kind=fact"],
+                ["symbol", "id=a.b binds=ds npm @app/api . src/o/S#submit(2). hash-kind=fact"],
+                ["pkg", "id=a.b binds=pkg:@acme/web#http-endpoints/* hash-kind=fact"],
+            ])], capture_output=True, text=True, timeout=120)
+        lex = node_json(probe, "anchor lexer probe")
+        for k in ("dash", "underscore", "dotted", "colon", "digit"):
+            assert lex[k].startswith("refused:unknown-key"), \
+                f"an unknown key spelled `{k}` was absorbed instead of refused: {lex[k]}"
+        # ...and the legitimate forms, including a value that really contains `=`,
+        # still parse. Tightening a lexer until it rejects real input is the other
+        # way to get this wrong.
+        assert lex["route"] == "accepted:fact:http-endpoints/GET /items?x=1", lex["route"]
+        assert lex["symbol"].startswith("accepted:ds npm"), lex["symbol"]
+        assert lex["pkg"] == "accepted:pkg:@acme/web#http-endpoints/*", lex["pkg"]
+
+        # (3) A refused marker had no verdict: recorded in the spilled report and
+        # absent from the envelope, the summary and the exit code, so an engine
+        # that had stopped checking a section still printed CLEAN and exited 0.
+        bad = repo("refused", "# X\n\n<!-- keeldocs: id=x.root binds=fact:config-surface/REAL_VAR totally-bogus=yes hash-kind=fact -->\n")
+        rc_b, env_b = check(bad)
+        assert rc_b == 1, f"a marker the engine cannot parse must not exit 0, got {rc_b}"
+        assert env_b["code"] == "UNREADABLE", \
+            f"UNREADABLE outranks DRIFT_FOUND - a drift count over an unreadable tree is not a number to headline: {env_b['code']}"
+        ref = env_b["data"].get("refused") or []
+        assert ref and ref[0]["reason"] == "unknown-key" and ref[0]["line"] == 3, \
+            f"the envelope must name the refused marker by line and reason: {ref}"
+        # (4) The generation gate. A future key would otherwise be refused as
+        # `unknown-key`, telling a user their anchor is malformed when it is only
+        # newer than their engine - wrong and unactionable. `needs` makes the
+        # answer named, and it has to be read BEFORE the vocabulary check or the
+        # unknown key alongside it decides the outcome first.
+        gen = node_json(subprocess.run(["node", "--input-type=module", "-e", (
+            'import {parseDoc} from "%s/src/anchors.js";'
+            'const out = {};'
+            'for (const [k, m] of JSON.parse(process.argv[1])) {'
+            '  const r = parseDoc(m + "\\n", "d.md");'
+            '  out[k] = (r.anchors.length + r.regions.length) ? "accepted"'
+            '           : ("refused:" + r.quarantined[0].reason);'
+            '}'
+            'console.log(JSON.stringify(out));') % ROOT_URL, json.dumps([
+                ["explicit1", "<!-- keeldocs: needs=1 id=a.b binds=fact:x/y hash-kind=fact -->"],
+                ["future", "<!-- keeldocs: needs=2 id=a.b binds=fact:x/y provider-set=h1:00 -->"],
+                ["future-region", "<!-- keeldocs:gen needs=2 id=a.b.t hash=h1:00112233 -->"],
+                ["not-first", "<!-- keeldocs: id=a.b needs=2 binds=fact:x/y -->"],
+                ["bad", "<!-- keeldocs: needs=x id=a.b binds=fact:x/y -->"],
+                ["absent", "<!-- keeldocs: id=a.b binds=fact:x/y hash-kind=fact -->"],
+            ])], capture_output=True, text=True, timeout=120), "generation gate probe")
+        assert gen["future"] == "refused:needs-newer-reader:2",             f"a marker from a later generation must say so, not read as a typo: {gen['future']}"
+        assert gen["future-region"] == "refused:needs-newer-reader:2",             f"the gate has to cover regions too, not only section anchors: {gen['future-region']}"
+        assert gen["not-first"] == "refused:needs-not-first",             f"`needs` must lead, or an unknown key ahead of it decides first: {gen['not-first']}"
+        assert gen["bad"] == "refused:bad-needs", gen["bad"]
+        # Both ends of the compatibility promise: this generation parses, and a
+        # document written before the key existed is still conforming.
+        assert gen["explicit1"] == "accepted" and gen["absent"] == "accepted",             f"generation 1 must parse with and without the declaration: {gen}"
+        # And this engine must never WRITE the key - a 0.x document and a 1.0
+        # document have to be byte-identical or the freeze owes everyone a rewrite.
+        for rel in ("src/render.js", "src/newcmd.js", "src/patch.js"):
+            body = open(os.path.join(ROOT, rel), encoding="utf-8").read()
+            assert "needs=" not in body, f"{rel} emits `needs=`; a generation-1 engine must not"
+        print("  PASS  parser fails closed: absent package scope is dead (real scope still clean), "
+              "5 unknown-key spellings refused with 3 legitimate binds intact, refused markers reach "
+              "exit 1 + UNREADABLE, generation gate names a newer reader and is never emitted")
+        rmtree(tmp)
+    except Exception as e:
+        failures.append(f"parser fails closed: {why(e)}")
+
     # KEEL-24 / E16. The plugin + marketplace path. `claude plugin validate .
     # --strict` is the authoritative check and it passes (proven by mutation: a
     # non-kebab name and a string `author` both make it exit 1), but it needs the

@@ -18,9 +18,31 @@ function ownershipFor(factsById) {
   return idx;
 }
 
+// Does this repository have a package by that name at all? A package scope that
+// names a package the workspace does not contain is a BROKEN binding, not an
+// empty one, and the difference is the whole finding below.
+function packageExists(name, factsById) {
+  for (const f of factsById.values()) {
+    if (f.payload.type === "package" && f.payload.attrs.name === name) return true;
+  }
+  return false;
+}
+
 function resolveBind(bind, factsById) {
   if (bind.kind === "package") {
-    return { ids: resolvePackageBind(bind, factsById, ownershipFor(factsById)), wildcard: true };
+    // A wildcard that matches nothing is normally fine: `fact:db-schema/*` in a
+    // repo with no database documents the empty set, which is vacuous but true,
+    // and `init` never writes such a section anyway. A PACKAGE scope is not that.
+    // `binds=pkg:@acme/gone#http-endpoints/*` names a scope that does not exist,
+    // and because the empty set hashes to a constant - the same value in every
+    // repository, one no code change can ever move - the section matched it on
+    // every run and reported CLEAN in perpetuity. Measured: a document claiming
+    // to inventory a package absent from the workspace exited 0, clean, twice.
+    // Marking it non-wildcard routes it into `missing`, which is `dead`, which
+    // already carries rebind candidates - the machinery for "the thing this
+    // documented is not there" rather than a new state beside it.
+    const scoped = packageExists(bind.pkg, factsById);
+    return { ids: resolvePackageBind(bind, factsById, ownershipFor(factsById)), wildcard: scoped };
   }
   if (bind.wildcard) {
     const ids = [...factsById.keys()].filter((id) => id.startsWith(bind.prefix)).sort();
@@ -112,7 +134,11 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
       if (cap && capabilities[cap]?.status === "failed") { unresolvable = true; continue; }
       const r = resolveBind(b, factsById);
       ids.push(...r.ids);
-      if (!b.wildcard && r.ids.length === 0) missing.push(b.raw);
+      // r.wildcard, not b.wildcard: the parsed bind says what it LOOKS like, the
+      // resolver says whether it names anything real. They differ in exactly one
+      // case - a package scope whose package is not in this workspace - and that
+      // case is the false negative.
+      if (!r.wildcard && r.ids.length === 0) missing.push(b.raw);
     }
     ids.forEach((id) => documented.add(id));
     if (unresolvable) return { state: "unresolvable", ids, missing };

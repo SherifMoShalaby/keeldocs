@@ -133,3 +133,81 @@ On pass, the tool - never the model - prepends the visible draft label
 replaces the label with `> ✎ Reviewed by <actor>, <sha>.` - attestation, not
 derivation: approval never renders as machine-"verified". Both `slot-write` and
 `approve` are disabled in CI; prose and attestations happen locally, under review.
+
+## 11. Compatibility policy (v0.3, 2026-08-05) — what has to be true before 1.0 freezes
+
+This section exists because the grammar in §1 is closed and §8 promises to freeze
+it. A closed grammar has one well-known cost: a document written by a newer
+engine is refused by an older one. That cost is acceptable here — the values in
+these markers are hashes, and a reader that quietly ignores what it does not
+understand is a drift detector that has stopped detecting — but it is only
+acceptable if refusal is loud, named, and bounded. Three things were true of the
+shipped parser when this policy was written, and each had to be fixed before a
+freeze could honestly promise anything.
+
+**Refusal now fails closed and reaches the user.** A marker the parser could not
+read was recorded in the spilled report and appeared in neither the envelope, the
+summary, nor the exit code, so an engine that had stopped checking a section
+still printed `CLEAN` and exited zero. Refused markers are now named in the
+envelope by document, line and reason; `check` exits 1 with code `UNREADABLE`,
+and that code outranks `DRIFT_FOUND`, because a drift count computed over a tree
+the engine cannot fully read is a number it should decline to headline. The
+marker's text is still preserved byte for byte and nothing is derived from it —
+refusal remains inert, per §1's rule that a human mangling an anchor without the
+tool installed must never corrupt unrecoverable state.
+
+**A marker must be lexable without knowing the key set.** The guard that catches
+an unknown key matched names of the form `[A-Za-z][A-Za-z0-9-]*` only, so a name
+containing `_`, `.` or `:`, or beginning with a digit, was not recognised as an
+attempted key and was absorbed into the preceding value instead. `binds` then
+carried it, and the text reached the `--json` envelope an agent parses. §1's "no
+free-text fields ever" and ADR-013's claim that schema-strictness is an injection
+defense were both false at exactly the point where they were load-bearing. The
+guard's name class is now wider than any name a key could have, so an attempted
+key is refused whatever it is spelled — while values that legitimately contain
+`=`, such as a route with a query string, still parse.
+
+**A binding that names a scope which does not exist is dead, not empty.** A
+wildcard matching nothing is ordinarily fine: `fact:db-schema/*` in a repository
+with no database documents the empty set, which is vacuous but true. A package
+scope is not that. `binds=pkg:@acme/gone#http-endpoints/*` names a workspace
+member that does not exist, and because the empty set hashes to a constant — the
+same value in every repository, one that no change to anyone's code can ever move
+— such a section matched its recorded hash on every run and reported clean in
+perpetuity. A package scope whose package is absent from workspace-layout is now
+a missing binding, which is `dead`, which already carries re-anchoring candidates.
+
+### Grammar generations
+
+The key sets in §1, §9 and §10 are **grammar generation 1**. Growing any of them
+produces generation 2, and so on. A marker declares the generation it requires
+with one key, `needs`, whose value is one to three digits and which must be the
+marker's first key when present. A marker with no `needs` requires generation 1,
+so every document any 0.x keeldocs has written is already a conforming
+generation-1 document and no rewrite is owed to it. A generation-1 engine parses
+`needs` and never emits it.
+
+The generation gate is evaluated before the vocabulary check and before every
+value validator, so that a marker from the future is refused as
+`needs-newer-reader:<N>` rather than as `unknown-key`. That distinction is the
+whole mechanism: without it, a user whose teammate has a newer keeldocs is told
+their anchor is malformed, which is both wrong and unactionable.
+
+New keys are registered in this document under their final names before any
+engine emits them. There is no experimental band and no vendor prefix, because in
+every format that shipped one the successful experiments acquired a permanent
+second name and kept it — and these markers live in users' git history, where a
+rename cannot be redeployed. A generation bump is a coordinated upgrade for
+everyone who runs the tool against a repository, and the expense of that
+coordination is deliberate: it is what keeps the key set small.
+
+### Two claims in §1 are withdrawn rather than frozen
+
+The parser has never enforced either, and publishing them would bind implementers
+to behaviour the reference implementation does not have. **Key order is not
+enforced** except for `needs`; `hash-kind=fact binds=…` parses exactly as
+`binds=… hash-kind=fact` does. And **multi-value fields are not required to be
+sorted**: resolution sorts and deduplicates before hashing, so order is
+unobservable. Both are stated here rather than quietly dropped, because a
+specification that describes a stricter parser than the one that ships is the
+same defect as documentation that describes code it does not match.

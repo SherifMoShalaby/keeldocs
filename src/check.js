@@ -46,8 +46,19 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
     }, null);
   }
 
-  const exit = report.toolError ? 2 : report.counts.driftTotal > 0 ? 1 : 0;
-  const code = report.toolError ? "TOOL_ERROR" : exit === 1 ? "DRIFT_FOUND" : "CLEAN";
+  // A refused marker had no verdict at all: it was recorded in the spilled report
+  // and appeared in neither the envelope, the summary, nor the exit code. So an
+  // engine that had stopped checking a section still printed CLEAN and exited
+  // zero - and the user was never told which section, or that there was one.
+  // A drift count computed over a tree the engine cannot fully read is a number
+  // it should decline to headline, so UNREADABLE outranks DRIFT_FOUND.
+  const refused = report.quarantined ?? [];
+  const unbound = report.counts.unbound ?? 0;
+  const unreadable = refused.length + unbound;
+  const exit = report.toolError ? 2 : (unreadable || report.counts.driftTotal > 0) ? 1 : 0;
+  const code = report.toolError ? "TOOL_ERROR"
+    : unreadable ? "UNREADABLE"
+    : exit === 1 ? "DRIFT_FOUND" : "CLEAN";
 
   // Full report spills to .keeldocs/out; stdout stays inside the 8KB envelope cap.
   // `noise` stays envelope-only: its 30-day window moves with the wall clock,
@@ -69,6 +80,8 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   const sinceTxt = report.meta.since ? `; ${c.selfCaused ?? 0} caused since ${report.meta.since.ref}` : "";
   const summary = report.toolError
     ? `tooling error: ${report.toolError}`.slice(0, 300)
+    : unreadable
+    ? `${refused.length} unparseable marker(s) and ${unbound} section(s) bound to nothing - no drift verdict for this run; repair or delete them, then re-run`.slice(0, 300)
     : `${c.driftTotal} drift finding(s) [stale ${c.stale ?? 0}, dead ${c.dead ?? 0}, tampered ${c.tampered ?? 0}]${sinceTxt} across ${report.meta.docsScanned} doc(s); ${c.clean ?? 0} clean; ${covTxt}`.slice(0, 300);
 
   const top = report.findings.filter((f) => DRIFT_STATES.has(f.state)).slice(0, 20)
@@ -80,6 +93,7 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   const envelope = {
     v: 1, ok: exit === 0, code, summary,
     data: { counts: c, coverage: report.coverage, noise: report.noise, top,
+            ...(refused.length ? { refused: refused.slice(0, 20) } : {}),
             ...(upgrades?.length ? { upgrades } : {}) },
     truncated: report.findings.length > top.length,
     full: toPosix(relative(repoRoot, outPath)),
