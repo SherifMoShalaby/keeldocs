@@ -283,6 +283,21 @@ exactly what a `npm update` plus a day's work looks like — would have both
 absorbed silently. The honest form is an annotation on a `stale` finding ("the
 provider set also changed since this was written"), not a state that accepts.
 
+*And the input the ticket names does not move.* `providerSetHash` is
+`sha256(sorted(id@semver) + "|engine:" + major)`, and it is **byte-identical at
+`v0.2.0`, `v0.3.0` and `HEAD`** — recomputed from each ref's `provider.yaml`
+files rather than argued about. No provider semver moved in that range, and the
+engine term is the major version, which is `0` for the whole 0.x line. Across
+exactly that range: `prisma` narrowed its declared `emits`, the entire extractor
+runtime was re-pinned (206 lines of `providers/requirements.txt` — the
+tree-sitter grammar versions that decide what every extractor parses), `emits`
+became enforced so a provider can now fail where it used to produce facts, and
+path scoping changed which files are seen at all. The fingerprint would have been
+blind to every one of them. Committing it into the anchor would have frozen a
+compatibility-breaking key into the format whose answer to "did the engine
+change?" is "no" across the only real upgrade this project has had. Whatever
+KEEL-10 carries, it is not this field as currently computed.
+
 *And the sequencing in the ticket is backwards.* Carrying the previous
 provider-set fingerprint requires committing it, and the only committed place is
 the anchor. The anchor grammar rejects unknown keys — it quarantines them — so a
