@@ -2689,12 +2689,99 @@ def main():
         for rel in ("src/render.js", "src/newcmd.js", "src/patch.js"):
             body = open(os.path.join(ROOT, rel), encoding="utf-8").read()
             assert "needs=" not in body, f"{rel} emits `needs=`; a generation-1 engine must not"
+        # (5) A generated region carrying NEITHER hash. It still looks managed and
+        # is checked against nothing, so the same wrong body reports `stale` with a
+        # hash and `clean` without one. Two deleted attributes - a hand edit, or a
+        # merge that resolved a marker line badly - retired a section from drift
+        # detection permanently and silently. The pair below is the whole proof.
+        BODY = "| GET | `/gone` |\n"
+        # A region id the renderer knows, so `sync` can actually regenerate it -
+        # an unknown id takes the `unrenderable` path, which is correct behaviour
+        # and would have made the repair half of this gate untestable.
+        ANCH = "<!-- keeldocs: id=config.reference binds=fact:config-surface/* hash-kind=fact -->\n"
+        hashed = repo("hashed", "# X\n\n" + ANCH +
+                      "\n<!-- keeldocs:gen id=config.reference.table hash=h1:0000000000000000 -->\n" + BODY + "<!-- /keeldocs:gen -->\n")
+        bare = repo("bare", "# X\n\n" + ANCH +
+                    "\n<!-- keeldocs:gen id=config.reference.table -->\n" + BODY + "<!-- /keeldocs:gen -->\n")
+        rc_h, env_h = check(hashed)
+        rc_r, env_r = check(bare)
+        assert rc_h == 1 and env_h["code"] == "DRIFT_FOUND", f"control: the hashed twin must drift: {env_h['code']}"
+        assert rc_r == 1 and env_r["code"] == "UNREADABLE", \
+            f"the same body with the hashes deleted must not read as a pass: rc={rc_r} {env_r['code']} {env_r['summary'][:120]}"
+        # ...and one sync has to put it back under check, or the finding is a dead
+        # end the user cannot clear.
+        sy = subprocess.run(["node", KDF, "sync", "--apply-all", "--json"], cwd=bare,
+                            capture_output=True, text=True, timeout=300, env=fenv)
+        assert sy.returncode == 0, f"sync could not repair an unverified region: {sy.stdout[-200:]}"
+        rc_f, env_f = check(bare)
+        assert env_f["code"] != "UNREADABLE", \
+            f"sync ran but the region is still unverified: {env_f['code']} {env_f['summary'][:120]}"
+        assert "hash=h1:" in open(os.path.join(bare, "docs", "x.md"), encoding="utf-8").read(), \
+            "sync must write the hash back into the marker"
         print("  PASS  parser fails closed: absent package scope is dead (real scope still clean), "
               "5 unknown-key spellings refused with 3 legitimate binds intact, refused markers reach "
-              "exit 1 + UNREADABLE, generation gate names a newer reader and is never emitted")
+              "exit 1 + UNREADABLE, a hashless gen region is unverified and one sync repairs it, "
+              "generation gate names a newer reader and is never emitted")
         rmtree(tmp)
     except Exception as e:
         failures.append(f"parser fails closed: {why(e)}")
+
+    # KEEL-11's freeze. Section 12 of the spec enumerates what a conforming reader
+    # may rely on, and a frozen promise nothing checks is the defect this project
+    # exists to detect - published, this time, in the document third parties would
+    # implement from. Every rule in section 12 is probed against the shipped
+    # parser here, so prose and parser cannot drift apart silently.
+    try:
+        probe = node_json(subprocess.run(["node", "--input-type=module", "-e", (
+            'import {parseDoc} from "%s/src/anchors.js";'
+            'const out = {};'
+            'for (const [k, doc] of JSON.parse(process.argv[1])) {'
+            '  const r = parseDoc(doc + "\\\\n", "d.md");'
+            '  out[k] = (r.anchors.length + r.regions.length)'
+            '    ? "accepted" : (r.quarantined.length ? "refused:" + r.quarantined[0].reason : "IGNORED");'
+            '}'
+            'console.log(JSON.stringify(out));') % ROOT_URL, json.dumps([
+                # envelope: `>` in a value is refused by name, never ignored
+                ["gt", "<!-- keeldocs: id=a.b binds=fact:x/GET /a?q=>1 -->"],
+                # layout
+                ["nospace", "<!--keeldocs:genid=a.b hash=h1:00112233-->x<!-- /keeldocs:gen -->"],
+                ["multiline", "<!-- keeldocs: id=a.b\n  binds=fact:x/* -->"],
+                ["indented", "    <!-- keeldocs: id=a.b binds=fact:x/y -->"],
+                ["blockquoted", "> <!-- keeldocs: id=a.b binds=fact:x/y -->"],
+                ["fenced", "```\n<!-- keeldocs: id=a.b binds=fact:x/y -->\n```"],
+                # keys
+                ["idonly", "<!-- keeldocs: id=a.b -->"],
+                ["orderswap", "<!-- keeldocs: hash-kind=fact binds=fact:x/y id=a.b -->"],
+                ["dupkey", "<!-- keeldocs: id=a.b id=c.d -->"],
+                # identity
+                ["slashid", "<!-- keeldocs: id=a/b -->"],
+                ["badrecipe", "<!-- keeldocs: id=a.b recipe=erd@x -->"],
+                ["bareclose", "<!-- keeldocs:gen id=a.b -->x<!-- /keeldocs: -->"],
+            ])], capture_output=True, text=True, timeout=180), "spec section 12 probe")
+        FROZEN = {
+            "gt": "refused:malformed-marker",
+            "nospace": "accepted", "multiline": "accepted",
+            "indented": "accepted", "blockquoted": "accepted",
+            "fenced": "IGNORED",
+            "idonly": "accepted", "orderswap": "accepted",
+            "dupkey": "refused:duplicate-key:id",
+            "slashid": "refused:bad-id", "badrecipe": "refused:bad-recipe",
+            "bareclose": "refused:unbalanced-close",
+        }
+        wrong = {k: (probe[k], v) for k, v in FROZEN.items() if probe.get(k) != v}
+        assert not wrong, "the parser no longer matches the frozen spec section 12:\n    " + \
+            "\n    ".join(f"{k}: parser says {got!r}, spec says {want!r}" for k, (got, want) in wrong.items())
+        # The freeze must actually be declared, and only where the policy it
+        # depends on exists - a freeze without section 11 is a promise with no
+        # migration path behind it.
+        spec = open(os.path.join(ROOT, "spec", "anchor-spec.md"), encoding="utf-8").read()
+        assert "Frozen at 1.0" in spec, "section 8 does not declare the freeze"
+        for heading in ("## 11. Compatibility policy", "## 12. The frozen surface"):
+            assert heading in spec, f"the freeze cites {heading!r}, which is not in the spec"
+        print(f"  PASS  spec 1.0 freeze: {len(FROZEN)} frozen parser behaviours match section 12, "
+              "policy and surface both present")
+    except Exception as e:
+        failures.append(f"spec 1.0 freeze: {why(e)}")
 
     # KEEL-24 / E16. The plugin + marketplace path. `claude plugin validate .
     # --strict` is the authoritative check and it passes (proven by mutation: a

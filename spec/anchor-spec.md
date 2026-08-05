@@ -98,7 +98,11 @@ Anchors: compact, one per section, deterministically ordered keys, sorted arrays
 
 ## 8. Versioning of this spec
 
-The anchor grammar carries an implicit major version via the `keeldocs:` prefix (`keeldocs2:` if ever needed); the spec is published as a versioned document in a separate repo (PM) so third parties can implement it without depending on the tool; frozen at 1.0 with a written migration policy as a v1.0 release gate.
+The anchor grammar carries an implicit major version via the `keeldocs:` prefix (`keeldocs2:` if ever needed); the spec is published as a versioned document in a separate repo (PM) so third parties can implement it without depending on the tool.
+
+**Frozen at 1.0 on 2026-08-05.** The migration policy that the v1.0 gate required is §11, and the surface being frozen is enumerated in §12. Freezing means three things and no more: the key sets of §1, §9 and §10 are grammar generation 1 and grow only through a `needs` bump; every rule in §12 is a promise a conforming reader may rely on; and any change to either is a new generation, registered here under its final name before an engine emits it.
+
+It does not mean the format is finished. §12 names what is deliberately not frozen, and §11 names two §1 claims withdrawn rather than published, because a specification that describes a stricter parser than the one that ships is the same defect as documentation that describes code it does not match — which is the defect this whole project exists to detect.
 
 ## 9. Engine implementation addenda (v0.1, 2026-07-30)
 
@@ -211,3 +215,64 @@ sorted**: resolution sorts and deduplicates before hashing, so order is
 unobservable. Both are stated here rather than quietly dropped, because a
 specification that describes a stricter parser than the one that ships is the
 same defect as documentation that describes code it does not match.
+
+## 12. The frozen surface (1.0, 2026-08-05)
+
+Everything a conforming reader must agree on, stated as the shipped parser
+behaves rather than as §1 once described it. Each rule below was probed against
+`src/anchors.js` before being written down, and the harness holds the parser to
+this section, so a change here that the code does not make fails the build.
+
+**The envelope.** A marker is an HTML comment whose body contains no `>`. That is
+not a stylistic limit: the comment match ends at the first `>`, so a value
+containing one — a route like `GET /a?q=>1` — stops the marker being recognised at
+all. Such a marker is **refused as `malformed-marker`**, at its own line, rather
+than passing silently out of the document, which is what it used to do. A natural
+key containing `>` is therefore unbindable, and a reader must say so rather than
+ignore it.
+
+**Whitespace and layout.** Whitespace after the tag is optional, so
+`<!--keeldocs:genid=x hash=… -->` parses; a marker may span lines, and its
+reported line is that of the opening `<!--`. Markers inside indented code blocks
+and blockquotes are **live** — only fenced blocks are masked. Fence masking runs
+over the whole document before any region structure exists, so an unterminated
+fence inside a generated body masks that body's own close marker and the region is
+refused as `unclosed-gen`. Fence masking shipped in `0.3.0`: a byte-identical
+document means different things on `0.2.0`, where a fenced example anchor is real
+structure, and on `0.3.0`, where it is an example. That is the one behaviour
+change inside the 0.x line and it is why the fence rule is stated here rather than
+assumed.
+
+**Keys.** Only `id` is required, on every marker kind. `hash-kind` defaults to
+`fact` and `binds` to the empty set; `recipe`, `hash`, `content` and `max-words`
+are all optional. Key **order is not enforced** except for `needs`, and
+multi-value fields need not be sorted — both were promised by §1 and neither was
+ever true of the parser. A duplicate key refuses the marker as
+`duplicate-key:<key>`. An unknown key refuses it as `unknown-key`, where "unknown"
+is judged by a name class deliberately wider than any key name, so an attempted
+key is caught however it is spelled.
+
+**Optional does not mean unchecked.** A gen region carrying neither `hash` nor
+`content` is `unverified`, not clean. It looks managed and is compared against
+nothing, so before 1.0 deleting two attributes retired a section from drift
+detection permanently and silently. `sync` regenerates it and writes both
+attributes back, so the state clears in one pass.
+
+**Identity.** An `id` matches `[A-Za-z0-9_.:-]{1,200}`; `/` is not permitted and
+refuses as `bad-id`. A `recipe` matches `[a-z0-9-]+@[0-9]+`. Region-to-anchor
+inheritance is by longest dot-prefix of the id and is **repository-scoped, not
+document-scoped**: a region inherits from the best-matching anchor in any scanned
+document.
+
+**Refusal.** A refused marker is preserved byte for byte, contributes no
+bindings, and is named in the envelope by document, line and reason. `check`
+exits 1 with code `UNREADABLE`, which outranks `DRIFT_FOUND`, because a drift
+count computed over a tree the reader cannot fully parse is a number it should
+decline to headline.
+
+**What is deliberately not frozen.** `recipe` is parsed, validated and stored, and
+read by nothing — recipe migration keys off root anchor ids and headings instead.
+It stays in the grammar because documents carry it and removing a key is a
+generation bump, but no reader should infer behaviour from it. And `hash-kind`
+accepts `shape` as well as `fact` while only `fact` is implemented; a reader
+meeting `shape` should treat the section as it treats `fact` and say so.

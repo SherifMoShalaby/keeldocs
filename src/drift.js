@@ -197,6 +197,16 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
         add({ ...base, state: "tampered", detail: "gen region content edited by hand" }); continue;
       }
     }
+    // Neither hash recorded. The block still looks managed - markers, an id, a
+    // body the engine wrote - and it is checked against nothing at all. Deleting
+    // two attributes, by hand or by a merge that resolved a marker line badly,
+    // made a generated section permanently invisible to drift while continuing to
+    // render as keeldocs-managed: the same wrong content reports `stale` with a
+    // hash and `clean` without one, exit 0. `patchRegion` already inserts both
+    // attributes when they are absent, so one `sync` converges this.
+    if (region.hash === undefined && region.content === undefined) {
+      add({ ...base, state: "unverified" }); continue;
+    }
     if (region.hash !== undefined) {
       const cur = aggregateHash(bs.ids, factsById);
       const cmp = hashesMatch(region.hash, cur);

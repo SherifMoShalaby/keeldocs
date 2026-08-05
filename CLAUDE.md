@@ -17,7 +17,7 @@ a registry login, people). §5 is refusals with written evidence thresholds, not
 backlog. §6 is closed and is a record, not a queue.
 
 Current: `keeldocs@0.3.0` on npm (`latest`), 175 unit tests, 39 extractor goldens,
-91 harness checks, 3-OS CI green (Windows non-blocking; it was silently red for
+92 harness checks, 3-OS CI green (Windows non-blocking; it was silently red for
 twelve runs until 2026-08-03 — see ROADMAP §4 item 6 before trusting that lane).
 
 ## Never

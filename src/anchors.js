@@ -145,8 +145,10 @@ export function parseDoc(text, docPath) {
   // scan the masked copy; slice bodies from the original (indices are identical)
   const scan = maskFences(text);
   const openStack = [];
+  const spans = [];
   let m;
   while ((m = MARKER.exec(scan)) !== null) {
+    spans.push(m.index);
     const [whole, closing, kind, body] = m;
     const line = lineOf(m.index);
     if (closing === "/") {
@@ -203,6 +205,20 @@ export function parseDoc(text, docPath) {
   }
   for (const open of openStack) {
     quarantined.push({ doc: docPath, line: open.line, reason: `unclosed-${open.kind}` });
+  }
+  // A marker the MARKER regex never matched at all. The HTML-comment envelope is
+  // `[^>]*?`, so a `>` anywhere in a value - a route like `GET /a?q=>1` - stops
+  // the marker being recognised as a marker, and it vanishes rather than being
+  // refused. Spec section 1 promises a malformed anchor is quarantined as inert
+  // data, and silence is not that. Every `<!-- keeldocs` the scan did not consume
+  // is reported at its own line.
+  const matched = new Set(spans);
+  const OPENER = /<!--\s*\/?keeldocs\b/g;
+  let o;
+  while ((o = OPENER.exec(scan)) !== null) {
+    if (!matched.has(o.index)) {
+      quarantined.push({ doc: docPath, line: lineOf(o.index), reason: "malformed-marker" });
+    }
   }
   // deterministic ordering
   anchors.sort((a, b) => a.line - b.line);

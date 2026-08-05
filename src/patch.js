@@ -20,16 +20,18 @@ function findRegion(text, regionId) {
 export function patchRegion(text, regionId, newBody, newHash, newContent) {
   const r = findRegion(text, regionId);
   let marker = r.openMarker;
-  marker = marker.replace(/\bhash=h[0-9]+:[0-9a-f]+/, `hash=${newHash}`);
-  if (/\bcontent=h[0-9]+:[0-9a-f]+/.test(marker)) {
-    marker = marker.replace(/\bcontent=h[0-9]+:[0-9a-f]+/, `content=${newContent}`);
-  } else {
-    marker = marker.replace(/\s*-->$/, ` content=${newContent} -->`);
-  }
-  if (!marker.includes(`hash=${newHash}`)) {
-    // region had no hash attr at all - insert both before the close of the marker
-    marker = marker.replace(/\s*-->$/, ` hash=${newHash} content=${newContent} -->`);
-  }
+  // Each attribute handled ONCE, independently. The previous shape appended
+  // `content=` when it was absent and then, in a separate "no hash attr at all"
+  // branch, appended `hash=` AND `content=` again - so a marker carrying neither
+  // came back with content= twice and quarantined as `duplicate-key:content`,
+  // taking its close marker down with it as `unbalanced-close`. That branch was
+  // unreachable until a hashless region became reportable, and it turned a silent
+  // false negative into a repair that corrupts the document it was repairing.
+  const sub = (re, attr) => {
+    marker = re.test(marker) ? marker.replace(re, attr) : marker.replace(/\s*-->$/, ` ${attr} -->`);
+  };
+  sub(/\bhash=h[0-9]+:[0-9a-f]+/, `hash=${newHash}`);
+  sub(/\bcontent=h[0-9]+:[0-9a-f]+/, `content=${newContent}`);
   return text.slice(0, r.openStart) + marker + "\n" + newBody + "\n" + text.slice(r.bodyEnd);
 }
 

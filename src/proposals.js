@@ -30,7 +30,10 @@ export function buildProposals({ findings, regions, anchors, factsById, reanchor
         evidence: `bound facts changed since this prose was written (recorded ${f.recorded}, current ${f.currentHash}); rewrite it via: keeldocs slot-write ${f.doc} ${f.id}` });
       continue;
     }
-    if (f.state === "stale" || f.state === "tampered") {
+    // `unverified` regenerates like `stale`: patchRegion inserts hash= and
+    // content= when a marker carries neither, so one sync puts the section back
+    // under check instead of leaving it managed-looking and unchecked.
+    if (f.state === "stale" || f.state === "tampered" || f.state === "unverified") {
       const region = regionById.get(f.id);
       if (!region) continue;
       if (region.kind !== "gen") continue;
@@ -53,6 +56,8 @@ export function buildProposals({ findings, regions, anchors, factsById, reanchor
         newContent: display(contentHash(newBody)),
         evidence: f.state === "tampered"
           ? `content hash mismatch: gen region was edited by hand (recorded ${region.content}); restoring regenerates from current facts and discards the hand edit - reject to keep it`
+          : f.state === "unverified"
+          ? `this generated region records no hash, so nothing has been checking it; regenerating restores it to a verified state`
           : `bound facts changed: recorded ${region.hash}, current ${display(aggregateHash(ids, factsById))}`,
       });
       continue;

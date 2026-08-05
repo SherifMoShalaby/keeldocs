@@ -53,8 +53,8 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   // A drift count computed over a tree the engine cannot fully read is a number
   // it should decline to headline, so UNREADABLE outranks DRIFT_FOUND.
   const refused = report.quarantined ?? [];
-  const unbound = report.counts.unbound ?? 0;
-  const unreadable = refused.length + unbound;
+  const unverified = report.counts.unverified ?? 0;
+  const unreadable = refused.length + unverified;
   const exit = report.toolError ? 2 : (unreadable || report.counts.driftTotal > 0) ? 1 : 0;
   const code = report.toolError ? "TOOL_ERROR"
     : unreadable ? "UNREADABLE"
@@ -81,7 +81,7 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   const summary = report.toolError
     ? `tooling error: ${report.toolError}`.slice(0, 300)
     : unreadable
-    ? `${refused.length} unparseable marker(s) and ${unbound} section(s) bound to nothing - no drift verdict for this run; repair or delete them, then re-run`.slice(0, 300)
+    ? `${refused.length} unparseable marker(s) and ${unverified} generated section(s) with no recorded hash - no drift verdict for this run; repair them, then re-run`.slice(0, 300)
     : `${c.driftTotal} drift finding(s) [stale ${c.stale ?? 0}, dead ${c.dead ?? 0}, tampered ${c.tampered ?? 0}]${sinceTxt} across ${report.meta.docsScanned} doc(s); ${c.clean ?? 0} clean; ${covTxt}`.slice(0, 300);
 
   const top = report.findings.filter((f) => DRIFT_STATES.has(f.state)).slice(0, 20)

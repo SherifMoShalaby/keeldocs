@@ -4,7 +4,7 @@
 `release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
 provenance attestation and no publish token anywhere. 3-OS CI green including
 `action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
-runs before it and fixed the same day (§4 item 6) · 175 unit tests · 39 extractor goldens · 91 harness checks ·
+runs before it and fixed the same day (§4 item 6) · 175 unit tests · 39 extractor goldens · 92 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -314,7 +314,7 @@ remaining v1.0 gate is about people, publication or elapsed time.
 
 | Gate | Status |
 |---|---|
-| Anchor spec frozen at 1.0, published standalone with a migration policy | **Open** — spec is stable in practice, not yet frozen |
+| Anchor spec frozen at 1.0, published standalone with a migration policy | **Done 2026-08-05** — §11 is the migration policy, §12 enumerates the frozen surface, §8 declares the freeze, and a harness gate probes all twelve frozen behaviours against the shipped parser so the prose and the code cannot drift apart. Publishing it standalone is a repository decision, not an engineering one |
 | ≥500 public repos with committed anchors | **Blocked, and NOT yet measurable** — `scripts/dev/adoption.py` is the instrument, and as of 2026-08-04 it returns `UNMEASURABLE` rather than a number: GitHub code search does not index this repository, which is known to carry anchors in `docs/reference/configuration.md`, so "no adopters" and "index cannot see us" produce the same 0. The previous claim here — *now measurable: the package is installable* — was wrong: being installable is not the same as being countable. Re-run the script; it reports a floor once its own control passes |
 | ≥2 non-founder maintainers with merge rights | **Blocked (you)** — hard gate, no v1.0 at bus factor 1 |
 | Survived one breaking agent-API change, adapters-only fix ≤1 week | **Not yet exercised** |
