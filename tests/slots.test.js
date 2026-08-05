@@ -95,3 +95,41 @@ test("parseDoc: a tilde fence hides anchors too, and line numbers survive maskin
   assert.deepEqual(r.anchors.map((a) => a.id), ["visible.one"]);
   assert.equal(r.anchors[0].line, 4, "masking must preserve byte offsets so lines stay right");
 });
+
+// ---------- the shipped spec must describe the parser that ships with it ----------
+// spec/anchor-spec.md is in package.json files[], so it reaches every installer,
+// and nothing read it back. It drifted: it documented ONE binds form while the
+// parser accepted three, so the copy users get under-described a shipped feature
+// (package scope, ROADMAP v0.3 "Done"). The design copy meanwhile still spelled
+// the markers `docsmith:`, a name retired before 0.1.
+test("every binds form the shipped spec names is accepted by the parser", async () => {
+  const { parseDoc } = await import("../src/anchors.js");
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const spec = readFileSync(fileURLToPath(new URL("../spec/anchor-spec.md", import.meta.url)), "utf8");
+
+  const doc = (binds) => [
+    `<!-- keeldocs: id=t recipe=erd@1 binds=${binds} hash-kind=fact -->`, "",
+    "<!-- keeldocs:gen id=t.tbl hash=h1:0000000000000000 -->", "x", "<!-- /keeldocs:gen -->",
+  ].join("\n");
+
+  // the forms the spec names, each of which must parse
+  for (const binds of ["fact:db-schema/*", "fact:db-schema/policy.*", "pkg:@acme/web#http-endpoints/*"]) {
+    assert.ok(spec.includes(binds), `spec/anchor-spec.md no longer names ${binds}`);
+    const r = parseDoc(doc(binds), "D.md");
+    assert.equal(r.anchors.length, 1, `parser rejected a form the shipped spec documents: ${binds}`);
+    assert.equal(r.quarantined.length, 0);
+  }
+
+  // and the retired marker name must not come back in either copy
+  assert.ok(!spec.includes("docsmith:"), "shipped spec uses the retired marker name");
+});
+
+test("the spec's fixed key set is the parser's fixed key set", async () => {
+  const { parseDoc } = await import("../src/anchors.js");
+  // an unknown key must be rejected, which is what "unknown keys rejected" means
+  const bad = "<!-- keeldocs: id=t recipe=erd@1 binds=fact:x/* hash-kind=fact owner=me -->";
+  const r = parseDoc(bad, "D.md");
+  assert.equal(r.anchors.length, 0, "an unknown key must not yield an anchor");
+  assert.equal(r.quarantined.length, 1, "it must be quarantined as inert data, not silently dropped");
+});

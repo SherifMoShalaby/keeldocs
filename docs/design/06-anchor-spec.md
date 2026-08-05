@@ -7,14 +7,14 @@ Covers: format grammar, the two ID namespaces, hashing and normalization, the re
 One anchor per section, immediately above or below the heading, invisible when rendered:
 
 ```html
-<!-- docsmith: id=erd.orders recipe=erd@1 binds=fact:db-schema/public.orders hash-kind=fact -->
+<!-- keeldocs: id=erd.orders recipe=erd@1 binds=fact:db-schema/public.orders hash-kind=fact -->
 ```
 
 Gen regions and slots (see Deliverable 5) use paired markers:
 
 ```html
-<!-- docsmith:gen id=erd.orders.columns hash=h1:9c4e17aa20b3f8d1 --> … <!-- /docsmith:gen -->
-<!-- docsmith:slot id=erd.orders.purpose --> … <!-- /docsmith:slot -->
+<!-- keeldocs:gen id=erd.orders.columns hash=h1:9c4e17aa20b3f8d1 --> … <!-- /keeldocs:gen -->
+<!-- keeldocs:slot id=erd.orders.purpose --> … <!-- /keeldocs:slot -->
 ```
 
 Grammar rules (schema-strict — also an injection defense, ADR-013): fixed key set (`id`, `recipe`, `binds`, `hash-kind`), fixed key order, ID/enum/hash-shaped values only, per-field length caps (~200 chars), sorted multi-value fields, unknown keys rejected, **no free-text fields ever**. Two set-valued forms are permitted in `binds`, both trailing-`*` so a reader can see at a glance that the value names a SET: a **prefix wildcard** for index/overview sections (`binds=fact:db-schema/*`), meaning drift fires when any fact under the prefix changes; and a **package scope** (`binds=pkg:@acme/web#http-endpoints/*`, v0.3 — see §Package scope below). A malformed anchor is quarantined as inert data and degrades to re-anchoring — a human mangling an anchor without the tool installed must never corrupt unrecoverable state (DX veto; Swimm's fragility lesson).
@@ -98,7 +98,7 @@ Anchors: compact, one per section, deterministically ordered keys, sorted arrays
 
 ## 8. Versioning of this spec
 
-The anchor grammar carries an implicit major version via the `docsmith:` prefix (`docsmith2:` if ever needed); the spec is published as a versioned document in a separate repo (PM) so third parties can implement it without depending on the tool; frozen at 1.0 with a written migration policy as a v1.0 release gate.
+The anchor grammar carries an implicit major version via the `keeldocs:` prefix (`docsmith2:` if ever needed); the spec is published as a versioned document in a separate repo (PM) so third parties can implement it without depending on the tool; frozen at 1.0 with a written migration policy as a v1.0 release gate.
 
 ## Package scope — `pkg:<name>#<capability>/*`
 
