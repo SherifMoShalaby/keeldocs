@@ -118,7 +118,7 @@ bookkeeping decision rather than a blocked one.
 | Recipes: system-map, erd, endpoint-inventory, config-reference, `new adr` | **Done** |
 | Providers: workspace-layout, module-graph, http-endpoints, db-schema, config-surface, services-topology, decision-history | **Done** |
 | Live Postgres via tbls behind `--live` | **Done** (reclassified OBSERVED once replay landed) |
-| Fixture harness (`test-provider`), noise SLO, redaction barrier, slot-write | **Done** |
+| Fixture harness (`scripts/harness.py`), noise SLO, redaction barrier, slot-write | **Done** — the harness is real and gates every push; the name `test-provider` in earlier drafts was never a command and appears nowhere in the tree |
 | Coverage as ratchet, never a gate | **Done** |
 | npm publish | **Done 2026-08-03** — four rc's, then `keeldocs@0.2.0` as `latest`; trusted publishing + provenance, no token |
 | PyPI placeholder + org transfer | **Blocked (you)** — name still free, and R14's lesson is that registries move |

@@ -4,15 +4,26 @@ Apache-2.0. **DCO sign-off required (`git commit -s`), no CLA.** Governance: BDF
 
 Found a security issue? **Do not open a PR that quietly fixes it** — a fix in public history is the disclosure. `.github/SECURITY.md` has the private channel.
 
+## Setup
+
+Node >= 20, git, and the pinned Python extractor runtime. **The Python part is not optional** — without it every extractor fails and the harness reports a tooling error rather than a result, which reads like your provider is broken when nothing is:
+
+```bash
+npm ci
+python3 -m pip install --user --require-hashes -r providers/requirements.txt
+node bin/keeldocs.js doctor
+```
+
+`doctor` checks every provider's declared requirements and prints the exact install command for your machine, including the `--break-system-packages` flag if your interpreter is PEP 668 externally-managed and `py -m pip` on Windows. Run it before you open an issue about the harness.
+
 ## The fast path: a declarative (T0) pattern provider
 
 The easy 80% of stack coverage is contributed as data, not code — target ≤2 hours:
 
 1. `providers/<capability>/<your-framework>/provider.yaml` — id, detect predicates (dependency names from manifests — never source parsing in detect), declared input globs, timeout class. See `providers/http-endpoints/nestjs/provider.yaml`.
-2. `endpoints.scm` (or equivalent) — a tree-sitter query. Constraints that make T0 safe-by-construction: queries are matched, never evaluated; any regex must be RE2-class (no backtracking); outputs are typed and length-capped.
-3. `mapping.yaml` — captures → fact-schema fields. Fact IDs are natural keys (`fact:<capability>/<key>`), never UUIDs.
-4. A fixture: `fixtures/<your-framework>-basic/` — a 10–30 file minimal app — plus its golden fact file. **Ground truth before extractor**: enumerate the true facts by hand first.
-5. `python3 scripts/harness.py` must pass, including the determinism double-run (same bytes twice).
+2. `endpoints.scm` (or equivalent) — a tree-sitter query. Captures become facts through the shared runtime's **emit contract**, declared as `emits: [endpoint]` in your `provider.yaml` — there is no mapping file to write. Fact IDs are natural keys (`fact:<capability>/<key>`), never UUIDs. Constraints that make T0 safe-by-construction: queries are matched, never evaluated; any regex must be RE2-class (no backtracking); outputs are typed and length-capped.
+3. A fixture: `fixtures/<your-framework>-basic/` — a 10–30 file minimal app — plus its golden fact file. **Ground truth before extractor**: enumerate the true facts by hand first.
+4. `python3 scripts/harness.py` must pass, including the determinism double-run (same bytes twice).
 
 Code-tier (T1/T2) providers are maintainer-reviewed like core code and sandboxed (subprocess, no network, declared globs only — see docs/design/04-provider-contract.md §5). Community-installable code providers (T2) do not exist until the signing/pinning machinery ships (v0.2+).
 
