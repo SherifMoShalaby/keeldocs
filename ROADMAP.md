@@ -1,10 +1,10 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-04.** Published: **`keeldocs@0.3.0` on npm** — `latest` — built by
+**As of 2026-08-05.** Published: **`keeldocs@0.3.0` on npm** — `latest` — built by
 `release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
 provenance attestation and no publish token anywhere. 3-OS CI green including
 `action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
-runs before it and fixed the same day (§4 item 6) · 174 unit tests · 39 extractor goldens · 82 harness checks ·
+runs before it and fixed the same day (§4 item 6) · 174 unit tests · 39 extractor goldens · 86 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -37,7 +37,7 @@ Each item names the file carrying its procedure; nothing lives only in a chat
 log.
 
 **A Plane board now exists alongside this document.** Project `KEEL` in the
-`appsby` workspace carries 29 tickets across 8 epics, produced 2026-08-04 by a
+`appsby` workspace carries 30 tickets across 8 epics, produced 2026-08-04 by a
 senior-lead review of this roadmap against the original design brief. It is
 worth deciding, once, which of the two is authoritative for open work — this
 file currently claims that role in its own header and in CLAUDE.md, and two
@@ -64,8 +64,8 @@ buildable now and not yet built.
 The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
-proven on a real production repo**. Thirty-four providers across ten
-capabilities feed eight document recipes. The engine has 174 unit tests, 39
+proven on a real production repo**. 34 providers across 10
+capabilities feed 8 document recipes. The engine has 174 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
@@ -90,7 +90,7 @@ through `11`). The constraints are where the honest scoring lives.
 
 | # | Constraint | Status | Evidence / gap |
 |---|---|---|---|
-| 1 | Stack-agnostic | **Partial by roadmap** | TS/JS, Python, Java, Go, C#, Ruby, Dart shipped; Postgres/Supabase/MySQL-static/SQLite. Mongo and MySQL *live* are gated, not missing by accident |
+| 1 | Stack-agnostic | **Partial, and shallower than this row used to claim** | Seven languages are reached, at four very different depths, and the single word "shipped" hid that: **TS/JS** full (module graph, endpoints, client routes, schema, config, workspace); **Python** nearly full (module graph, endpoints, config, workspace); **Java** and **Go** module graph + endpoints; **C#** and **Ruby** endpoints only; **Dart** workspace identity and env reads only — `pubspec.yaml` and `.dart` files in the env scanner, nothing more. Databases: Postgres and Supabase, through `prisma`, `drizzle`, the pglite replay engine, `sql-policies`, and `tbls` behind `--live`. **MySQL-static and SQLite were listed here and do not exist** — no provider, no dialect branch, no fixture, and the strings appear nowhere under `providers/`. A drizzle snapshot in either dialect would reach the parser incidentally, which is not support and has never been run. Mongo and MySQL *live* remain gated in §5, which is a different thing from absent |
 | 2 | Agent-native distribution | **Done on 2 of the brief's 5 named agents** | The brief names *"Claude Code, Codex, Cursor, Gemini CLI, Copilot"*. Adapters exist for three; **Gemini CLI and Copilot have never been built and, until 2026-08-04, appeared in no section of this document — not done, not deferred, not refused.** E7 ran 2026-08-03: Claude Code 2.1.220 and Codex 0.146.0 each discovered and invoked a skill unprompted, as their first action, interactive and headless. Cursor has an adapter and is untested (no trustworthy CLI install path on the test host). 6 skills, plugin + marketplace manifests, CLI envelope contract and `keeldocs skills install` all ship. See §4 item 7 |
 | 3 | Deterministic-first | **Done** | Zero model-calling code in the engine. Byte-identical output across 3 OSes × 2 runs, enforced every CI run |
 | 4 | Git-native | **Done** | Markdown in-repo, anchors in HTML comments, no service dependency, no lock-in |
@@ -116,7 +116,7 @@ bookkeeping decision rather than a blocked one.
 | Anchors, regions, slots; fact-hash drift; six disjoint drift states | **Done** |
 | Doc lie-detector with receipts | **Done** — 7 finding classes, four rounds of field-measured precision rules |
 | Recipes: system-map, erd, endpoint-inventory, config-reference, `new adr` | **Done** |
-| Providers: workspace-layout, module-graph, http-endpoints, db-schema, config-surface, services-topology, decision-history | **Done** |
+| Providers: workspace-layout, module-graph, http-endpoints, db-schema, config-surface, services-topology, decision-history | **Done** — with one declared-not-shipped exception: `db-schema/rails-sql` carries `status: stub`, so the loader skips it and Rails repos get endpoints but no ERD. 35 provider directories, 34 loaded |
 | Live Postgres via tbls behind `--live` | **Done** (reclassified OBSERVED once replay landed) |
 | Fixture harness (`scripts/harness.py`), noise SLO, redaction barrier, slot-write | **Done** — the harness is real and gates every push; the name `test-provider` in earlier drafts was never a command and appears nowhere in the tree |
 | Coverage as ratchet, never a gate | **Done** |
@@ -234,13 +234,24 @@ it. All of it is now in `prep-fixture.py` and `RUNBOOK.md`, including the
 three-signal method for telling a real pass from a false one, rather than in
 anyone's memory.
 
-*Still worth doing, unblocked, small:* the shipped `AGENTS.md` tells agents that
-skills live in `skills/`, and no adapter installs there — it is `.claude/skills`,
-`.agents/skills`, `.cursor/skills`. One word, in the one file whose whole job is
-to orient an agent that has no skill support.
-3. **Claim `keeldocs` on PyPI and crates.io.** Five minutes, both still free as
-   of 2026-08-03, and R14 exists because "undrift" was taken between the pick
-   and the lock. Publication made the name findable; that cuts both ways.
+*The `AGENTS.md` residual this entry carried is closed.* It said the shipped
+file pointed agents at this repository's `skills/` source tree, where no adapter
+installs. The file now names `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`
+and calls `skills/` the source tree explicitly. It read as open here for a day
+after it was fixed in the tree, which is the same defect as any other stale
+status line — just in the document that records them.
+3. **Claim `keeldocs` on PyPI and crates.io, and run R14's trademark sweep.**
+   Five minutes for the registries, both still free as of 2026-08-03, and R14
+   exists because "undrift" was taken between the pick and the lock. Publication
+   made the name findable; that cuts both ways.
+
+   R14's pass condition is **not only the registries.** It reads: crates.io
+   *and* a same-category trademark sweep — USPTO and EUIPO classes 9 and 42 —
+   clean before the v0.1 announce. Only the registry half was ever tracked here,
+   so the sweep has never been named as an owner action and has never run, and
+   the package is now public under the name. That is not a reason to skip it;
+   it is the reason the row exists. `docs/design/08-risks-experiments.md` holds
+   the full condition.
 **~~4. Merge the four open Tareeqna branches~~ — DONE 2026-08-03.** All four
    landed as PRs #17-20 in dependency order: the report-only CI gate, the RPC
    correction with its two-overload note, the REST-and-routines surface, then
@@ -308,10 +319,21 @@ starting one before its threshold trips would be exactly the scope indiscipline
 the design's PM lens exists to prevent. Listing them here is not a to-do list —
 it is a record of decisions already made.
 
-MySQL/Mongo live · headless prose · portfolio export · MCP shim · C4-component
+MySQL/Mongo live · MySQL and SQLite *static* (below) · headless prose · portfolio export · MCP shim · C4-component
 recipe (cut: component boundaries are human abstractions) · runbook generation
 (cut: remediation knowledge is not in code) · BRD/PRD generation (**cut
 permanently** — intent precedes code).
+
+**MySQL and SQLite, static — gated, and listed as shipped until 2026-08-05.**
+Constraint 1 claimed both. Neither string appears anywhere under `providers/`:
+no provider, no dialect branch, no fixture. The one path that would reach them
+is `drizzle`, which parses drizzle-kit's snapshot without ever reading its
+`dialect` field — so a MySQL or SQLite snapshot would be parsed by a Postgres
+provider, silently, with no fixture that could catch the result being wrong.
+Dialect-blindness is not support; it is the absence of a check. Threshold to
+ship either: a snapshot or DDL corpus generated by the real toolchain for that
+dialect, a golden built from it, and the dialect read and branched on rather
+than ignored — the same bar `sql-replay` cleared for Postgres in E13.
 
 **`auth-model` — cut, and missing from this list until 2026-08-04.** The
 original brief names it as a capability (keycloak-oidc, supabase-auth, auth0,
@@ -469,7 +491,7 @@ re-measure the same missing cache on a lumpier tree.
 
 ## 8. Inventory, for orientation
 
-35 shipped providers across 10 capabilities (workspace-layout, module-graph,
+34 shipped providers across 10 capabilities (workspace-layout, module-graph,
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
 agent skills · 174 unit tests · 39 byte-compared extractor goldens · ~25

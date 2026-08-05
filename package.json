@@ -22,7 +22,6 @@
     "providers/",
     "!**/__pycache__",
     "!**/*.pyc",
-    "recipes/",
     "skills/",
     "adapters/",
     "spec/",

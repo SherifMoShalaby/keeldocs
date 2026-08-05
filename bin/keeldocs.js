@@ -105,8 +105,19 @@ if (cmd === "skills") {
     process.exit(2);
   }
   const ai = args.indexOf("--agent");
-  const env = installSkills({ agent: ai !== -1 ? args[ai + 1] : "claude-code",
-    root: process.cwd(), dryRun: args.includes("--dry-run") });
+  // Every command owes an envelope, and this one owed none: a keeldocs install
+  // whose skills/ directory is missing threw ENOENT with a Node stack trace on
+  // stdout under --json. The caller here is an agent parsing that stream, so a
+  // stack trace is the worst possible shape for the failure to take. Surfaced by
+  // the tarball smoke gate, which reached the state by packing without skills/.
+  let env;
+  try {
+    env = installSkills({ agent: ai !== -1 ? args[ai + 1] : "claude-code",
+      root: process.cwd(), dryRun: args.includes("--dry-run") });
+  } catch (err) {
+    env = { ok: false, code: "TOOL_ERROR", data: {},
+      summary: `skills install failed: ${String(err.message)}` };
+  }
   if (json) console.log(JSON.stringify({ v: 1, ok: env.ok, code: env.code, summary: env.summary.slice(0, 300), data: env.data, next: [] }));
   else {
     console.log(`keeldocs skills - ${env.code}\n${env.summary}`);

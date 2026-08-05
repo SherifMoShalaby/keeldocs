@@ -1,0 +1,10 @@
+schema_version: 1
+id: data-flow
+status: live
+implementation: renderDataFlowDoc (src/render.js)
+output:
+  path: "docs/architecture/data-flow.md"
+  root_anchor: flow.root
+# Fields below `output` are specified in ../../05-recipe-schema.md and are not
+# read at runtime; `output` is, in the sense that the harness holds the renderer
+# to it. This file is a specification, not an input - see ../README.md.

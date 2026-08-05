@@ -111,7 +111,11 @@ tier, cross-capability fact reads, and multi-provider resolution.**
   runbook, BRD, PRD cut. Deterministic Mermaid (ERD, service flowchart) is
   the credibility anchor as briefed. **Gap:** recipes are engine renderers
   with `recipe.yaml` metadata; the fully pluggable recipe runtime
-  (template/extract/verify per directory) is v0.2.
+  (template/extract/verify per directory) is v0.2. *(Resolved 2026-08-05 by
+  refusal, not by building it: the metadata was moved to `docs/design/recipes/`,
+  dropped from the package, and gated against the renderer. A pluggable runtime
+  is a plugin surface with a security boundary, and one has never been asked
+  for.)*
 - **3.5 Portfolio** — assessed as asked; answer: not v0.1, owner-confirmed
   v0.3. No manifest schema shipped yet.
 - **3.6 Flows** — brownfield shipped (see §2.8); partial progress persists in

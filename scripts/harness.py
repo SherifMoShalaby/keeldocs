@@ -21,6 +21,29 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT_URL = pathlib.Path(ROOT).as_uri()
 
 
+_PASSES, _TIER_PASSES = [], []
+_stdlib_print = print
+_LINUX = "  PASS  [linux] "
+
+
+def print(*args, **kwargs):  # noqa: A001 - deliberate, module-wide
+    """Count the PASS lines, because README ships the number.
+
+    "82 end-to-end harness checks" is a published claim in a tarball, and it was
+    hand-maintained and already wrong: the harness ran 83. Fifty-two call sites
+    is too many to instrument by hand, and several sit inside loops, so the count
+    can only be taken at runtime. A shim beats a hand-kept tally in the project
+    whose whole argument is that hand-kept numbers rot.
+
+    The two kernel-mechanism proofs that exist only where `unshare -rnm` works
+    are counted separately: a portable figure that changes with the runner's
+    kernel is not a figure, and would have turned this gate into a Linux-only
+    CI failure the first time it ran."""
+    if args and isinstance(args[0], str) and args[0].startswith("  PASS  "):
+        (_TIER_PASSES if args[0].startswith(_LINUX) else _PASSES).append(args[0])
+    _stdlib_print(*args, **kwargs)
+
+
 def W(path, text, mode="w"):
     """Fixture writes pin newline="\\n": Windows text mode would inject CRLF
     into files the engine then reads byte-wise - LF is the contract on every
@@ -1890,7 +1913,7 @@ def main():
                 for r_, _d, fs in os.walk(os.path.join(dstp, "docs")) for f in fs), \
                 "nor any generated document"
             rmtree(probe_repo)
-            print("  PASS  per-glob read scoping: undeclared files absent, grants carried, views torn down")
+            print("  PASS  [linux] per-glob read scoping: undeclared files absent, grants carried, views torn down")
             # ---- MINIMAL ROOT: the host outside the repository is gone too ----
             # Composed from the ENGINE's own script and plan, so this gate proves
             # the shipped mechanism rather than a copy of it.
@@ -1899,7 +1922,7 @@ def main():
                 __import__("pathlib").Path(ROOT, "src", "facts.js").as_uri()],
                 capture_output=True, text=True).stdout)
             if state.get("root") != "minimal":
-                print(f"  PASS  minimal root: unavailable here, reported honestly "
+                print(f"  PASS  [linux] minimal root: unavailable here, reported honestly "
                       f"({state.get('rootReason', '?')})")
             else:
                 spec = subprocess.run(["node", "--input-type=module", "-e",
@@ -1939,7 +1962,7 @@ def main():
                      sys.executable, "-c", "import sys; sys.exit(0)"], capture_output=True)
                 assert alive.returncode == 0, f"python must still start: {alive.stderr[-200:]}"
                 rmtree(mr); rmtree(home)
-                print("  PASS  minimal root: the host outside the repository is masked; runtimes still start")
+                print("  PASS  [linux] minimal root: the host outside the repository is masked; runtimes still start")
 
         elif expect == "net":
             print("  PASS  sandbox tier net: network blocked; no usable mount namespace here")
@@ -2359,12 +2382,22 @@ def main():
                              sorted(glob.glob(os.path.join(ROOT, "tests", "*.test.js"))),
                              cwd=ROOT, capture_output=True, text=True, timeout=1800).stdout
         units = len(re.findall(r"^ok \d+ ", tap, re.M))
-        PHRASE = {"providers": r"(\d+) providers",
-                  "recipes": r"(\d+) (?:document |doc )recipes",
-                  "skills": r"(\d+) (?:agent )?skills",
-                  "goldens": r"(\d+) (?:byte-compared )?extractor goldens",
-                  "adrs": r"(\d+) ADRs",
-                  "finding_classes": r"(\d+) finding classes"}
+        # One optional adjective before the noun. Without it this gate could not
+        # see the exact defect its own comment cites: `35 shipped providers` sat
+        # in ROADMAP §8 from the day the gate was written, and `(\d+) providers`
+        # cannot match across an intervening word. A pattern that misses the
+        # string it was built for is decoration, not a gate.
+        # `\b` because widening the adjective made `E5 determinism goldens` read
+        # as a claim of five goldens: an experiment id is not a count.
+        ADJ = r"(?:[a-z][a-z-]* )?"
+        N = r"\b(\d+) "
+        PHRASE = {"providers": rf"{N}{ADJ}providers",
+                  "capabilities": rf"{N}{ADJ}capabilities",
+                  "recipes": rf"{N}{ADJ}recipes",
+                  "skills": rf"{N}{ADJ}skills",
+                  "goldens": rf"{N}{ADJ}(?:extractor )?goldens",
+                  "adrs": rf"{N}ADRs",
+                  "finding_classes": rf"{N}{ADJ}finding classes"}
         bad = []
         for rel in ("README.md", "ROADMAP.md", "CLAUDE.md", "AGENTS.md"):
             path = os.path.join(ROOT, rel)
@@ -2376,6 +2409,11 @@ def main():
             # loosened until it catches nothing.
             body = "\n".join(l for l in open(path, encoding="utf-8").read().split("\n")
                              if "counts:ignore" not in l)
+            # Line-wrapped prose hid claims from every pattern here: ROADMAP §8
+            # wraps between "6" and "agent skills", so the count was unchecked
+            # for no reason but where the line broke. Collapse AFTER the per-line
+            # `counts:ignore` filter, so the escape hatch still works per line.
+            body = re.sub(r"\s+", " ", body)
             for key, pat in PHRASE.items():
                 for m in re.finditer(pat, body):
                     if int(m.group(1)) != truth[key]:
@@ -2467,6 +2505,142 @@ def main():
         print(f"  PASS  packaged artifact: {len(shipped)} files, no bytecode, plugin version matches")
     except Exception as e:
         failures.append(f"packaged artifact: {why(e)}")
+
+    # KEEL-5. `recipes/` shipped in the tarball and no code read it, so nothing
+    # held it to the renderer and it drifted all the way: every anchor id in
+    # recipes/erd/template.md named a section render.js does not emit, and three
+    # recipe ids stamped into user documents had no spec at all. Spec and
+    # implementation are now bound in the only direction that can be checked
+    # without loading the spec at runtime - the harness reads both.
+    try:
+        import re as _re
+        spec_root = os.path.join(ROOT, "docs", "design", "recipes")
+        src = {}
+        for rel in ("render.js", "newcmd.js"):
+            src[rel] = open(os.path.join(ROOT, "src", rel), encoding="utf-8").read()
+        blob = "".join(src.values())
+        emitted = set(_re.findall(r"recipe=([a-z0-9-]+)@\d+", blob))
+        specs = {d for d in os.listdir(spec_root)
+                 if os.path.isdir(os.path.join(spec_root, d))}
+        assert emitted == specs, (
+            f"recipe spec/renderer mismatch: renderer-only {sorted(emitted - specs)}, "
+            f"spec-only {sorted(specs - emitted)}")
+        pkg_files = json.load(open(os.path.join(ROOT, "package.json")))["files"]
+        assert not [f for f in pkg_files if f.startswith("recipes")], \
+            "recipes/ is back in the published package; nothing reads it at runtime"
+        # `prefix` because two recipes template their output per package / per
+        # ADR number; the literal part is still enough to catch a moved file.
+        def prefix(v):
+            return v.split("{", 1)[0]
+        checked, tpl_ids = 0, 0
+        for rid in sorted(specs):
+            spec = open(os.path.join(spec_root, rid, "recipe.yaml"), encoding="utf-8").read()
+            assert _re.search(rf"^id:\s*{_re.escape(rid)}\s*$", spec, _re.M), \
+                f"{rid}/recipe.yaml declares an id that is not its directory name"
+            for field in ("path", "root_anchor"):
+                m = _re.search(rf'^\s+{field}:\s*"?([^"\n#]+?)"?\s*$', spec, _re.M)
+                assert m, f"{rid}/recipe.yaml declares no output.{field}"
+                want = prefix(m.group(1))
+                assert want and want in blob, \
+                    f"{rid}: output.{field} {m.group(1)!r} is emitted by no renderer"
+                checked += 1
+            tpl = os.path.join(spec_root, rid, "template.md")
+            if os.path.exists(tpl):
+                tpl_text = open(tpl, encoding="utf-8").read()
+                # Unfenced, these parse as real anchors: the move into docs/ scored
+                # two sections of an illustration as documented surfaces of keeldocs
+                # itself, which is coverage inflation in the tool that exists to
+                # argue coverage has to mean something.
+                assert "```" in tpl_text, \
+                    f"{rid}/template.md must fence its markers; under docs/ they parse as real anchors"
+                for aid in _re.findall(r"\bid=([A-Za-z0-9._{}-]+)", tpl_text):
+                    assert prefix(aid) in src["render.js"], \
+                        f"{rid}/template.md anchors id={aid}, which render.js never emits"
+                    tpl_ids += 1
+        assert tpl_ids, "no recipe template.md was checked - the id gate is vacuous"
+        print(f"  PASS  recipe specs: {len(specs)} recipes, {checked} output claims and "
+              f"{tpl_ids} template anchor id(s) matched to the renderer, 0 shipped")
+    except Exception as e:
+        failures.append(f"recipe specs: {why(e)}")
+
+    # KEEL-21. `skills/` and `adapters/` ship in the tarball and nothing had ever
+    # run `skills install` from one. That is the precise blind spot the command
+    # exists to close: the README used to tell users to copy a directory that does
+    # not exist after `npx`, and no test could see it, because every test ran from
+    # the git tree where the directory does exist. So this packs, extracts, and
+    # installs from the ARTIFACT - never from ROOT - and re-runs to prove the
+    # documented "safe to re-run" instead of restating it.
+    try:
+        import shutil, tempfile, tarfile  # noqa: F401
+        npm = "npm.cmd" if os.name == "nt" else "npm"
+        tmp = tempfile.mkdtemp(prefix="keeldocs-tarball-")
+        r = subprocess.run([npm, "pack", "--pack-destination", tmp],
+                           cwd=ROOT, capture_output=True, text=True, timeout=300)
+        assert r.returncode == 0, f"npm pack rc={r.returncode}: {r.stderr[-300:]}"
+        tgz = [f for f in os.listdir(tmp) if f.endswith(".tgz")]
+        assert len(tgz) == 1, f"expected one packed tarball, got {tgz}"
+        with tarfile.open(os.path.join(tmp, tgz[0])) as tf:
+            tf.extractall(tmp, filter="data")
+        pkg_root = os.path.join(tmp, "package")
+        cli = os.path.join(pkg_root, "bin", "keeldocs.js")
+        adapters = os.path.join(pkg_root, "adapters")
+        assert os.path.isdir(adapters), "the tarball ships no adapters/ - skills install cannot run for anyone"
+        agents = sorted(d for d in os.listdir(adapters)
+                        if os.path.isfile(os.path.join(adapters, d, "manifest.yaml")))
+        assert agents, "the tarball ships adapters/ with no manifest"
+        installed = 0
+        for agent in agents:
+            proj = os.path.join(tmp, f"proj-{agent}")
+            os.makedirs(proj)
+            r = subprocess.run(["node", cli, "skills", "install", "--agent", agent, "--json"],
+                               cwd=proj, capture_output=True, text=True, timeout=120)
+            env = node_json(r, f"skills install --agent {agent} (from tarball)")
+            assert env["ok"] and env["code"] == "INSTALLED", f"{agent}: {env['code']} - {env['summary']}"
+            assert env["data"]["written"], f"{agent}: installed zero skills"
+            for rel in env["data"]["written"]:
+                p = os.path.join(proj, *rel.split("/"))
+                # The reported path is a claim, not proof; check the file.
+                assert os.path.isfile(p), f"{agent}: reported {rel}, which was not written"
+                assert "/skills/skills/" not in f"/{rel}/", f"{agent}: nested install at {rel}"
+                head = open(p, encoding="utf-8").read().split("---")[1]
+                for field in env["data"]["stripped"]:
+                    assert not re.search(rf"^{re.escape(field)}\s*:", head, re.M), \
+                        f"{agent}: SKILL.md kept `{field}:`, a key this agent rejects"
+                installed += 1
+            before = {rel: open(os.path.join(proj, *rel.split("/")), "rb").read()
+                      for rel in env["data"]["written"]}
+            r2 = subprocess.run(["node", cli, "skills", "install", "--agent", agent, "--json"],
+                                cwd=proj, capture_output=True, text=True, timeout=120)
+            assert r2.returncode == 0, f"{agent}: second install rc={r2.returncode}: {r2.stderr[-200:]}"
+            for rel, blob in before.items():
+                assert open(os.path.join(proj, *rel.split("/")), "rb").read() == blob, \
+                    f"{agent}: re-running skills install rewrote {rel}"
+        print(f"  PASS  tarball skills smoke: {len(agents)} agent(s), {installed} SKILL.md installed "
+              f"from the packed artifact, rejected frontmatter stripped, re-run byte-identical")
+        rmtree(tmp)
+    except Exception as e:
+        failures.append(f"tarball skills smoke: {why(e)}")
+
+    # Last, so every PASS above is counted. +1 is this gate's own line, which is
+    # printed after the count is taken.
+    try:
+        n = len(_PASSES) + 1
+        stale = []
+        for rel in ("README.md", "ROADMAP.md", "CLAUDE.md", "AGENTS.md"):
+            path = os.path.join(ROOT, rel)
+            if not os.path.isfile(path):
+                continue
+            body = re.sub(r"\s+", " ", "\n".join(
+                l for l in open(path, encoding="utf-8").read().split("\n")
+                if "counts:ignore" not in l))
+            for m in re.finditer(r"\b(\d+) (?:[a-z][a-z-]* )*harness checks", body):
+                if int(m.group(1)) != n:
+                    stale.append(f"{rel}: '{m.group(0)}' but this run made {n}")
+        assert not stale, "stale harness-check counts:\n    " + "\n    ".join(stale)
+        print(f"  PASS  harness check count: {n} portable checks, and every tracking document says {n}"
+              + (f" (+{len(_TIER_PASSES)} kernel-tier check(s) on this host)" if _TIER_PASSES else ""))
+    except Exception as e:
+        failures.append(f"harness check count: {why(e)}")
 
     if failures:
         print("\nFAILURES:")

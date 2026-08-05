@@ -6,6 +6,7 @@ requires:
     min_confidence: PARSED
 output:
   path: "docs/architecture/data-model.md"
+  root_anchor: db.root
   layering: { l0: domain-overview, l1: per-domain-erd, l2: per-table-pages }
   diagram:
     syntax: mermaid-erDiagram        # stable syntax; NOT experimental mermaid C4

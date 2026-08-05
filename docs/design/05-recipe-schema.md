@@ -5,12 +5,17 @@ The panel recommends **ERD** as the fully worked recipe: it is deterministic end
 ## 1. Recipe package layout
 
 ```
-recipes/erd/
+docs/design/recipes/erd/
   recipe.yaml        # metadata, required capabilities, fact selection, binding + slot rules
   template.md        # agent-agnostic markdown with region declarations
   verify.yaml        # deterministic post-render checks
   fixtures/          # golden inputs/outputs — the determinism regression suite
 ```
+
+The directory moved out of the repository root and out of the published package
+on 2026-08-05: these files specify the recipes, `src/render.js` implements them,
+and nothing loads them at runtime. A harness gate now binds the two. See
+[`recipes/README.md`](recipes/README.md) for what that cost before it existed.
 
 Deliberate correction to the brief's §3.4 layout: the proposed recipe-owned `extract.*` is **dropped**. Extraction belongs to capability providers; recipes only *select* resolved facts (the `consumes:` block below). A recipe that extracts is a shadow provider — it would bypass the sandbox, the cache, and resolution.
 

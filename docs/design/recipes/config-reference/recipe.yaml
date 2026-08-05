@@ -6,6 +6,7 @@ requires:
     min_confidence: PARSED
 output:
   path: "docs/reference/configuration.md"
+  root_anchor: config.reference
 binding:
   section_unit: document
   anchor_symbols: ["fact:config-surface/*"]
