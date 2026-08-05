@@ -21,6 +21,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT_URL = pathlib.Path(ROOT).as_uri()
 
 
+class _SkipCount(Exception):
+    """The check count is only meaningful on a run where every check ran."""
+
+
 _PASSES, _TIER_PASSES = [], []
 _stdlib_print = print
 _LINUX = "  PASS  [linux] "
@@ -3000,8 +3004,32 @@ def main():
             f"control: the provider must actually have run: {caps28}"
         _sh28.rmtree(mt, ignore_errors=True)
 
+        # A gap is a receipt. The normalizers read `w.kind` and fell back to the
+        # single word "unknown", while the Django endpoints provider spells the
+        # field `reason` - so three distinct refusals (a non-literal route, a
+        # regex route it will not compose, a urlconf outside the repository) all
+        # reached the report saying nothing at all. Every shipped fixture that
+        # produces a gap is checked, so this cannot pass by there being none.
+        kinds = set()
+        dj = node_json(subprocess.run(["node", "-e", (
+            'import("%s/src/facts.js").then(({extractAll}) => {'
+            'const r = extractAll(process.argv[1], {});'
+            'console.log(JSON.stringify(r.gaps));'
+            '});') % ROOT_URL, os.path.join(ROOT, "fixtures", "django-scenario")],
+            capture_output=True, text=True, timeout=600,
+            env={**os.environ, "KEELDOCS_NO_CACHE": "1"}), "django gaps")
+        named = [g for g in dj if g.get("file")]
+        assert named, "control: the django fixture must produce at least one file-anchored gap"
+        for g in dj:
+            kinds.add(g["kind"])
+            assert g["kind"] not in ("unknown", "unspecified"), \
+                f"a gap reached the report with its reason discarded: {g}"
+        gapped = len(named)
+        assert any("re_path" in k or "regex" in k for k in kinds), \
+            f"the django fixture's regex-route refusal must survive as words: {sorted(kinds)}"
         print(f"  PASS  provider emits: {shipped} shipped providers declare only real fact types "
-              f"({len(declared_by)} of {len(vocab)} in the vocabulary), enforced at extraction")
+              f"({len(declared_by)} of {len(vocab)} in the vocabulary), enforced at extraction; "
+              f"{gapped} gap(s) keep their stated reason")
     except Exception as e:
         failures.append(f"provider emits: {why(e)}")
 
@@ -3066,7 +3094,17 @@ def main():
     # Last, so every PASS above is counted. +1 is this gate's own line, which is
     # printed after the count is taken.
     try:
+        # This gate had the defect it exists to prevent, and an outside reviewer
+        # watched it happen. `n` counts PASS lines PRINTED, so a run in which any
+        # earlier gate failed produces a lower n - and if the documents happen to
+        # say that lower number, the count gate passes while the tree really has
+        # more checks. The number is only meaningful when every check ran, so it
+        # is only asserted then, and the skip says so rather than passing quietly.
         n = len(_PASSES) + 1
+        if failures:
+            _stdlib_print(f"  ----  harness check count: not asserted - {len(failures)} gate(s) "
+                          f"failed, so the {n} counted here is a floor, not the count")
+            raise _SkipCount()
         stale = []
         for rel in ("README.md", "ROADMAP.md", "CLAUDE.md", "AGENTS.md"):
             path = os.path.join(ROOT, rel)
@@ -3081,6 +3119,8 @@ def main():
         assert not stale, "stale harness-check counts:\n    " + "\n    ".join(stale)
         print(f"  PASS  harness check count: {n} portable checks, and every tracking document says {n}"
               + (f" (+{len(_TIER_PASSES)} kernel-tier check(s) on this host)" if _TIER_PASSES else ""))
+    except _SkipCount:
+        pass
     except Exception as e:
         failures.append(f"harness check count: {why(e)}")
 

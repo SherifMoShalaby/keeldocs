@@ -3,7 +3,10 @@ capability: db-schema
 semver: 0.0.1
 tier: code
 status: stub          # detect contract defined; extractor lands per docs/design/07-scope-roadmap.md
-detect: { any: [ { file: "db/structure.sql" }, { file: "db/schema.rb" } ] }
+# `any` was never a detect key the loader accepts (always|deps|files|dirs), and
+# nothing said so for two releases because the stub branch returned before
+# validation ran. `files` matches BASENAMES anywhere in the tree.
+detect: { files: ["structure.sql", "schema.rb"] }
 inputs: ["db/structure.sql", "db/schema.rb"]
 requires: []
 timeout_class: D

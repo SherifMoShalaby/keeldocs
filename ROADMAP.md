@@ -501,6 +501,42 @@ recipe (cut: component boundaries are human abstractions) · runbook generation
 (cut: remediation knowledge is not in code) · BRD/PRD generation (**cut
 permanently** — intent precedes code).
 
+**The three breadth providers — built 2026-08-05, adversarially reviewed, and
+NOT merged.** rails-sql, expo-router and django-orm were each built to the
+provider contract with a fixture, a golden and a green harness. An independent
+reviewer was then set on each one with instructions to break it rather than
+appreciate it, and broke all three. The branches are kept
+(`worktree-wf_0db4d7e7-32a-{1,2,3}`); the acceptance criteria are now the defects.
+
+*rails-sql* moves a Rails repo from documenting nothing to documenting something
+confidently wrong. `detect: { files: ["schema.rb"] }` is a **basename match
+anywhere in the tree**, and Rails does not delete `db/schema.rb` when a project
+switches to `schema_format = :sql` — so a stale Ruby file beside a live
+`structure.sql` makes rails-sql a *declared* provider ordered ahead of the replay
+engine, and declared-beats-replayed silently drops every replayed `public.<name>`
+the stale file happens to mention. `check` reports CLEAN over an ERD built from a
+schema the database stopped matching. A vendored engine's `spec/dummy/db/schema.rb`
+does the same.
+
+*expo-router* resolves its route root backwards. Expo's own documentation says
+`src/app` takes precedence over `app` and only `src/app` is used when both exist;
+the provider checks `app` first. A repository mid-migration gets eight routes,
+`status: ok`, and every fact anchored to a tree Expo never loads — so drift on the
+live routes can never fire while edits to the dead ones fire drift on documentation
+that was already wrong. A documented custom root (`plugins: [["expo-router",
+{"root": "./src/routes"}]]`) yields `ok`, zero routes, zero gaps.
+
+*django-orm* admits files to the parse by a byte-grep for the literal `Model`.
+`class Account(AbstractUser)` — the single most common Django auth file there is —
+is never read, and its table disappears with no gap. Adding an unrelated comment
+containing the word makes the same file parse correctly. The reviewer's proof is
+the sharpest available: the shipped golden is **byte-identical** with a real
+three-column table missing from it.
+
+All three failures are the same shape, and it is the shape this project exists to
+refuse: a plausible answer where the honest one is a named gap. The reviews cost
+about as much as the builds and were worth more.
+
 **MySQL and SQLite, static — gated, and listed as shipped until 2026-08-05.**
 Constraint 1 claimed both. Neither string appears anywhere under `providers/`:
 no provider, no dialect branch, no fixture. The one path that would reach them

@@ -461,7 +461,14 @@ function moduleGraphFacts(raw, provenanceBase, packages) {
                     nameless: s.nameless ?? namelessOf(s.name, s.sigs) },
     });
   }
-  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? "unknown", file: w.file ?? null }));
+  // `kind ?? "unknown"` threw away the receipt. The Django endpoints provider
+  // reports its refusals as {file, reason} - a non-literal route, a regex route
+  // it will not compose, a urlconf outside the repository - and every one reached
+  // the report as the single word "unknown". A gap whose reason has been discarded
+  // is indistinguishable from one nobody bothered to explain, in the channel this
+  // project asks users to trust. Providers spell it `kind` or `reason`; both are
+  // read, and a warning carrying neither says so rather than claiming ignorance.
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? w.reason ?? "unspecified", file: w.file ?? null }));
   return { facts, gaps };
 }
 
@@ -571,7 +578,7 @@ function replayFacts(raw, provenanceBase, declaredTables, declaredEnums) {
       provenance: { ...provenanceBase, source: [{ kind: "migration-replay" }] },
     });
   }
-  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? "unknown", file: w.file ?? null }));
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? w.reason ?? "unspecified", file: w.file ?? null }));
   return { facts, gaps };
 }
 
@@ -649,7 +656,7 @@ function churnFacts(raw, provenanceBase) {
       provenance: { ...provenanceBase, source: [{ file: f.path }] },
     });
   }
-  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? "unknown", file: null }));
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? w.reason ?? "unspecified", file: null }));
   return { facts, gaps };
 }
 
@@ -704,7 +711,7 @@ function endpointFacts(raw, provenanceBase, repoRoot) {
       provenance: { ...provenanceBase, source },
     });
   }
-  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? "unknown", file: w.file ?? null }));
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? w.reason ?? "unspecified", file: w.file ?? null }));
   return { facts, gaps };
 }
 
@@ -736,7 +743,15 @@ function schemaFacts(raw, provenanceBase, schemaFile) {
       provenance: { ...provenanceBase, source: src },
     });
   }
-  return { facts, gaps: [] };
+  // The static db-schema normalizer discarded `raw.warnings` while every other
+  // normalizer maps them, so no static schema provider could report anything it
+  // could not determine. `drizzle` has declared `emits: [table, enum,
+  // extraction-gap]` since N1 and was structurally incapable of producing the
+  // third - its extractor really does emit a `chain-ignored` warning, and the
+  // engine dropped it on the floor. A declared-but-unproducible fact type is the
+  // blind spot the emits gate does not cover: it checks that everything emitted
+  // was declared, not that everything declared can be emitted.
+  return { facts, gaps: (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? String(w), file: w.file ?? null })) };
 }
 
 const capOf = (id) => id.startsWith("ds ") ? "module-graph" : id.slice(5, id.indexOf("/"));

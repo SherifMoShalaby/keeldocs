@@ -122,7 +122,7 @@ export function parseProviderYaml(text, file) {
 
 // ---------- scan + validate + order ----------
 
-function validate(y, dir, file) {
+function validate(y, dir, file, { entry = true } = {}) {
   const need = (k, type) => {
     if (!(k in y)) throw new Error(`${file}: missing required key \`${k}\``);
     if (type === "string" && typeof y[k] !== "string") throw new Error(`${file}: \`${k}\` must be a string`);
@@ -138,9 +138,11 @@ function validate(y, dir, file) {
     throw new Error(`${file}: exec must be \`python\` (default) or \`node\``);
   }
   if (y.runtime === "query") {
-    need("query", "string"); need("language", "string");
-    if (!existsSync(join(dir, y.query))) throw new Error(`${file}: query file \`${y.query}\` not found`);
-  } else {
+    if (entry) {
+      need("query", "string"); need("language", "string");
+      if (!existsSync(join(dir, y.query))) throw new Error(`${file}: query file \`${y.query}\` not found`);
+    }
+  } else if (entry) {
     need("entry", "string");
     if (!existsSync(join(dir, y.entry))) throw new Error(`${file}: entry \`${y.entry}\` not found`);
   }
@@ -203,7 +205,14 @@ export function loadProviders(root = ENGINE_ROOT) {
       if (!statSync(dir).isDirectory() || !existsSync(yml)) continue;
       const relFile = `providers/${cap}/${id}/provider.yaml`;
       const y = parseProviderYaml(readFileSync(yml, "utf8"), relFile);
-      if (y.status === "stub") continue; // declared, not shipped - honestly absent
+      // A stub is not shipped, but its manifest is still a manifest, and skipping
+      // validation entirely meant nobody ever read it. `rails-sql` carried
+      // `detect: { any: [...] }` for two releases - `any` is not a detect key the
+      // loader accepts - and the error was invisible precisely because the stub
+      // branch returned before validate() could say so. The one thing a stub is
+      // allowed to lack is its entry file, since the whole point is that the
+      // extractor has not been written yet.
+      if (y.status === "stub") { validate(y, dir, relFile, { entry: false }); continue; }
       validate(y, dir, relFile);
       if (y.capability !== cap) throw new Error(`${relFile}: capability \`${y.capability}\` != directory \`${cap}\``);
       // ${facts:<cap>} tokens in `inputs` are DECLARED CROSS-CAPABILITY READS
