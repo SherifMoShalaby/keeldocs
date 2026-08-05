@@ -2891,6 +2891,22 @@ def main():
             "a fact read from BOTH sides must survive with the excluded site pruned, not be dropped whole"
         assert scoped["sites"]["SHARED"] == ["app.js"], \
             f"SHARED must keep the app read site and lose the fixture one, got {scoped['sites']['SHARED']}"
+        # A nested checkout is somebody else's code. git does not track through
+        # one, and neither should extraction: an agent worktree under .claude/
+        # put this repository's whole fixture tree back into its own dogfood and
+        # took it from 12 documented surfaces to 32. The control matters more
+        # than the assertion - remove the nested .git and the same file must be
+        # found again, or this passes because the walk broke.
+        vend = os.path.join(tmp, "fixtures", "vendored")
+        os.makedirs(os.path.join(vend, ".git"))
+        W(os.path.join(vend, "lib.js"), "const v = process.env.VENDORED_VAR;\n")
+        assert "VENDORED_VAR" not in envfacts([])["names"], \
+            "a nested checkout's facts must not be this repository's"
+        rmtree(os.path.join(vend, ".git"))
+        assert "VENDORED_VAR" in envfacts([])["names"], \
+            "control: without the nested .git the same file must be found, or the walk is simply broken"
+        rmtree(vend)
+
         # The scope is repo-relative and must not be satisfiable by a bare name.
         assert "FIXTURE_ONLY" in envfacts(["demo.js"])["names"], \
             "`demo.js` is a repo-root path, not a basename - matching it anywhere would make every scope over-broad"

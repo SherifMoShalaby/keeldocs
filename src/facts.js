@@ -822,7 +822,13 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
   // KEEL-30: compiled once per extraction, not per fact.
   const denyPaths = excludePaths.map(globToRegExp);
   let scopedOut = 0;
-  const allFiles = repoFiles(repoRoot, excludePaths);
+  // Nested checkouts join the path scope. The walk already refuses to enter one,
+  // which keeps it out of detection and out of the sandbox view; this keeps its
+  // facts out of the answer on every host, including the ones where a provider
+  // walks the tree itself and finds it regardless.
+  const nested = [];
+  const allFiles = repoFiles(repoRoot, excludePaths, nested);
+  for (const n of nested) denyPaths.push(globToRegExp(`${n}/**`), globToRegExp(n));
   let scope = null;
   if (SANDBOX === "rofs") {
     const engineRel = toPosix(relative(repoRoot, ENGINE_ROOT));

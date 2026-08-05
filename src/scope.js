@@ -17,7 +17,7 @@
 //     subtracted from every match, so `.env`, private keys and credential
 //     stores are unreachable from inside a provider by construction.
 
-import { readdirSync, statSync, mkdirSync, linkSync, copyFileSync } from "node:fs";
+import { readdirSync, statSync, mkdirSync, linkSync, copyFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { toPosix } from "./paths.js";
 
@@ -98,7 +98,13 @@ function baseOf(glob) {
 // across platforms in src/facts.js, which drops the provenance either way. Both
 // halves, for one reason each: this one restricts the read where the kernel can,
 // that one makes the ANSWER the same everywhere.
-export function repoFiles(root, exclude = []) {
+// `nested`, when given an array, collects the repo-relative prefixes of every
+// nested checkout the walk refused to enter. The caller needs them because
+// skipping the walk is only half a fix: where no sandbox view is built - macOS,
+// Windows, any host without user namespaces - a provider walks the real tree
+// itself and finds the nested repository anyway. The same shape as the path
+// scope, and for the same reason.
+export function repoFiles(root, exclude = [], nested = null) {
   const deny = exclude.map(globToRegExp);
   const out = [];
   const walk = (dir, rel) => {
@@ -111,6 +117,14 @@ export function repoFiles(root, exclude = []) {
       try { st = statSync(abs); } catch { continue; } // broken symlink
       const r = rel ? `${rel}/${name}` : name;
       if (deny.some((re) => re.test(r))) continue;
+      // A directory holding a `.git` entry is a nested repository or a git
+      // worktree, not part of this tree, and git itself does not track through
+      // one. Walking in double-counts somebody else's code as this project's:
+      // an agent worktree under .claude/ put this repository's whole fixture
+      // tree back into its own dogfood and took it from 12 documented surfaces
+      // to 32. `.git` is a FILE in a linked worktree and a directory in a clone,
+      // so both forms are checked.
+      if (st.isDirectory() && existsSync(join(abs, ".git"))) { nested?.push(r); continue; }
       if (st.isDirectory()) walk(abs, r);
       else if (st.isFile()) out.push(r);
     }
