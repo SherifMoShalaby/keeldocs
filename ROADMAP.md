@@ -4,7 +4,7 @@
 `release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
 provenance attestation and no publish token anywhere. 3-OS CI green including
 `action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
-runs before it and fixed the same day (§4 item 6) · 175 unit tests · 39 extractor goldens · 89 harness checks ·
+runs before it and fixed the same day (§4 item 6) · 175 unit tests · 39 extractor goldens · 90 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -93,7 +93,7 @@ through `11`). The constraints are where the honest scoring lives.
 | # | Constraint | Status | Evidence / gap |
 |---|---|---|---|
 | 1 | Stack-agnostic | **Partial, and shallower than this row used to claim** | Seven languages are reached, at four very different depths, and the single word "shipped" hid that: **TS/JS** full (module graph, endpoints, client routes, schema, config, workspace); **Python** nearly full (module graph, endpoints, config, workspace); **Java** and **Go** module graph + endpoints; **C#** and **Ruby** endpoints only; **Dart** workspace identity and env reads only — `pubspec.yaml` and `.dart` files in the env scanner, nothing more. Databases: Postgres and Supabase, through `prisma`, `drizzle`, the pglite replay engine, `sql-policies`, and `tbls` behind `--live`. **MySQL-static and SQLite were listed here and do not exist** — no provider, no dialect branch, no fixture, and the strings appear nowhere under `providers/`. A drizzle snapshot in either dialect would reach the parser incidentally, which is not support and has never been run. Mongo and MySQL *live* remain gated in §5, which is a different thing from absent |
-| 2 | Agent-native distribution | **Done on 2 of the brief's 5 named agents** | The brief names *"Claude Code, Codex, Cursor, Gemini CLI, Copilot"*. Adapters exist for three; **Gemini CLI and Copilot have never been built and, until 2026-08-04, appeared in no section of this document — not done, not deferred, not refused.** E7 ran 2026-08-03: Claude Code 2.1.220 and Codex 0.146.0 each discovered and invoked a skill unprompted, as their first action, interactive and headless. Cursor has an adapter and is untested (no trustworthy CLI install path on the test host). 6 skills, plugin + marketplace manifests, CLI envelope contract and `keeldocs skills install` all ship. See §4 item 7 |
+| 2 | Agent-native distribution | **Done on 2 of the brief's 5 named agents** | The brief names *"Claude Code, Codex, Cursor, Gemini CLI, Copilot"*. Adapters exist for three; **Gemini CLI and Copilot have never been built and, until 2026-08-04, appeared in no section of this document — not done, not deferred, not refused.** E7 ran 2026-08-03: Claude Code 2.1.220 and Codex 0.146.0 each discovered and invoked a skill unprompted, as their first action, interactive and headless. Cursor has an adapter and is untested (no trustworthy CLI install path on the test host). 6 skills, plugin + marketplace manifests, CLI envelope contract and `keeldocs skills install` all ship. The plugin manifests had never been exercised and now validate clean under `claude plugin validate --strict` (E16); an actual install is still unperformed. See §4 item 7 |
 | 3 | Deterministic-first | **Done** | Zero model-calling code in the engine. Byte-identical output across 3 OSes × 2 runs, enforced every CI run |
 | 4 | Git-native | **Done** | Markdown in-repo, anchors in HTML comments, no service dependency, no lock-in |
 | 5 | Local-first inference | **Done** | The host agent is the model; headless BYO-key prose is gated on a measurement, not shipped half-done |
@@ -543,7 +543,7 @@ in ADR-002's fourth FS amendment.
 
 ## 7. Experiment ledger
 
-The design named twelve validation experiments; the build added three more. The
+The design named twelve validation experiments; the build added four more. The
 principle was that each falsifies a load-bearing assumption, run before or
 alongside the build rather than after.
 
@@ -564,6 +564,7 @@ alongside the build rather than after.
 | E13 replay vs live equivalence | "WASM Postgres matches real DDL semantics" | **Passed** — 10/10 byte-identical to PostgreSQL 16 |
 | E14 JVM/Go probes | tier choice per framework | **Passed** — spring 17/17, gin 15/15 |
 | E15 async-messaging corpus | "declared channels are extractable" | **Passed** — 10/10, 100% recall and precision |
+| E16 plugin/marketplace path | the second half of the distribution bet | **Run 2026-08-05 → validates clean, install unverified.** `claude plugin validate . --strict` exits 0 after one fix: the marketplace had no `description`, which the lenient form reports as a warning and `--strict` treats as an error — invisible to anyone who only ran `validate`. The validator does reach `plugin.json` through `source: "./"`, established by mutation rather than assumed. Skills are auto-discovered from `skills/<name>/SKILL.md` and every frontmatter key in all six is recognised. **No install was performed** — `/plugin marketplace add` is interactive — so the honest claim is "validates clean", not "works". `experiments/e16-plugin-path/RESULTS.md` |
 
 ---
 
@@ -608,7 +609,7 @@ re-measure the same missing cache on a lumpier tree.
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
 agent skills · 175 unit tests · 39 byte-compared extractor goldens · ~25
-end-to-end integration blocks · 13 ADRs · 15 experiments.
+end-to-end integration blocks · 13 ADRs · 16 experiments.
 
 Field deployment: one real production application (Next.js App Router +
 Supabase, 19-file migration chain, 30 tables, 4 views) running the full loop —

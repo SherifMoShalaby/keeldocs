@@ -2563,6 +2563,59 @@ def main():
     except Exception as e:
         failures.append(f"recipe specs: {why(e)}")
 
+    # KEEL-24 / E16. The plugin + marketplace path. `claude plugin validate .
+    # --strict` is the authoritative check and it passes (proven by mutation: a
+    # non-kebab name and a string `author` both make it exit 1), but it needs the
+    # `claude` binary, which no CI runner has. So the invariants this repo depends
+    # on are asserted portably here, and the experiment records the real run.
+    try:
+        pdir = os.path.join(ROOT, ".claude-plugin")
+        plug = json.load(open(os.path.join(pdir, "plugin.json"), encoding="utf-8"))
+        mkt = json.load(open(os.path.join(pdir, "marketplace.json"), encoding="utf-8"))
+        kebab = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+        assert kebab.match(plug.get("name", "")), f"plugin name must be kebab-case: {plug.get('name')!r}"
+        assert isinstance(plug.get("author"), dict) and plug["author"].get("name"), \
+            "plugin `author` is an OBJECT with a name, not a string - the validator rejects the string form"
+        assert kebab.match(mkt.get("name", "")), f"marketplace name must be kebab-case: {mkt.get('name')!r}"
+        # --strict treats a missing marketplace description as an error, and a
+        # repo that only ever runs the lenient form would not know.
+        assert (mkt.get("description") or "").strip(), \
+            "marketplace needs a description; `claude plugin validate --strict` fails without one"
+        assert isinstance(mkt.get("owner"), dict) and mkt["owner"].get("name"), "marketplace owner needs a name"
+        entries = mkt.get("plugins") or []
+        assert entries, "marketplace lists no plugins"
+        for e in entries:
+            assert e.get("name") and e.get("source"), f"marketplace entry incomplete: {e}"
+            src = e["source"]
+            assert isinstance(src, str) and src.startswith("./"), \
+                f"only repo-relative sources are used here; {src!r} would not resolve from a git marketplace"
+            assert ".." not in src, "source path traversal"
+            target = os.path.normpath(os.path.join(ROOT, src))
+            assert os.path.isfile(os.path.join(target, ".claude-plugin", "plugin.json")), \
+                f"marketplace entry {e['name']} points at {src}, which has no plugin.json"
+        # Skills are auto-discovered from skills/<name>/SKILL.md - no manifest
+        # entry - so an unrecognised frontmatter key is how a skill goes missing
+        # through the plugin path while working through `skills install`.
+        KNOWN_FM = {"name", "description", "when_to_use", "argument-hint", "arguments",
+                    "disable-model-invocation", "user-invocable", "allowed-tools",
+                    "disallowed-tools", "model", "effort", "context", "agent",
+                    "background", "hooks", "paths", "shell"}
+        checked_fm = 0
+        for sk in sorted(glob.glob(os.path.join(ROOT, "skills", "*", "SKILL.md"))):
+            head = open(sk, encoding="utf-8").read().split("---")[1]
+            keys = {l.split(":", 1)[0].strip() for l in head.strip().split("\n")
+                    if ":" in l and not l.startswith((" ", "\t", "#"))}
+            unknown = sorted(keys - KNOWN_FM)
+            assert not unknown, f"{os.path.relpath(sk, ROOT)}: frontmatter key(s) {unknown} are not recognised"
+            assert "name" in keys and "description" in keys, \
+                f"{os.path.relpath(sk, ROOT)}: a plugin skill needs name and description"
+            checked_fm += 1
+        assert checked_fm >= 5, f"only {checked_fm} skills checked - the frontmatter gate is thin"
+        print(f"  PASS  plugin manifests: marketplace + plugin valid, {len(entries)} entry, "
+              f"{checked_fm} skill frontmatters use only recognised keys")
+    except Exception as e:
+        failures.append(f"plugin manifests: {why(e)}")
+
     # KEEL-17. `keeldocs noise` - the counts-only report a cohort member can paste
     # into a public issue. The journal it summarizes is made of document paths,
     # section ids and fact ids, so "counts only" is a claim about the one thing

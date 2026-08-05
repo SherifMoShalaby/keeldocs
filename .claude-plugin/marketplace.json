@@ -1,5 +1,6 @@
 {
   "name": "keeldocs-marketplace",
+  "description": "keeldocs: deterministic documentation drift detection, installed as Agent Skills.",
   "owner": { "name": "keeldocs" },
   "plugins": [ { "name": "keeldocs", "source": "./", "description": "Living-documentation drift detection, agent-native." } ]
 }
