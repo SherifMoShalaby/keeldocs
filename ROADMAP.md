@@ -41,12 +41,35 @@ listed even though nothing about it is code.
 Each item names the file carrying its procedure; nothing lives only in a chat
 log.
 
-**A Plane board now exists alongside this document.** Project `KEEL` in the
-`appsby` workspace carries 30 tickets across 8 epics, produced 2026-08-04 by a
-senior-lead review of this roadmap against the original design brief. It is
-worth deciding, once, which of the two is authoritative for open work — this
-file currently claims that role in its own header and in CLAUDE.md, and two
-tracking systems that both claim it is how a roadmap starts lying.
+**A Plane board now exists alongside this document, and as of 2026-08-06 the two
+disagree.** Project `KEEL` in the `appsby` workspace carries 30 tickets across 8
+epics, produced 2026-08-04 by a senior-lead review of this roadmap against the
+original design brief. Ten are open. **This is no longer a governance question
+to get to eventually — the two trackers now give opposite instructions on the
+same items**, and the drift is written down here rather than resolved, because
+which one wins is the owner's call and not an engineering one.
+
+Four items agree: the beta cohort (§4 item 5 ↔ KEEL-16), co-maintainer
+recruitment (item 9 ↔ KEEL-19), the E7 cadence (item 10 ↔ KEEL-22) and the
+Gemini/Copilot decision (item 7 ↔ KEEL-23). Three exist only here: the PyPI and
+crates.io claim with R14's trademark sweep (item 3), E8 on stable hardware
+(item 8), and the Windows promotion date (item 6). **Six exist only on the
+board, and all six are engineering** — KEEL-10 (an upgrade signal that moves),
+KEEL-14 (the contributor funnel timed on a real outsider), KEEL-25
+(workspace-layout beyond three managers) and KEEL-26/27/29, which are open
+tickets asking for exactly the three providers §5 of this document refuses.
+
+Two consequences worth stating plainly. This file's header says what is left is
+seven owner actions and that everything buildable is built; against the board
+that is **false**, and it is false in the direction that flatters. And the
+sharpest instance is not a wording difference: KEEL-26, KEEL-27 and KEEL-29 sit
+in Backlog instructing someone to build rails-sql, expo-router and django-orm,
+while §5 of this file records all three as refused with written thresholds. An
+agent or a contributor reading either document alone would act confidently and
+wrongly. KEEL-10 is the same shape in the other direction: the board marked it
+urgent, this file called it deliberately not started, and the engineering half
+of it turned out to be a shipped defect that made `check` report CLEAN over a
+document it had stopped checking.
 
 This is the single tracking document. It reconciles three things that had been
 living in separate places: the original design brief's deliverables, the phased
@@ -567,6 +590,91 @@ three-column table missing from it.
 All three failures are the same shape, and it is the shape this project exists to
 refuse: a plausible answer where the honest one is a named gap. The reviews cost
 about as much as the builds and were worth more.
+
+**Re-reviewed 2026-08-06, refused again, and now with per-provider thresholds.**
+Each branch was read against `main` as it stands today. Two findings changed the
+shape of the decision, and neither is about the three providers.
+
+*The three defects share a fourth: in every one of them the golden is invariant
+under the mutation that matters.* Not "the golden failed to catch it" — the
+golden **cannot** catch it, because the fixture does not contain the input that
+distinguishes the rule. rails-sql's two fixtures are disjoint: one holds a
+`schema.rb`, the other a `structure.sql`, and the collision the defect needs is
+never constructed in one tree; both goldens are raw extractor stdout, captured
+upstream of `src/facts.js` where the suppression lives, so triggering the defect
+moves neither byte. expo-scenario contains `app/` and no `src/app/`, so
+**reversing the candidate order to the correct one produces a byte-identical
+golden** — the rule the commit message says was mutation-tested is the one
+mutation the fixture cannot see. django-orm-scenario contains no auth app at
+all, and a file the byte-grep rejects is never ingested, so it contributes
+neither a table nor a gap and `json.dumps` emits the same bytes. Adding a
+fixture is therefore not polish on top of these fixes; it is the entire proof,
+and in each case it costs more than the fix does. That asymmetry is the number
+the decision turns on, and it is why all three stay refused rather than being
+patched in an afternoon.
+
+*And the mechanism behind rails-sql was live on `main`, in the most used
+provider in the tool.* `detect.files` is a basename match anywhere in the tree,
+and for `argMode: schemaFile` detection does not merely decide applicability —
+it decides which single file is parsed. Measured: a monorepo with
+`apps/api/prisma/schema.prisma` and `apps/billing/prisma/schema.prisma`
+documented `User`, dropped `Invoice` and `LineItem` with no gap, and reported
+CLEAN at "3/3 surfaces documented (100%)". **Fixed and gated 2026-08-06** — the
+engine names every schema it chose not to read, `check` counts extraction gaps
+beside the coverage figure, and the 93rd harness check pins it with a
+single-schema control. Reviewing three providers nobody merged paid for a defect
+in one everybody uses; that is the second time on this list that an
+investigation paid by finding something other than what it was pointed at.
+(The renderer bug the django-orm branch carried a partial fix for was live too,
+and is fixed on `main` for all eleven table emitters rather than the one — see
+`CHANGELOG.md`.)
+
+**Threshold to ship `rails-sql`.** Detection must be path-anchored, not
+basename: `detect: { dirs: ["db/schema.rb"] }` — the loader already accepts it,
+`existsSync` is repo-root-anchored, and `sql-replay` already detects a *file*
+that way. That needs one supporting engine change, because `detect.dirs` returns
+no `file` and `argMode: schemaFile` then falls through to a hardcoded
+`schema.prisma`: the `dirs` branch must return the path it just proved exists.
+`inputs` must lose its `**/` for the same reason. And the fixture must be a
+**single tree containing both** `db/schema.rb` and `db/structure.sql`, with an
+end-to-end assertion — through `keeldocs init`, not through the extractor's
+stdout — that the ERD names the replayed tables and that `schema.rb` did not
+suppress them. Without that third artifact the fix is unverified by
+construction, and the same review lands the same finding again.
+
+**Threshold to ship `expo-router`.** The route root must resolve `src/app`
+before `app`. Verified against the primary source rather than recalled: Expo's
+own reference states *"Only the src/app directory will be used if you have
+both."* That is one line. The rest is not: a tree with neither root must emit a
+named gap instead of `routes: [], warnings: []`, because a documented custom
+root (`plugins: [["expo-router", {"root": "./src/routes"}]]`) is real and
+supported, and the manifest's `inputs: ["app/**", "src/app/**"]` sandboxes
+`app.json` out of the provider's view — so honouring a custom root, as opposed
+to *naming* that one may exist, additionally requires widening `inputs`. Ship
+the gap, not the config parse: `app.config.js` is executable JavaScript and
+evaluating it is R2 sandbox territory. Two fixtures are required and neither is
+optional: one carrying **both** `app/` and `src/app/`, whose golden lists only
+the `src/app` routes and therefore fails when the order is wrong; one carrying a
+custom `root` with files under it, whose golden is `routes: []` **plus exactly
+one warning** and therefore fails when a silent empty result is returned.
+
+**Threshold to ship `django-orm`.** File admission must follow Django's module
+contract — `models.py`, a `models/` package, `apps.py`, `manage.py`, the
+settings module — not a byte-grep for the literal `Model`. This is not one
+heuristic for another: Django's app registry imports exactly one models module
+per installed app, and the provider already relies on that rule elsewhere. The
+gap the code already knows how to emit must survive: a class whose base chain
+leaves the repository is `not determinable`, and the existing guard also
+requires it to declare fields, so `class Account(AbstractUser): pass` — the
+zero-field swappable-user stub — is dropped even once its file is read. Both
+forms must gap. The fixture must contain an auth app with `class
+Account(AbstractUser)` in the three-field **and** zero-field shapes, and the
+integration must assert a named gap and the absence of a table for each. Note
+also that `class UserSerializer(serializers.ModelSerializer)` contains the
+literal `Model`, so DRF serializers are admitted today and their `CharField`
+members already satisfy the has-fields guard: the current design manufactures
+false gaps as well as losing real ones, and the replacement rule must be checked
+against a fixture that contains a serializer.
 
 **MySQL and SQLite, static — gated, and listed as shipped until 2026-08-05.**
 Constraint 1 claimed both. Neither string appears anywhere under `providers/`:
