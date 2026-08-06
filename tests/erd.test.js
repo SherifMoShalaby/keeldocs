@@ -115,3 +115,52 @@ test("the plan is deterministic - same facts, same chunks, whatever the map orde
   const shuffled = new Map([...a].reverse());
   assert.deepEqual(erdChunks(shuffled).map((c) => [c.id, c.body]), erdChunks(a).map((c) => [c.id, c.body]));
 });
+
+// A `|` in a fact VALUE ends the markdown table cell it lands in - inside
+// backticks too, which GFM does not exempt. `||` is Postgres string
+// concatenation, so an RLS policy carrying one is ordinary SQL, and on the
+// shipped renderer it produced an 11-cell row under a 7-column header: the
+// table is structurally wrong and the `with check` column shows a fragment of
+// the expression before it. The drift loop then makes it permanent, because the
+// mangled body is content-hashed and `check` reports CLEAN over it forever.
+// None of the eleven row emitters escaped anything.
+test("a pipe in a value cannot break the table it is rendered into", () => {
+  // Split on unescaped pipes only - that is exactly the reader's rule, and
+  // counting raw `|` would score the bug as a pass.
+  const cells = (line) => line.split(/(?<!\\)\|/).length;
+  const check = (regionId, facts, why) => {
+    const body = renderRegionBody(regionId, [...facts.keys()], facts);
+    const lines = body.split("\n").filter(Boolean);
+    const want = cells(lines[0]);
+    for (const l of lines.slice(2)) {
+      if (!l.startsWith("|")) continue;
+      assert.equal(cells(l), want, `${why}: ${l}`);
+    }
+    return body;
+  };
+  const one = (id, type, attrs, provenance) =>
+    new Map([[id, { id, payload: { schema_version: 1, type, attrs }, hash: "h1:0", provenance }]]);
+
+  const pol = check("db.policies", one("fact:db-policies/public.d.p", "policy", {
+    schema: "public", table: "d", name: "p", command: "SELECT", permissive: true,
+    roles: ["authenticated"], using: "(a || b) = c", with_check: null,
+  }), "an RLS using-clause with a SQL concatenation operator");
+  assert.match(pol, /a \\\|\\\| b/);
+
+  // ...and the same rule has to hold wherever a value reaches a cell, or the
+  // fix is one emitter deep and the next provider re-opens it.
+  check("api.inventory.table", one("fact:http-endpoints/GET /a|b", "endpoint",
+    { method: "GET", path: "/a|b" }, { source: [{ file: "r|1.ts", line: 2 }] }),
+    "an endpoint path and a source file containing a pipe");
+  check("config.reference.table", one("fact:config-surface/A|B", "env-var",
+    { name: "A|B", read_in_code: true, declared_in_example: false },
+    { source: [{ kind: "code", file: "s|1.ts", line: 3 }] }),
+    "an env var name containing a pipe");
+  check("sys.map.services", one("fact:services-topology/web", "service",
+    { name: "web", kind: "owned", image: "r|o/img", build: "./a|b", ports: ["80|81"],
+      depends_on: ["x|y"] }), "a compose image, build path and port list with pipes");
+  check("sys.map.packages", one("fact:workspace-layout/p", "package",
+    { name: "@a/p", path: "packages/a|b", manager: "pnpm" }), "a package path with a pipe");
+  check("ui.screens.table", one("fact:client-routes//a|b", "route", { path: "/a|b" },
+    { source: [{ file: "app/a|b.tsx" }] }), "a client route path with a pipe");
+});

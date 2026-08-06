@@ -7,7 +7,7 @@ registry, not from the workflow log: 127 files, attestation naming
 `refs/tags/v0.4.0`, and each of the six behaviour changes reproduced against the
 published tarball on a repository built for the purpose. 3-OS CI green including
 `action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
-runs before it and fixed the same day (§4 item 6) · 177 unit tests · 39 extractor goldens · 93 harness checks ·
+runs before it and fixed the same day (§4 item 6) · 178 unit tests · 39 extractor goldens · 93 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -70,7 +70,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. 34 providers across 10
-capabilities feed 8 document recipes. The engine has 177 unit tests, 39
+capabilities feed 8 document recipes. The engine has 178 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
@@ -739,7 +739,7 @@ re-measure the same missing cache on a lumpier tree.
 34 shipped providers across 10 capabilities (workspace-layout, module-graph,
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
-agent skills · 177 unit tests · 39 byte-compared extractor goldens · ~25
+agent skills · 178 unit tests · 39 byte-compared extractor goldens · ~25
 end-to-end integration blocks · 13 ADRs · 16 experiments.
 
 Field deployment: one real production application (Next.js App Router +

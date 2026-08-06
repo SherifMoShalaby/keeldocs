@@ -31,6 +31,18 @@ function endpointFacts(factsById, only = null) {
 
 // `only` is the region's RESOLVED bind set: a package-scoped section renders
 // exactly what it bound, so body and hash can never describe different sets.
+// Every value below lands inside a markdown table CELL, and a `|` in a value
+// ends that cell wherever it appears - inside backticks too, which GFM does not
+// exempt. Measured on the shipped renderer: an RLS policy whose `using` clause
+// contains `||`, which is Postgres string concatenation and therefore ordinary
+// SQL, produced a row with 11 cells against a 7-column header. The table is
+// structurally wrong, the `with check` column shows a fragment of the
+// expression before it, and the drift loop then makes it permanent: the mangled
+// body is content-hashed, so `check` reports CLEAN over it forever. None of the
+// eleven row emitters escaped anything. Escaping the STRUCTURE is not an option
+// - the pipes that build the row are ours - so it is applied per value, here.
+const cell = (v) => String(v).replaceAll("|", "\\|");
+
 export function endpointsTableBody(factsById, only = null) {
   const eps = endpointFacts(factsById, only);
   const rows = eps.map((f) => {
@@ -39,7 +51,7 @@ export function endpointsTableBody(factsById, only = null) {
       : src.file ? src.file + (src.line ? `:${src.line}` : "")
       : src.from ? `${src.kind}: \`${src.from}\`` // derived surface - names its origin fact
       : src.kind ?? "";
-    return `| ${f.payload.attrs.method} | \`${f.payload.attrs.path}\` | ${where} |`;
+    return `| ${cell(f.payload.attrs.method)} | \`${cell(f.payload.attrs.path)}\` | ${cell(where)} |`;
   });
   return ["| method | path | source |", "|---|---|---|", ...rows].join("\n");
 }
@@ -193,7 +205,7 @@ export function diagramBody(factsById) {
 export function tableColumnsBody(tableFact, key = null) {
   const rows = tableFact.payload.attrs.columns.map((c) => {
     const attrs = [...(key?.has(c.name) ? ["primary key"] : []), ...(c.attrs ? [c.attrs] : [])].join(", ");
-    return `| ${c.name} | ${c.type}${c.list ? "[]" : ""}${c.optional ? "?" : ""} | ${attrs} |`;
+    return `| ${cell(c.name)} | ${cell(c.type)}${c.list ? "[]" : ""}${c.optional ? "?" : ""} | ${cell(attrs)} |`;
   });
   return ["| column | type | attributes |", "|---|---|---|", ...rows].join("\n");
 }
@@ -211,8 +223,8 @@ export function viewsBody(factsById) {
     const a = f.payload.attrs;
     const verbs = ["GET", ...(a.insertable ? ["POST"] : []), ...(a.updatable ? ["PATCH"] : []),
                    ...(a.deletable ? ["DELETE"] : [])].join(", ");
-    const cols = a.columns.map((c) => `\`${c.name}\``).join(", ");
-    return `| \`${a.name}\` | ${a.materialized ? "materialized" : "view"} | ${cols} | ${verbs} |`;
+    const cols = a.columns.map((c) => `\`${cell(c.name)}\``).join(", ");
+    return `| \`${cell(a.name)}\` | ${a.materialized ? "materialized" : "view"} | ${cols} | ${verbs} |`;
   });
   return ["| relation | kind | columns | REST verbs |", "|---|---|---|---|", ...rows].join("\n");
 }
@@ -227,7 +239,7 @@ export function envTableBody(factsById) {
     const a = f.payload.attrs;
     const where = f.provenance?.source?.filter((s) => s.kind === "code").slice(0, 3)
       .map((s) => `${s.file}:${s.line}`).join(", ") || "-";
-    return `| \`${a.name}\` | ${a.read_in_code ? "yes" : "no"} | ${a.declared_in_example ? "yes" : "no"} | ${where} |`;
+    return `| \`${cell(a.name)}\` | ${a.read_in_code ? "yes" : "no"} | ${a.declared_in_example ? "yes" : "no"} | ${cell(where)} |`;
   });
   return ["| variable | read in code | in .env.example | read sites |", "|---|---|---|---|", ...rows].join("\n");
 }
@@ -247,8 +259,8 @@ export function functionsBody(factsById) {
     const a = f.payload.attrs;
     const props = [a.volatility, a.language, ...(a.security_definer ? ["security definer"] : []),
                    ...(a.kind === "procedure" ? ["procedure"] : [])].filter(Boolean).join(", ");
-    const args = a.arguments ? `\`${a.arguments}\`` : "-";
-    return `| \`${a.name}\` | ${args} | \`${a.returns}\` | ${props} |`;
+    const args = a.arguments ? `\`${cell(a.arguments)}\`` : "-";
+    return `| \`${cell(a.name)}\` | ${args} | \`${cell(a.returns)}\` | ${cell(props)} |`;
   });
   return ["| routine | arguments | returns | properties |", "|---|---|---|---|", ...rows].join("\n");
 }
@@ -269,7 +281,7 @@ export function policiesBody(factsById) {
   const rls = rlsFactsOf(factsById);
   const rows = pols.map((f) => {
     const a = f.payload.attrs;
-    return `| \`${a.schema}.${a.table}\` | \`${a.name}\` | ${a.command} | ${a.permissive ? "permissive" : "restrictive"} | ${a.roles.join(", ") || "-"} | ${a.using ? `\`${a.using}\`` : "-"} | ${a.with_check ? `\`${a.with_check}\`` : "-"} |`;
+    return `| \`${cell(a.schema)}.${cell(a.table)}\` | \`${cell(a.name)}\` | ${cell(a.command)} | ${a.permissive ? "permissive" : "restrictive"} | ${cell(a.roles.join(", ") || "-")} | ${a.using ? `\`${cell(a.using)}\`` : "-"} | ${a.with_check ? `\`${cell(a.with_check)}\`` : "-"} |`;
   });
   const lines = ["| table | policy | command | mode | roles | using | with check |",
                  "|---|---|---|---|---|---|---|", ...rows];
@@ -318,7 +330,7 @@ export function servicesDiagramBody(factsById) {
 export function servicesTableBody(factsById) {
   const rows = serviceFactsOf(factsById).map((f) => {
     const a = f.payload.attrs;
-    return `| \`${a.name}\` | ${a.kind} | ${a.image ? `\`${a.image}\`` : "-"} | ${a.build ? `\`${a.build}\`` : "-"} | ${a.ports.length ? a.ports.join(", ") : "-"} | ${a.depends_on.length ? a.depends_on.join(", ") : "-"} |`;
+    return `| \`${cell(a.name)}\` | ${cell(a.kind)} | ${a.image ? `\`${cell(a.image)}\`` : "-"} | ${a.build ? `\`${cell(a.build)}\`` : "-"} | ${a.ports.length ? cell(a.ports.join(", ")) : "-"} | ${a.depends_on.length ? cell(a.depends_on.join(", ")) : "-"} |`;
   });
   return ["| service | kind | image | build | ports | depends on |", "|---|---|---|---|---|---|", ...rows].join("\n");
 }
@@ -326,7 +338,7 @@ export function servicesTableBody(factsById) {
 export function packagesTableBody(factsById) {
   const rows = packageFactsOf(factsById).map((f) => {
     const a = f.payload.attrs;
-    return `| \`${a.name}\` | \`${a.path}\` | ${a.manager} |`;
+    return `| \`${cell(a.name)}\` | \`${cell(a.path)}\` | ${cell(a.manager)} |`;
   });
   return ["| package | path | manager |", "|---|---|---|", ...rows].join("\n");
 }
@@ -429,7 +441,7 @@ export function channelsTableBody(factsById) {
   const rows = channelFacts(factsById).map((f) => {
     const a2 = f.payload.attrs;
     const sites = (f.provenance?.source ?? []).map((s) => s.file).slice(0, 3).join(", ") || "-";
-    return `| \`${a2.name}\`${a2.pattern ? " ⟨pattern⟩" : ""} | ${a2.kind} | ${a2.transport} | ${a2.role} | ${sites} |`;
+    return `| \`${cell(a2.name)}\`${a2.pattern ? " ⟨pattern⟩" : ""} | ${cell(a2.kind)} | ${cell(a2.transport)} | ${cell(a2.role)} | ${cell(sites)} |`;
   });
   return ["| channel | kind | transport | role | sites |", "|---|---|---|---|---|", ...rows].join("\n");
 }
@@ -446,7 +458,7 @@ function routeFacts(factsById) {
 export function screensTableBody(factsById) {
   const rows = routeFacts(factsById).map((f) => {
     const src = f.provenance?.source?.[0]?.file ?? "";
-    return `| \`${f.payload.attrs.path}\` | ${src} |`;
+    return `| \`${cell(f.payload.attrs.path)}\` | ${cell(src)} |`;
   });
   return ["| route | source |", "|---|---|", ...rows].join("\n");
 }
