@@ -352,6 +352,45 @@ compatibility-breaking key into the format whose answer to "did the engine
 change?" is "no" across the only real upgrade this project has had. Whatever
 KEEL-10 carries, it is not this field as currently computed.
 
+*A replacement premise was measured on 2026-08-06, and it works.* The candidate
+drops the declaration and hashes the **content it was supposed to stand for**:
+every committed byte that decides what comes out of extraction — provider
+manifests, extractor sources, the pinned extractor runtime, and the six engine
+modules that turn provider output into facts. Still a pure function of the tree,
+which is the constraint that governs: no clock, no network, nothing the `check`
+path is forbidden to touch. `scripts/dev/toolchain-fingerprint.py` recomputes
+both columns from git objects, so this is reproducible rather than reported.
+
+| | v0.2.0 → v0.3.0 | v0.3.0 → v0.4.0 | v0.4.0 → HEAD |
+|---|---|---|---|
+| extraction-relevant files changed | 0 | 6 | 1 |
+| `providerSetHash` | same | same | same |
+| toolchain fingerprint | same | **moved** | **moved** |
+
+One distinct value across four refs against three. **The result that matters is
+not that it moves more often.** A signal that fires on every release whether or
+not a fact could have changed is R1 wearing a different hat, and it would be
+worse than silence, because a user learns to ignore it. This one discriminates:
+`0.2.0 → 0.3.0` added `skills install` and rewrote the README and could not move
+a single fact, and it is correctly silent there; `0.3.0 → 0.4.0` re-pinned 206
+lines of tree-sitter grammars — the versions that decide what every extractor
+parses — and it fires.
+
+*What is now blocking is not the signal. It is where to keep the previous one,
+and both committed stores are closed to it.* Comparing a fingerprint needs the
+old value, which means committing it, and this repository has exactly two
+committed artifacts. The anchor grammar is frozen at generation 1, so a new key
+is a generation bump: a coordinated upgrade for everyone reading the repository,
+which spec §11 makes deliberately expensive to keep the key set small. The
+decisions journal is closed by its own contract — spec §6 reads *"no facts or
+hashes ever"* — and a toolchain fingerprint is a hash, so putting it there means
+amending the contract that makes the journal safely union-mergeable, not merely
+appending a line. So the real KEEL-10 decision is a **spec-level choice between
+a generation-2 anchor key, an amended journal contract, and a third committed
+artifact**, and it should be made deliberately rather than discovered by
+whichever one an implementation reached for first. Nothing is wired to the
+fingerprint until it is made. The signal is measured; the carrier is not chosen.
+
 *And the sequencing in the ticket is backwards.* Carrying the previous
 provider-set fingerprint requires committing it, and the only committed place is
 the anchor. The anchor grammar rejects unknown keys — it quarantines them — so a
