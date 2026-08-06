@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **A recorded hash the engine cannot compare no longer reports `CLEAN`.** This is
+  a seventh case of the class the six rows in `0.4.0` below describe, and it was
+  still in the tree. A gen region or prose slot whose `hash=` names a hash
+  algorithm this engine does not implement was assigned its own drift state,
+  `rebaseline`, which was not counted as drift, not named in the summary, not
+  listed among the findings the envelope reports, and had no branch in the
+  proposal builder. Measured on one repository, one byte apart: with
+  `hash=h1:…` the section reported `stale` and `check` exited 1; changing that
+  `1` to a `2` made the same document over the same drifted code report
+  `CLEAN` and exit 0, and `keeldocs sync` answered `NOTHING_TO_SYNC` — so there
+  was no way back either. The marker grammar accepts `h<digits>:`, so this needed
+  no future algorithm to reach: a merge that resolved a marker line badly gets
+  there today.
+
+  Such a section is now `unverified`, the state `0.4.0` introduced for a
+  generated region carrying no hash at all. It is still **not** drift — an
+  algorithm change is not your code changing, and `check` still reports zero
+  drift findings — but it exits 1 with `UNREADABLE`, names the section by
+  document, line and reason, and `sync` regenerates it, re-baselining the marker
+  onto the current algorithm in one pass. Findings now carry a `reason` of
+  `no-recorded-hash` or `unreadable-hash-algorithm` so the receipt says which
+  case it was, and unverified sections are listed in the envelope under
+  `data.unverified` rather than only counted — "1 section is not being checked"
+  without saying which one is a finding nobody can act on.
+
 ## 0.4.0 — 2026-08-05
 
 **Read this before upgrading if you run `keeldocs check` in CI.** This release can

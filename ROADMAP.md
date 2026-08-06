@@ -7,7 +7,7 @@ registry, not from the workflow log: 127 files, attestation naming
 `refs/tags/v0.4.0`, and each of the six behaviour changes reproduced against the
 published tarball on a repository built for the purpose. 3-OS CI green including
 `action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
-runs before it and fixed the same day (§4 item 6) · 175 unit tests · 39 extractor goldens · 92 harness checks ·
+runs before it and fixed the same day (§4 item 6) · 177 unit tests · 39 extractor goldens · 92 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -70,7 +70,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. 34 providers across 10
-capabilities feed 8 document recipes. The engine has 175 unit tests, 39
+capabilities feed 8 document recipes. The engine has 177 unit tests, 39
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
@@ -271,14 +271,41 @@ lands, and it lands as R1, noise death, arriving through the upgrade path.
 Two things were established before writing any of it, and both change the shape
 of the work rather than merely adding to it.
 
-*The state it would produce is currently a dead end.* `rebaseline` exists in
-`src/drift.js` and is reachable from three places, but it is not in
-`DRIFT_STATES`, so it never fails CI, and `buildProposals` handles `stale`,
-`tampered` and `dead` only — so a re-baselined section gets **no proposal** and
-no way to clear itself. It would report `rebaseline` forever, and the only way
-out would be a hand edit, which the next run flags as `tampered`. That path has
-never executed: the prefix has never moved and no test references the state. A
-trigger must not be wired to it until the exit exists.
+*The state it would produce was a dead end — **closed 2026-08-06**, and it was
+worse than this entry said.* `rebaseline` was reachable from three places in
+`src/drift.js`, was not in `DRIFT_STATES`, and had no branch in
+`buildProposals`. This entry recorded that as a latent problem awaiting a
+trigger. It was not latent. The marker grammar accepts `h<digits>:`, so the
+state was reachable from a committed document today — by a merge resolving a
+marker line badly, or by anyone typing it — and reaching it was a **silent
+false negative**, not a stuck state.
+
+Measured on one repository, one byte apart, with the control run first: with
+`hash=h1:…` the section reports `stale`, `check` exits 1, `DRIFT_FOUND`. Change
+that `1` to a `2` and the same document over the same drifted code — a real new
+endpoint, absent from the table — reports `CLEAN`, exits 0, and summarises "0
+drift finding(s)". The state appeared in no summary, in no finding list, and in
+no exit code, and `sync` answered `NOTHING_TO_SYNC`, so there was no way back.
+One byte retired a section from drift detection permanently. That is a seventh
+instance of the class `CHANGELOG.md` opens with, and it was still shipping.
+
+The fix removes the state rather than adding to it. A hash the engine cannot
+compare is now `unverified` — the state 0.4.0 introduced for a generated region
+carrying no hash at all, which already exits 1 under `UNREADABLE` and already
+carries a regenerate proposal. That honours what ADR-008 actually asked for and
+refuses its silence: it is still not drift, so an algorithm change never cries
+wolf, but it is never clean either, and one `sync` re-baselines the marker onto
+the current algorithm. Findings carry a `reason` (`no-recorded-hash` or
+`unreadable-hash-algorithm`) and the envelope now *names* unverified sections
+rather than only counting them — a count without an id is a finding nobody can
+act on, and counting-without-naming is part of why this hid as long as it did.
+Two unit tests pin both ends (an uncomparable hash is neither clean nor stale,
+and every unverified finding has a proposal that clears it) and the
+`parser fails closed` harness gate now runs the twin end to end.
+
+**The exit now exists, so a trigger may be wired to it. The trigger itself is
+still open**, and the two paragraphs below are why it is not the one KEEL-10
+names.
 
 *A provider-set re-baseline can hide real drift, and that is the wrong way for a
 drift detector to fail.* Re-baselining accepts the current facts as the new
@@ -712,7 +739,7 @@ re-measure the same missing cache on a lumpier tree.
 34 shipped providers across 10 capabilities (workspace-layout, module-graph,
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
-agent skills · 175 unit tests · 39 byte-compared extractor goldens · ~25
+agent skills · 177 unit tests · 39 byte-compared extractor goldens · ~25
 end-to-end integration blocks · 13 ADRs · 16 experiments.
 
 Field deployment: one real production application (Next.js App Router +

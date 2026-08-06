@@ -25,9 +25,14 @@ export function buildProposals({ findings, regions, anchors, factsById, reanchor
   for (const f of findings) {
     // Stale prose slot: the engine NEVER rewrites prose - the agent re-proses
     // via slot-write. Listed with evidence, deliberately not appliable here.
-    if (f.state === "stale" && f.kind === "slot") {
+    // `unverified` joins it: a slot whose recorded hash names an algorithm this
+    // engine cannot compare had NO proposal at all, so the one state that stops
+    // a slot being checked was also the one with no way out of it.
+    if ((f.state === "stale" || f.state === "unverified") && f.kind === "slot") {
       proposals.push({ id: f.id, kind: "reprose", doc: f.doc, line: f.line,
-        evidence: `bound facts changed since this prose was written (recorded ${f.recorded}, current ${f.currentHash}); rewrite it via: keeldocs slot-write ${f.doc} ${f.id}` });
+        evidence: f.state === "unverified"
+          ? `this slot's recorded hash uses a hash algorithm this engine cannot compare (${f.reason}), so nothing has been checking the prose against the facts; re-write it against the current facts via: keeldocs slot-write ${f.doc} ${f.id}`
+          : `bound facts changed since this prose was written (recorded ${f.recorded}, current ${f.currentHash}); rewrite it via: keeldocs slot-write ${f.doc} ${f.id}` });
       continue;
     }
     // `unverified` regenerates like `stale`: patchRegion inserts hash= and
@@ -57,7 +62,9 @@ export function buildProposals({ findings, regions, anchors, factsById, reanchor
         evidence: f.state === "tampered"
           ? `content hash mismatch: gen region was edited by hand (recorded ${region.content}); restoring regenerates from current facts and discards the hand edit - reject to keep it`
           : f.state === "unverified"
-          ? `this generated region records no hash, so nothing has been checking it; regenerating restores it to a verified state`
+          ? (f.reason === "unreadable-hash-algorithm"
+              ? `this region's recorded hash uses a hash algorithm this engine cannot compare, so nothing has been checking it; regenerating re-baselines it against the current algorithm`
+              : `this generated region records no hash, so nothing has been checking it; regenerating restores it to a verified state`)
           : `bound facts changed: recorded ${region.hash}, current ${display(aggregateHash(ids, factsById))}`,
       });
       continue;

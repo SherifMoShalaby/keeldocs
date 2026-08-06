@@ -121,6 +121,69 @@ test("tamper wins over stale check and fires on edited body", () => {
   assert.equal(findings[0].state, "tampered");
 });
 
+// A recorded hash whose ALGORITHM this engine cannot compare used to be its own
+// state, `rebaseline`: absent from DRIFT_STATES, absent from the summary, absent
+// from `top`, and absent from buildProposals. Measured on one tree, one byte
+// apart - `hash=h1:` reported stale and exited 1; changing that `1` to a `2`
+// reported CLEAN and exited 0 over the same drifted code, and `sync` answered
+// NOTHING_TO_SYNC, so there was no way back. `h[0-9]+` is what the parser
+// accepts, so no future engine was needed to reach this - a badly resolved merge
+// gets there today. The pair below is the whole proof, and the control matters
+// as much as the case: an algorithm mismatch must not read as drift EITHER.
+test("a hash algorithm the engine cannot compare is unverified, never clean", () => {
+  const facts = mkFacts([["fact:http-endpoints/GET /a", { p: "/a" }]]);
+  const bind = [{ raw: "fact:http-endpoints/GET /a", wildcard: false }];
+  const cur = aggregateHash(["fact:http-endpoints/GET /a"], facts);
+  const mk = (over) => ({ kind: "gen", id: "g", binds: bind, body: "b", doc: "d", line: 1, ...over });
+  const state = (region) => evaluate({ anchors: [], regions: [region], factsById: facts,
+    capabilities: CAPS_OK, journal: NO_JOURNAL }).findings[0];
+
+  // control: the same region with a comparable, matching hash is clean...
+  assert.equal(state(mk({ hash: display(cur) })).state, "clean");
+  // ...and with a comparable, non-matching one it is stale. Both ends pinned, so
+  // the case below cannot pass by the region simply never being evaluated.
+  assert.equal(state(mk({ hash: "h1:0000000000000000" })).state, "stale");
+
+  const bumped = "h2:" + display(cur).slice(3);
+  const f = state(mk({ hash: bumped }));
+  assert.equal(f.state, "unverified");
+  assert.equal(f.reason, "unreadable-hash-algorithm");
+  // and NOT drift: an algorithm change is not the user's code changing
+  assert.notEqual(f.state, "stale");
+
+  // the content= (tamper) comparison has the same hole and the same fix
+  const c = state(mk({ hash: display(cur), content: "h2:" + display(contentHash("b")).slice(3) }));
+  assert.equal(c.state, "unverified");
+  assert.equal(c.reason, "unreadable-hash-algorithm");
+
+  // a slot records the fact state its prose was written against; same hole
+  const s = state(mk({ kind: "slot", hash: bumped }));
+  assert.equal(s.state, "unverified");
+
+  // the hashless case keeps its own reason, so the receipt says which it was
+  assert.equal(state(mk({})).reason, "no-recorded-hash");
+});
+
+test("every unverified finding has a proposal that clears it", async () => {
+  const { buildProposals } = await import("../src/proposals.js");
+  const facts = mkFacts([["fact:config-surface/A", { name: "A" }]]);
+  const bind = [{ raw: "fact:config-surface/A", wildcard: false }];
+  const bumped = "h2:" + display(aggregateHash(["fact:config-surface/A"], facts)).slice(3);
+  // config.reference.table is a region id render.js knows, so the gen proposal is
+  // `regenerate` rather than the `unrenderable` fallback - a proposal that cannot
+  // be applied is the dead end this test exists to refuse.
+  const regions = [
+    { kind: "gen", id: "config.reference.table", binds: bind, hash: bumped, body: "b", doc: "d", line: 1 },
+    { kind: "slot", id: "config.reference.overview", binds: bind, hash: bumped, body: "", doc: "d", line: 2 },
+  ];
+  const { findings } = evaluate({ anchors: [], regions, factsById: facts,
+    capabilities: { "config-surface": { status: "ok" } }, journal: NO_JOURNAL });
+  assert.equal(findings.filter((f) => f.state === "unverified").length, 2);
+  const props = buildProposals({ findings, regions, anchors: [], factsById: facts });
+  assert.deepEqual(props.map((p) => p.kind).sort(), ["regenerate", "reprose"]);
+  for (const p of props) assert.match(p.evidence, /cannot compare/);
+});
+
 test("candidates: same-method token overlap and same-path different-method", () => {
   const facts = mkFacts([
     ["fact:http-endpoints/POST /orders", {}],

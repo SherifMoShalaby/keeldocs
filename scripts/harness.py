@@ -2718,9 +2718,45 @@ def main():
             f"sync ran but the region is still unverified: {env_f['code']} {env_f['summary'][:120]}"
         assert "hash=h1:" in open(os.path.join(bare, "docs", "x.md"), encoding="utf-8").read(), \
             "sync must write the hash back into the marker"
+        # (6) The same shape one layer down, and it needed no missing attribute at
+        # all. A recorded hash whose ALGORITHM this engine cannot compare was its
+        # own state, `rebaseline` - not in DRIFT_STATES, not in the summary, not
+        # in `top`, and with no branch in buildProposals. So the `hashed` twin
+        # above, with its `h1` changed to `h2` and NOTHING else, exited 0 CLEAN
+        # over the identical wrong body, and `sync` said NOTHING_TO_SYNC. One byte
+        # retired a section from drift detection permanently, with no way back.
+        # The parser accepts `h[0-9]+:`, so this was reachable today by a merge
+        # resolving a marker line badly - no future algorithm required.
+        algo = repo("algo", "# X\n\n" + ANCH +
+                    "\n<!-- keeldocs:gen id=config.reference.table hash=h2:0000000000000000 -->\n"
+                    + BODY + "<!-- /keeldocs:gen -->\n")
+        rc_a, env_a = check(algo)
+        assert rc_a == 1 and env_a["code"] == "UNREADABLE", \
+            f"a hash the engine cannot compare must not read as a pass: rc={rc_a} {env_a['code']} {env_a['summary'][:120]}"
+        # ...named, not merely counted. "1 section is not being checked" without
+        # saying which one is a finding nobody can act on.
+        unv = env_a["data"].get("unverified") or []
+        assert unv and unv[0]["id"] == "config.reference.table" \
+            and unv[0]["reason"] == "unreadable-hash-algorithm" and unv[0]["line"] == 5, \
+            f"the envelope must name the unverifiable section by id, line and reason: {unv}"
+        # ...and NOT as drift either: ADR-008 is right that an algorithm change is
+        # not the user's code changing. Refusing to verify is the honest verdict;
+        # crying drift would be the other way to get this wrong.
+        assert env_a["data"]["counts"].get("driftTotal") == 0, \
+            f"an algorithm mismatch is not drift: {env_a['data']['counts']}"
+        sy_a = subprocess.run(["node", KDF, "sync", "--apply-all", "--json"], cwd=algo,
+                              capture_output=True, text=True, timeout=300, env=fenv)
+        assert sy_a.returncode == 0, f"sync could not re-baseline an unreadable algorithm: {sy_a.stdout[-200:]}"
+        rc_a2, env_a2 = check(algo)
+        assert env_a2["code"] != "UNREADABLE", \
+            f"sync ran but the section is still unverifiable: {env_a2['code']} {env_a2['summary'][:120]}"
+        algo_doc = open(os.path.join(algo, "docs", "x.md"), encoding="utf-8").read()
+        assert "h2:" not in algo_doc and "hash=h1:" in algo_doc, \
+            f"sync must re-baseline the marker onto the current algorithm: {algo_doc}"
         print("  PASS  parser fails closed: absent package scope is dead (real scope still clean), "
               "5 unknown-key spellings refused with 3 legitimate binds intact, refused markers reach "
-              "exit 1 + UNREADABLE, a hashless gen region is unverified and one sync repairs it, "
+              "exit 1 + UNREADABLE, a hashless gen region and an uncomparable hash algorithm are both "
+              "unverified-and-named (not drift, not clean) and one sync repairs each, "
               "generation gate names a newer reader and is never emitted")
         rmtree(tmp)
     except Exception as e:

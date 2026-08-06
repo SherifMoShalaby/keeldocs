@@ -1,6 +1,9 @@
 // Drift comparator (ADR-008 + spec §4-5). States are disjoint:
-//   clean | stale | tampered | dead | intentionally_removed | unresolvable | snoozed
+//   clean | stale | tampered | dead | intentionally_removed | unresolvable
+//   | unverified | held | snoozed
 // Extraction failure is unresolvable (tooling health), NEVER drift - fail closed.
+// A recorded hash this engine cannot COMPARE is `unverified`, never a verdict
+// and never silence - see the ADR-008 note above NO_RECORDED_HASH below.
 // Re-anchoring here is proposal-grade only: candidates are suggested for dead
 // bindings; auto-rebind needs the two-signal rule and belongs to sync (ADR-007).
 
@@ -113,6 +116,32 @@ export function candidatesFor(missingId, factsById) {
   return out.slice(0, 3).map((c) => c.id);
 }
 
+// The two ways a section can carry a hash the engine cannot turn into a verdict.
+// They are one STATE and two REASONS on purpose: the user-visible consequence is
+// identical - nothing is checking this section - and only the repair note differs.
+//
+// The second reason used to be its own state, `rebaseline`, and that state was a
+// silent false negative of exactly the shape 0.4.0 shipped six fixes for. ADR-008
+// says a cross-version hash comparison is invalid and "must re-baseline, never
+// render as drift"; the intent is right and the implementation ACCEPTED. Measured
+// on one tree, one byte apart: with `hash=h1:...` the section reports `stale`,
+// exit 1, DRIFT_FOUND. Change that `1` to a `2` and the same document over the
+// same drifted code reports CLEAN, exit 0, "0 drift finding(s)" - the state was
+// absent from the summary, absent from `top`, absent from DRIFT_STATES, and
+// `buildProposals` had no branch for it, so `sync` answered NOTHING_TO_SYNC and
+// there was no way back. Permanently retired from drift detection by one byte.
+// `h[0-9]+` is what the parser accepts, so this needed no future engine to reach
+// - a merge resolving a marker line badly gets there today.
+//
+// `unverified` honours ADR-008's intent and refuses its silence: it is NOT in
+// DRIFT_STATES, so the run still reports zero drift findings and never cries
+// drift over an algorithm change; it IS counted as unreadable, so the exit code
+// is 1 and the code is UNREADABLE; and it already carries a regenerate proposal,
+// so one `sync` re-baselines against the current algorithm and the state clears.
+// That is the re-baseline the ADR asked for, made explicit and consented to.
+export const NO_RECORDED_HASH = "no-recorded-hash";
+export const UNREADABLE_ALGO = "unreadable-hash-algorithm";
+
 function capabilityOf(bindRaw) {
   if (bindRaw.startsWith("ds ")) return "module-graph"; // ADR-007 second namespace
   const m = bindRaw.match(/^fact:([a-z0-9-]+)\//);
@@ -162,7 +191,7 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
     if (bs.state !== "resolved") { add({ ...base, state: bs.state, missing: bs.missing }); continue; }
     const cur = aggregateHash(bs.ids, factsById);
     const cmp = hashesMatch(region.hash, cur);
-    if (cmp === "version-mismatch") { add({ ...base, state: "rebaseline" }); continue; }
+    if (cmp === "version-mismatch") { add({ ...base, state: "unverified", reason: UNREADABLE_ALGO }); continue; }
     if (!cmp) {
       const rejectedAt = journal.rejection.get(region.id);
       if (rejectedAt && rejectedAt === display(cur)) { add({ ...base, state: "held" }); continue; }
@@ -191,7 +220,7 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
     if (region.content !== undefined) {
       const cur = contentHash(region.body ?? "");
       const cmp = hashesMatch(region.content, cur);
-      if (cmp === "version-mismatch") { add({ ...base, state: "rebaseline" }); continue; }
+      if (cmp === "version-mismatch") { add({ ...base, state: "unverified", reason: UNREADABLE_ALGO }); continue; }
       if (!cmp) {
         if (rejectedAt && rejectedAt === display(cur)) { add({ ...base, state: "held", detail: "restore proposal rejected; human edit stands" }); continue; }
         add({ ...base, state: "tampered", detail: "gen region content edited by hand" }); continue;
@@ -205,12 +234,12 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
     // hash and `clean` without one, exit 0. `patchRegion` already inserts both
     // attributes when they are absent, so one `sync` converges this.
     if (region.hash === undefined && region.content === undefined) {
-      add({ ...base, state: "unverified" }); continue;
+      add({ ...base, state: "unverified", reason: NO_RECORDED_HASH }); continue;
     }
     if (region.hash !== undefined) {
       const cur = aggregateHash(bs.ids, factsById);
       const cmp = hashesMatch(region.hash, cur);
-      if (cmp === "version-mismatch") { add({ ...base, state: "rebaseline" }); continue; }
+      if (cmp === "version-mismatch") { add({ ...base, state: "unverified", reason: UNREADABLE_ALGO }); continue; }
       if (!cmp) {
         if (rejectedAt && rejectedAt === display(cur)) { add({ ...base, state: "held", detail: "regenerate proposal rejected for this fact state" }); continue; }
         add({ ...base, state: "stale", currentHash: cur.slice(0, 19), recorded: region.hash }); continue;

@@ -55,6 +55,14 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   const refused = report.quarantined ?? [];
   const unverified = report.counts.unverified ?? 0;
   const unreadable = refused.length + unverified;
+  // A refused MARKER is named by document, line and reason; an unverified
+  // SECTION was only ever counted. "3 sections are not being checked" without
+  // saying which three is a finding the user cannot act on - and the count alone
+  // is what let `rebaseline` hide for as long as it did.
+  const unverifiedTop = report.findings
+    .filter((f) => f.state === "unverified")
+    .slice(0, 20)
+    .map((f) => ({ id: f.id, doc: f.doc, line: f.line, reason: f.reason }));
   const exit = report.toolError ? 2 : (unreadable || report.counts.driftTotal > 0) ? 1 : 0;
   const code = report.toolError ? "TOOL_ERROR"
     : unreadable ? "UNREADABLE"
@@ -81,7 +89,7 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   const summary = report.toolError
     ? `tooling error: ${report.toolError}`.slice(0, 300)
     : unreadable
-    ? `${refused.length} unparseable marker(s) and ${unverified} generated section(s) with no recorded hash - no drift verdict for this run; repair them, then re-run`.slice(0, 300)
+    ? `${refused.length} unparseable marker(s) and ${unverified} section(s) the engine cannot verify - no drift verdict for this run; repair them, then re-run`.slice(0, 300)
     : `${c.driftTotal} drift finding(s) [stale ${c.stale ?? 0}, dead ${c.dead ?? 0}, tampered ${c.tampered ?? 0}]${sinceTxt} across ${report.meta.docsScanned} doc(s); ${c.clean ?? 0} clean; ${covTxt}`.slice(0, 300);
 
   const top = report.findings.filter((f) => DRIFT_STATES.has(f.state)).slice(0, 20)
@@ -94,6 +102,7 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
     v: 1, ok: exit === 0, code, summary,
     data: { counts: c, coverage: report.coverage, noise: report.noise, top,
             ...(refused.length ? { refused: refused.slice(0, 20) } : {}),
+            ...(unverifiedTop.length ? { unverified: unverifiedTop } : {}),
             ...(upgrades?.length ? { upgrades } : {}) },
     truncated: report.findings.length > top.length,
     full: toPosix(relative(repoRoot, outPath)),
@@ -199,6 +208,9 @@ function humanize(envelope, report, cache = null) {
   for (const f of envelope.data.top ?? []) {
     lines.push(`  ${f.state.toUpperCase().padEnd(9)} ${f.doc}:${f.line}  ${f.id}${f.missing ? `  (missing: ${f.missing.join(", ")})` : ""}`);
     if (f.candidates?.length) lines.push(`            candidates: ${f.candidates.join(", ")}`);
+  }
+  for (const u of envelope.data.unverified ?? []) {
+    lines.push(`  UNVERIFIED ${u.doc}:${u.line}  ${u.id}  (${u.reason})`);
   }
   if (report?.quarantined?.length) lines.push(`  note: ${report.quarantined.length} malformed marker(s) quarantined`);
   // Stated, not silent: a reader must be able to tell that work was skipped,
