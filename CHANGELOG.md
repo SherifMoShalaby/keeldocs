@@ -1,6 +1,24 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 — 2026-08-06
+
+**Three more of the case `0.4.0` was cut for, and all three were in the tree
+`0.4.0` shipped from.** Each is `check` reporting `CLEAN`, or a coverage figure of
+`100%`, over documentation that was not being checked. Publishing a release whose
+opening claim is "six shapes reported clean while checking nothing" and then
+finding a seventh, an eighth and a ninth in the same tree is the argument for
+this file existing, not against it.
+
+Measured, `0.4.0` versus `0.4.1`:
+
+| what your repository contains | 0.4.0 | 0.4.1 |
+|---|---|---|
+| a marker whose `hash=` names an algorithm the engine does not implement | `CLEAN`, exit 0 | `UNREADABLE`, exit 1 |
+| a second `schema.prisma` the engine did not choose | `100%` documented, no gap | `100%`, and the skipped file named |
+| a database policy containing `\|\|` | table torn apart, then certified | rendered and checked |
+
+Upgrading is a straight patch: nothing that was correct in `0.4.0` changes, and
+`sync` repairs the first case in one pass.
 
 ### Fixed
 
@@ -28,6 +46,53 @@
   case it was, and unverified sections are listed in the envelope under
   `data.unverified` rather than only counted — "1 section is not being checked"
   without saying which one is a finding nobody can act on.
+
+- **A monorepo's second `schema.prisma` was never read, and nothing said so.**
+  For a provider whose `argMode` is `schemaFile`, detection does not merely decide
+  whether the provider applies — it decides which single file gets parsed, by
+  basename match anywhere in the tree. A repository with two real schemas
+  documented the models in one of them and stopped. The others were absent from
+  the ERD, absent from the fact set, and absent from the gap list, while `check`
+  reported `100%` of surfaces documented. A coverage ratio whose denominator
+  quietly dropped an entire service is wrong in both of its terms, and `100%` is
+  the most convincing possible way to be wrong. Which schema won was lexicographic
+  accident.
+
+  The engine chose the file, so the engine now names the ones it did not choose: a
+  `schema-ignored` gap per skipped path, and `check` counts extraction gaps beside
+  the coverage figure. This does not read both schemas — it stops the tool from
+  implying it read everything. The same argument `meta.scopedOut` already exists
+  for: coverage is a ratio and both of its terms have to be legible. A path scope
+  is a blind spot you chose; this one you did not, and it was strictly less
+  visible.
+
+- **`||` is ordinary SQL, and it tore the generated table apart.** A database
+  policy using Postgres string concatenation rendered eleven cells under a
+  seven-column header, because none of the eleven row emitters escaped the cell
+  separator. Worse than cosmetic: the mangled body is content-hashed like any
+  other, so `check` certified the wreckage as accurate for as long as it stood.
+
+### Also
+
+- **The upgrade signal that was supposed to explain an upgrade did not move.**
+  `providerSetHash` — the toolchain fingerprint — takes one distinct value across
+  `v0.2.0`, `v0.3.0`, `v0.4.0` and `HEAD`, a range in which a provider's `emits`
+  changed, `emits` became enforced, path scoping landed, and 206 lines of pinned
+  extractor grammars moved. A content-derived fingerprint takes three, and the
+  result that matters is not that it moves more but that it discriminates: silent
+  across `0.2.0 → 0.3.0`, which touched no extraction-relevant file, and firing
+  across `0.3.0 → 0.4.0`, which moved the grammar pins.
+  `scripts/dev/toolchain-fingerprint.py` recomputes it. Where such a value should
+  be *recorded* is unresolved and deliberately not guessed here: the anchor
+  grammar is frozen at generation 1 and the journal contract says it holds no
+  hashes, so both existing stores are closed.
+
+- **Three breadth providers stay refused, with written thresholds.** rails-sql,
+  expo-router and django-orm were built and rejected. The reason is sharper than
+  the defects: every one of the three goldens is invariant under the mutation that
+  would matter, so fixing the defect produces a byte-identical golden and the test
+  cannot fail either way. Each refusal now names the fixture contents that would
+  change the answer.
 
 ## 0.4.0 — 2026-08-05
 
