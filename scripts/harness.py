@@ -3056,6 +3056,79 @@ def main():
     except Exception as e:
         failures.append(f"path scope: {why(e)}")
 
+    # `argMode: schemaFile` makes DETECTION double as file SELECTION, and the
+    # selection was the first basename match in a sorted depth-first walk. So a
+    # monorepo with two `schema.prisma` files parsed one of them, said nothing
+    # about the other, and reported CLEAN at 100% coverage - a ratio whose
+    # denominator had silently dropped a whole service's database. `drizzle` and
+    # `sql-replay` both already name what they skipped (`chain-ignored`); the one
+    # provider that could not was the most used one. The control is the point of
+    # this gate: a single-schema repo must produce NO gap, or "gaps appear" is
+    # all that is being asserted and the finding could never regress into view.
+    try:
+        import shutil as _sh_ms, tempfile as _tf_ms
+        tmp = _tf_ms.mkdtemp(prefix="keeldocs-multischema-")
+        KDMS = os.path.join(ROOT, "bin", "keeldocs.js")
+        API = ('datasource db { provider = "postgresql" url = env("DATABASE_URL") }\n'
+               'model User {\n  id    Int    @id @default(autoincrement())\n'
+               '  email String @unique\n}\n')
+        BILL = ('datasource db { provider = "postgresql" url = env("BILLING_URL") }\n'
+                'model Invoice {\n  id     Int    @id @default(autoincrement())\n'
+                '  amount Int\n}\n')
+
+        def prisma_repo(name, schemas):
+            d = os.path.join(tmp, name)
+            os.makedirs(d)
+            W(os.path.join(d, "package.json"),
+              '{"name":"%s","version":"1.0.0","dependencies":{"prisma":"^5.0.0"}}\n' % name)
+            for rel, body in schemas:
+                os.makedirs(os.path.join(d, os.path.dirname(rel)), exist_ok=True)
+                W(os.path.join(d, *rel.split("/")), body)
+            for c in (["init", "-q", "."], ["config", "user.email", "t@t"],
+                      ["config", "user.name", "t"], ["add", "-A"], ["commit", "-qm", "i"]):
+                subprocess.run(["git", *c], cwd=d, capture_output=True, timeout=60)
+            r = subprocess.run(["node", KDMS, "init", "--yes", "--json"], cwd=d,
+                               capture_output=True, text=True, timeout=600,
+                               env={**os.environ, "CI": ""})
+            assert r.returncode == 0, f"{name}: init rc={r.returncode}: {r.stdout[-300:]}{r.stderr[-300:]}"
+            c2 = subprocess.run(["node", KDMS, "check", "--json"], cwd=d,
+                                capture_output=True, text=True, timeout=600,
+                                env={**os.environ, "CI": ""})
+            env2 = node_json(c2, f"check in {name}")
+            spill = json.load(open(os.path.join(d, *env2["full"].split("/")), encoding="utf-8"))
+            return env2, spill
+
+        # Control first: ONE schema, and nothing may be reported as skipped.
+        env_one, spill_one = prisma_repo("single", [("prisma/schema.prisma", API)])
+        assert not [g for g in spill_one.get("extractionGaps", []) if g["kind"] == "schema-ignored"], \
+            f"control: a repo with one schema must report nothing skipped: {spill_one.get('extractionGaps')}"
+        assert "extraction gap" not in env_one["summary"], \
+            f"control: the summary must stay quiet when there is nothing to say: {env_one['summary']}"
+        assert any(k.endswith("/User") for k in
+                   [f["id"] for f in spill_one["findings"]] + list(spill_one["coverage"]["perCapability"])) \
+            or spill_one["coverage"]["perCapability"].get("db-schema", {}).get("total"), \
+            f"control: the single-schema repo must document a table at all: {spill_one['coverage']}"
+
+        # The case: two schemas, and the one that was not read must be NAMED.
+        env_two, spill_two = prisma_repo("mono", [("apps/api/prisma/schema.prisma", API),
+                                                  ("apps/billing/prisma/schema.prisma", BILL)])
+        skipped = [g for g in spill_two.get("extractionGaps", []) if g["kind"] == "schema-ignored"]
+        assert [g["file"] for g in skipped] == ["apps/billing/prisma/schema.prisma"], \
+            f"the schema the engine chose not to read must be named, once, by path: {spill_two.get('extractionGaps')}"
+        # ...and the headline number must stop reading like a repo with one database.
+        assert "extraction gap" in env_two["summary"], \
+            f"coverage is a ratio; a dropped input has to be legible beside it: {env_two['summary']}"
+        # The defect's own observable, pinned so a future change that reads BOTH
+        # schemas is caught here rather than silently making this gate vacuous.
+        db = spill_two["coverage"]["perCapability"].get("db-schema", {})
+        assert db.get("total") == 1, \
+            f"expected exactly one table from the chosen schema (this gate must be re-thought if both are read now): {db}"
+        print("  PASS  schemaFile selection: two schema.prisma - one read, the other named as a gap "
+              "and counted beside coverage; single-schema control reports nothing skipped")
+        rmtree(tmp)
+    except Exception as e:
+        failures.append(f"schemaFile selection: {why(e)}")
+
     # KEEL-28. `emits:` reached the permission manifest a human reads before
     # consenting to a third-party provider, and stopped there: it never entered
     # the registry entry, so the engine could not have enforced it. The runtime

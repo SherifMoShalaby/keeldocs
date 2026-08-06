@@ -309,13 +309,34 @@ function viewFor(reg, repoRoot, scope, resolved) {
 
 // The exact argv a provider receives. Split out of runProvider because the
 // cache key must contain it: same repo, different args, different answer.
+// Every match, not just the first. `argMode: schemaFile` makes DETECTION double
+// as file SELECTION, and `firstNamed` picks one entry out of a sorted
+// depth-first walk. Measured on `main` before this existed: a monorepo with
+// `apps/api/prisma/schema.prisma` and `apps/billing/prisma/schema.prisma`
+// documented `User` and nothing else - `Invoice` and `LineItem` were absent
+// with NO gap, and `check` reported CLEAN at "3/3 surfaces documented (100%)".
+// A coverage ratio whose denominator silently dropped a whole service is wrong
+// in both terms. `drizzle` and `sql-replay` both already name what they skipped
+// (`chain-ignored`); the one provider that could not was the most used one.
+const allNamed = (allFiles, names) =>
+  allFiles.filter((rel) => names.includes(rel.slice(rel.lastIndexOf("/") + 1)));
+
 function argsFor(reg, repoRoot, detectInfo, allFiles) {
   if (reg.argMode === "schemaFile") {
-    const schema = detectInfo.file ?? firstNamed(repoRoot, allFiles, ["schema.prisma"]);
-    return schema ? [schema] : null;
+    // `detect.files` when the manifest has it: the hardcoded "schema.prisma"
+    // below was a second copy of one provider's manifest, living in the engine.
+    const names = reg.detect?.files?.length ? reg.detect.files : ["schema.prisma"];
+    const found = allNamed(allFiles, names);
+    // detect via `deps` carries no file, so the fallback is what usually runs -
+    // a prisma repo names prisma in package.json, which wins before `files` is
+    // ever consulted. Both paths take found[0]: same walk, same order, same set.
+    const schema = detectInfo.file ?? (found.length ? join(repoRoot, found[0]) : null);
+    if (!schema) return { args: null, ignored: [] };
+    const chosen = toPosix(relative(repoRoot, schema));
+    return { args: [schema], ignored: found.filter((rel) => rel !== chosen) };
   }
-  if (reg.argMode === "providerDir") return [reg.dir, repoRoot]; // .scm runtime: which provider + which repo
-  return [repoRoot];
+  if (reg.argMode === "providerDir") return { args: [reg.dir, repoRoot], ignored: [] }; // .scm runtime: which provider + which repo
+  return { args: [repoRoot], ignored: [] };
 }
 
 function runProvider(reg, repoRoot, args, factEnv = {}, scope = null, resolved = null, inputBytes = 0) {
@@ -919,7 +940,13 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
     }
     // ---- D1: the subprocess, or the answer it gave last time ----
     const resolved = resolveInputs(repoRoot, reg.inputs, allFiles);
-    const args = argsFor(reg, repoRoot, d, allFiles);
+    const { args, ignored } = argsFor(reg, repoRoot, d, allFiles);
+    // The engine chose the file, so the engine names the ones it did not choose.
+    // Pushed here rather than left to the extractor because the extractor is
+    // never told the others exist - it receives one path in argv. Recorded even
+    // on a cache hit: what was skipped is a property of the tree, not of how
+    // this run was served.
+    for (const rel of ignored) gaps.push({ kind: "schema-ignored", file: rel });
     let run;
     if (args === null) {
       run = { status: "not_applicable" }; // argMode: schemaFile with no schema

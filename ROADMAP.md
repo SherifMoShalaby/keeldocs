@@ -7,7 +7,7 @@ registry, not from the workflow log: 127 files, attestation naming
 `refs/tags/v0.4.0`, and each of the six behaviour changes reproduced against the
 published tarball on a repository built for the purpose. 3-OS CI green including
 `action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
-runs before it and fixed the same day (§4 item 6) · 177 unit tests · 39 extractor goldens · 92 harness checks ·
+runs before it and fixed the same day (§4 item 6) · 177 unit tests · 39 extractor goldens · 93 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to

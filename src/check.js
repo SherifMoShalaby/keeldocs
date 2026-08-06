@@ -84,7 +84,16 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   writeFileSync(outPath, JSON.stringify(spill, null, 1) + "\n");
 
   const c = report.counts;
-  const covTxt = report.coverage.pct === null ? "no facts" : `${report.coverage.documented}/${report.coverage.total} surfaces documented (${report.coverage.pct}%)`;
+  // Coverage is a ratio and both of its terms have to be legible - the same
+  // argument `meta.scopedOut` exists for. A path scope is a blind spot the user
+  // chose; an extraction gap is one they did not, and it was strictly less
+  // visible: "100% of surfaces documented" over a monorepo whose second
+  // `schema.prisma` was never opened read exactly like a repo with one database.
+  // Counted, not classified: the full report already names every gap and its
+  // reason, and inventing a severity taxonomy here would claim more than is known.
+  const gapCount = report.extractionGaps?.length ?? 0;
+  const covTxt = (report.coverage.pct === null ? "no facts" : `${report.coverage.documented}/${report.coverage.total} surfaces documented (${report.coverage.pct}%)`)
+    + (gapCount ? `; ${gapCount} extraction gap(s) - see the full report` : "");
   const sinceTxt = report.meta.since ? `; ${c.selfCaused ?? 0} caused since ${report.meta.since.ref}` : "";
   const summary = report.toolError
     ? `tooling error: ${report.toolError}`.slice(0, 300)
