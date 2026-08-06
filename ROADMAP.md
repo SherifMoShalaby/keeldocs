@@ -1,8 +1,11 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-05.** Published: **`keeldocs@0.3.0` on npm** — `latest` — built by
+**As of 2026-08-06.** Published: **`keeldocs@0.4.0` on npm** — `latest` — built by
 `release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
-provenance attestation and no publish token anywhere. 3-OS CI green including
+provenance attestation and no publish token anywhere. Verified cold from the
+registry, not from the workflow log: 127 files, attestation naming
+`refs/tags/v0.4.0`, and each of the six behaviour changes reproduced against the
+published tarball on a repository built for the purpose. 3-OS CI green including
 `action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
 runs before it and fixed the same day (§4 item 6) · 175 unit tests · 39 extractor goldens · 92 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
@@ -109,7 +112,7 @@ through `11`). The constraints are where the honest scoring lives.
 ### v0.1 — the loop, proven on one ecosystem
 
 Everything in the v0.1 scope table shipped. It is tagged `v0.1.0-rc.1`. The line
-that ships to users is now stable `0.3.0` on npm, so promoting the v0.1 tag is a
+that ships to users is now stable `0.4.0` on npm, so promoting the v0.1 tag is a
 bookkeeping decision rather than a blocked one.
 
 | Item | Status |
@@ -474,10 +477,10 @@ status line — just in the document that records them.
     | Run | keeldocs | Agents | Result |
     |---|---|---|---|
     | 2026-08-03 | `0.2.0-rc.4` | Claude Code 2.1.220, Codex 0.146.0 (Cursor absent) | **2 of 3, gate cleared** |
-    | *owed* | `0.3.0` published build, installed with the shipped `keeldocs skills install` | same, plus Cursor if a trustworthy install path exists | — |
+    | *owed* | `0.4.0` published build, installed with the shipped `keeldocs skills install` | same, plus Cursor if a trustworthy install path exists | — |
 
     The owed run is not a formality: E7 ran against `rc.4` and a hand-written
-    installer, and both have changed. The tree is `0.3.0` and the installer users
+    installer, and both have changed. The tree is `0.4.0` and the installer users
     actually get is `src/skillscmd.js`, which did not exist when E7 passed. Until
     that run happens, the honest form of the claim is "measured once, on an
     earlier build, with a different installer".
