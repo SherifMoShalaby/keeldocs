@@ -138,8 +138,12 @@ test("a hash algorithm the engine cannot compare is unverified, never clean", ()
   const state = (region) => evaluate({ anchors: [], regions: [region], factsById: facts,
     capabilities: CAPS_OK, journal: NO_JOURNAL }).findings[0];
 
-  // control: the same region with a comparable, matching hash is clean...
-  assert.equal(state(mk({ hash: display(cur) })).state, "clean");
+  // control: the same region with comparable, matching hashes is clean. It
+  // carries BOTH attributes because that is what `init` writes and what
+  // `patchRegion` restores - a gen region holding one of them is the half-checked
+  // case pinned further down, and using that shape as the control asserted the
+  // defect as if it were the baseline.
+  assert.equal(state(mk({ hash: display(cur), content: display(contentHash("b")) })).state, "clean");
   // ...and with a comparable, non-matching one it is stale. Both ends pinned, so
   // the case below cannot pass by the region simply never being evaluated.
   assert.equal(state(mk({ hash: "h1:0000000000000000" })).state, "stale");
@@ -162,6 +166,28 @@ test("a hash algorithm the engine cannot compare is unverified, never clean", ()
 
   // the hashless case keeps its own reason, so the receipt says which it was
   assert.equal(state(mk({})).reason, "no-recorded-hash");
+
+  // EITHER attribute missing, not only both. They record different things -
+  // `content` is the tamper check, `hash` is the fact check - so a gen region
+  // carrying one has had half of itself compared and the skipped half reports
+  // nothing. Measured through the CLI before this was written: deleting `hash=`
+  // from a genuinely drifted section took it from `stale` exit 1 to `clean`
+  // exit 0, with `sync` answering NOTHING_TO_SYNC, so there was no way back
+  // either. One attribute is what a badly resolved merge removes.
+  const onlyHash = state(mk({ hash: display(cur) }));
+  assert.equal(onlyHash.state, "unverified", "a gen region with no content= is not tamper-checked");
+  assert.equal(onlyHash.reason, "no-recorded-hash");
+  const onlyContent = state(mk({ content: display(contentHash("b")) }));
+  assert.equal(onlyContent.state, "unverified", "a gen region with no hash= is not fact-checked");
+  // and the stronger verdicts still win: a half-recorded region that IS caught
+  // reports the drift rather than being softened to `unverified`.
+  assert.equal(state(mk({ hash: "h1:0000000000000000" })).state, "stale");
+  assert.equal(state(mk({ content: "h1:0000000000000000" })).state, "tampered");
+
+  // slots are a different loop and legitimately carry no content= at all: prose
+  // is not engine-generated, so there is nothing to tamper-check. They must not
+  // be swept up by the rule above.
+  assert.equal(state(mk({ kind: "slot", hash: display(cur) })).state, "clean");
 });
 
 test("every unverified finding has a proposal that clears it", async () => {

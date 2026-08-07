@@ -233,9 +233,6 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
     // render as keeldocs-managed: the same wrong content reports `stale` with a
     // hash and `clean` without one, exit 0. `patchRegion` already inserts both
     // attributes when they are absent, so one `sync` converges this.
-    if (region.hash === undefined && region.content === undefined) {
-      add({ ...base, state: "unverified", reason: NO_RECORDED_HASH }); continue;
-    }
     if (region.hash !== undefined) {
       const cur = aggregateHash(bs.ids, factsById);
       const cmp = hashesMatch(region.hash, cur);
@@ -244,6 +241,20 @@ export function evaluate({ anchors, regions, factsById, capabilities, journal })
         if (rejectedAt && rejectedAt === display(cur)) { add({ ...base, state: "held", detail: "regenerate proposal rejected for this fact state" }); continue; }
         add({ ...base, state: "stale", currentHash: cur.slice(0, 19), recorded: region.hash }); continue;
       }
+    }
+    // EITHER attribute absent, not both. The two record different things -
+    // `content` is the tamper check, `hash` is the fact check - so a region
+    // carrying one of them has had exactly half of itself compared, and the half
+    // that was skipped is the half that reports nothing. 0.4.1 caught the case
+    // where both are gone and left this one: deleting `hash=` alone took a
+    // genuinely drifted section from `stale` exit 1 to `clean` exit 0, and
+    // deleting `content=` alone does the same for a hand-edited body. Both are
+    // one attribute from a bad merge, and `clean` is a claim about a comparison
+    // that never happened. The checks above still run first, so a region that IS
+    // caught still reports `stale` or `tampered` rather than being softened to
+    // `unverified` - this only replaces the fall-through.
+    if (region.hash === undefined || region.content === undefined) {
+      add({ ...base, state: "unverified", reason: NO_RECORDED_HASH }); continue;
     }
     add({ ...base, state: "clean" });
   }
