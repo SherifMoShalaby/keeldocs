@@ -19,7 +19,7 @@ import { resolveClaims, parsePins } from "./resolve.js";
 import { loadExternalProviders, orderEntries } from "./providers.js";
 import { refusalOf, loadLock, parseTrustedKeys } from "./trust.js";
 import { REGISTRY, REGISTRY_ERROR, ENGINE_VERSION } from "./registry.js";
-import { repoFiles, resolveInputs, buildView, globToRegExp } from "./scope.js";
+import { repoFiles, resolveInputs, buildView, pathScope } from "./scope.js";
 import { minimalRootPlan, STAGE } from "./minroot.js";
 import { cacheEnabled, clearHandoff, extractKey, fileDigest, hashAll, hashInputs, inputsUnmoved, loadPerFile,
          readEntry, savePerFile, uncacheableReason, writeEntry, writeHandoff } from "./cache.js";
@@ -898,7 +898,6 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
   // needs it to find manifests, and D1's cache needs it to know what each
   // provider could have read. Three consumers, one traversal.
   // KEEL-30: compiled once per extraction, not per fact.
-  const denyPaths = excludePaths.map(globToRegExp);
   let scopedOut = 0;
   // Nested checkouts join the path scope. The walk already refuses to enter one,
   // which keeps it out of detection and out of the sandbox view; this keeps its
@@ -906,7 +905,15 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
   // walks the tree itself and finds it regardless.
   const nested = [];
   const allFiles = repoFiles(repoRoot, excludePaths, nested);
-  for (const n of nested) denyPaths.push(globToRegExp(`${n}/**`), globToRegExp(n));
+  // ONE matcher, shared with the walk that just ran and with the doc sweep, so
+  // the scope cannot mean one thing to the traversal and another to the fact
+  // set. It matched the string only, which is why `exclude-paths = ["vendor"]`
+  // pruned the directory here and matched none of the `vendor/…` FILES a fact
+  // cites: the loudest half of the setting applied and the advertised half did
+  // not. `pathScope` matches a path and everything under it, so a nested
+  // checkout no longer needs its own `<n>/**` twin either.
+  const outOfScope = pathScope([...excludePaths, ...nested]);
+  const scoped = excludePaths.length > 0 || nested.length > 0;
   let scope = null;
   if (SANDBOX === "rofs") {
     const engineRel = toPosix(relative(repoRoot, ENGINE_ROOT));
@@ -1184,9 +1191,9 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
           + `missing ${missing.length ? missing.join(", ") : "an identifier"}`, file: null });
         continue;
       }
-      if (denyPaths.length) {
+      if (scoped) {
         const src = f.provenance?.source ?? [];
-        const kept = src.filter((s) => !s.file || !denyPaths.some((re) => re.test(toPosix(s.file))));
+        const kept = src.filter((s) => !s.file || !outOfScope(toPosix(s.file)));
         if (src.length && !kept.length) { scopedOut++; continue; }
         if (kept.length !== src.length) f.provenance = { ...f.provenance, source: kept };
       }

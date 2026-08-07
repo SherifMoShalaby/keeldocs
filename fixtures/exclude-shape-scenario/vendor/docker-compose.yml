@@ -1,0 +1,10 @@
+# The only compose file in the tree, so `services-topology` is `ok` when nothing
+# is excluded and `absent` the moment `vendor` is - which is what makes provider
+# DETECTION observable from the envelope. The one service is external
+# (`image:`), so it is deliberately not a coverage surface: the coverage numbers
+# in this fixture move for env vars only.
+services:
+  cache:
+    image: redis:7
+    ports:
+      - "6379:6379"

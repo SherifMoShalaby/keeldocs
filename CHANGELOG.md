@@ -47,6 +47,30 @@ That last row is the proof it was an artefact rather than a decision: naming
 `docs/golden` as the scan root always read it, because the skip applied to the
 recursion and never to the root itself.
 
+**And two more, in a third batch, in the one setting a user writes to make the
+engine look away.** `[providers] exclude-paths` is a single line of config
+compiled twice: the repo walk tests its patterns against every entry it meets
+INCLUDING directories, so `vendor` prunes the subtree, while the provenance
+filter tests the same patterns against FILE paths, where `^vendor$` matches
+nothing. So the two spellings of one intention parted company, and the more
+destructive one was the silent one. Measured on `fixtures/exclude-shape-scenario`
+— one env var read under `vendor/`, one outside it, the tree's only compose file
+under `vendor/`, and an anchored, drifting `vendor/notes.md` — with the published
+`0.4.2` engine and this tree:
+
+| what your `keeldocs.toml` says | 0.4.2 | now |
+|---|---|---|
+| `exclude-paths = ["vendor/**"]` | `0/1 surfaces`, `scopedOut: 1`, the line named | unchanged |
+| `exclude-paths = ["vendor"]`, same tree | `0/2` — `VENDOR_SECRET_KEY` still counted — `services-topology` gone, `meta` carrying neither field | identical to `["vendor/**"]` in every observable |
+| the anchored `vendor/notes.md`, under either | unmentioned, exit 0 | named as excluded, exit 0 |
+| `exclude-paths = ["**/*.md"]` | exit 0 `CLEAN`, `meta` empty, sweep silent repo-wide | exit 0 `CLEAN`, and the document it suppressed named |
+| no exclusion at all (the control) | exit 1 `UNREADABLE`, `vendor/notes.md` named | unchanged |
+
+Exit codes move in neither direction: an excluded tree is a blind spot the user
+chose, and honouring a written scope is the point of having one. What changes is
+that one spelling stops meaning two things, and that a scope which suppressed a
+document says which one.
+
 ### Fixed
 
 - **Detection proved a path and then threw it away.** For `argMode: root` —
@@ -135,9 +159,58 @@ recursion and never to the root itself.
   the six were already read inside a scan root and four were not, which is
   precisely the kind of difference nobody can see from a config file. This
   repository's own `keeldocs.toml` now carries the exclusion that used to be a
-  directory name: without its `fixtures/**` line the sweep reports eleven
-  anchored fixture documents, six of them goldens the name `golden` had made
-  invisible.
+  directory name: without its `fixtures/**` line the sweep reports twelve
+  anchored fixture documents, seven of them under a `golden/` directory, which is
+  the name that had made them invisible. (Two corrections to this sentence, both
+  from re-running the sweep rather than re-reading it: it said eleven documents,
+  and `exclude-shape-scenario` — added below — is the twelfth; and it said six
+  goldens, where the sweep's own output lists seven, every one of which predates
+  the first measurement.)
+
+- **`exclude-paths` was one setting with two meanings, and the louder one was
+  silent.** An exclusion names a path, and a path names its subtree — that
+  sentence had two implementations. `exclude-paths = ["vendor"]` reached three of
+  the four consumers: the directory left provider detection, left `inputs`
+  resolution and left the anchored-doc sweep, so a capability went `ok` → `absent`
+  and a drifting document stopped being reported. It did not reach the fourth.
+  The facts read out of `vendor/` stayed in the coverage denominator, because
+  `^vendor$` does not match `vendor/lib.js` — so the setting did all of its damage
+  and none of its job, and `meta.scopedOut` / `meta.excludePaths` were emitted
+  only when the count was non-zero, which is to say absent in precisely that case.
+
+  One matcher now answers for every consumer: a path is out of scope when it
+  matches, or when any of its ancestor directories does. Two spellings that mean
+  the same thing produce the same fact set, the same capability statuses and the
+  same view — checked through `resolveInputs`, so the claim holds on hosts that
+  build no sandbox view as well as on the ones that do. What deliberately does
+  **not** widen: `fixtures/**` still leaves the `fixtures` entry itself unmatched
+  and prunes its contents one at a time, exactly as before, and a bare
+  `demo.js` is still the file at the repository root and never a basename
+  anywhere in the tree — the harness has pinned that second one since the scope
+  shipped, and it still passes.
+
+- **A scope that suppressed an anchored document said nothing about it.**
+  `exclude-paths` exists to keep `fixtures/` out of the FACTS, and `0.4.2` gave
+  it a second job by scoping the unscanned-document sweep with it. Nothing
+  connects the two: `exclude-paths = ["**/*.md"]` excludes no code whatsoever —
+  `scopedOut` stays 0, every env var is still counted, every provider still
+  runs — and it switched the sweep off across the whole repository, putting the
+  exact `git mv docs handbook` regression `0.4.2` was cut for back with an empty
+  `meta` beside it.
+
+  The scope still wins, because the user wrote it. Every anchored document it
+  suppressed is now named in `data.excludedDocs`, in the full report and on the
+  human channel. It is the `skipped` precedent and not the `unscanned` one: it
+  moves no exit code and enters no count, because a repository that scoped out
+  its examples does not have a problem — but a blind spot the report does not
+  name is indistinguishable from an empty one. `meta.excludePaths` and
+  `meta.scopedOut` are now emitted for a *configured* scope rather than a
+  non-zero count, so `scopedOut: 0` beside a line the user wrote says the thing
+  worth saying: it is not removing what they think it is.
+
+  On this repository the disclosure is twelve documents, eleven of which were
+  already invisible before this change and one of which is the new fixture.
+  `check` on keeldocs itself stays `CLEAN` at exit 0.
 
 - **Three normalizers still discarded every warning a provider sent.**
   `config-surface`, `db-policies` and live `db-schema` hardcoded an empty gap
@@ -163,6 +236,16 @@ recursion and never to the root itself.
   refused. The root twin is the control: it pins what this exact content yields
   (18 endpoints, 3 routes, 2 owned services, 2 policies and 1 rls), so a nested
   gate cannot pass by the nested fixture quietly emptying out.
+
+- A third fixture, `exclude-shape-scenario`, and its whole design is the control.
+  Everything excludable lives under one directory: the env var `VENDOR_SECRET_KEY`
+  read from `vendor/lib.js` and nowhere else, the tree's only compose file at
+  `vendor/docker-compose.yml`, and an anchored, drifting `vendor/notes.md`. So
+  the run with no exclusion at all has to report a fact, an applicable provider
+  and an unread document — which is what stops the two scope spellings from
+  agreeing over an empty directory. Its one service is deliberately `image:`
+  rather than `build:`, so it is not a coverage surface and the coverage numbers
+  in that fixture move for env vars only.
 
 ## 0.4.2 — 2026-08-07
 

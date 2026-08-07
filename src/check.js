@@ -64,6 +64,12 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   // gate that fires on everything is the one people turn off. What it must not
   // do is stay invisible, which is what it did until now.
   const skipped = report.skipped ?? [];
+  // The same treatment for the blind spot the user WROTE. An anchored document
+  // that `[providers] exclude-paths` kept out of the sweep is named and never
+  // counted: honouring a written scope is the point of having one, so this moves
+  // no exit code - but `exclude-paths = ["**/*.md"]` excludes no code whatsoever
+  // and used to disarm the sweep across the whole repository in silence.
+  const excludedDocs = report.excludedDocs ?? [];
   const unreadable = refused.length + unverified + unscanned.length;
   // A refused MARKER is named by document, line and reason; an unverified
   // SECTION was only ever counted. "3 sections are not being checked" without
@@ -134,6 +140,7 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
             // so an uncapped list here could bust a cap it cannot repair
             ...(unscanned.length ? { unscanned: unscanned.slice(0, 20) } : {}),
             ...(skipped.length ? { skipped: skipped.slice(0, 20) } : {}),
+            ...(excludedDocs.length ? { excludedDocs: excludedDocs.slice(0, 20) } : {}),
             ...(unverifiedTop.length ? { unverified: unverifiedTop } : {}),
             ...(upgrades?.length ? { upgrades } : {}) },
     truncated: report.findings.length > top.length,
@@ -172,8 +179,14 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     quarantined.push(...parsed.quarantined);
   }
   // What the scan roots did NOT cover, computed from the same doc list so the
-  // two can never disagree about which documents were read.
-  const unscanned = unscannedAnchoredDocs(repoRoot, docPaths, config.providers["exclude-paths"], skippedDirs);
+  // two can never disagree about which documents were read. `excludedDocs` is
+  // the other half of that answer: an anchored document the user's own
+  // `exclude-paths` suppressed is not a finding - they asked for it - but it is
+  // not clean either, and it was invisible. `["**/*.md"]` excludes no code and
+  // silently restored the whole `git mv docs handbook` regression.
+  const excludedDocs = [];
+  const unscanned = unscannedAnchoredDocs(repoRoot, docPaths, config.providers["exclude-paths"],
+                                          skippedDirs, excludedDocs);
   const skipped = [...new Set(skippedDirs)].sort(); // both walks reach docs/node_modules
 
   const { findings, documented } = evaluate({ anchors, regions, factsById, capabilities, journal });
@@ -211,7 +224,16 @@ function buildReport(repoRoot, ci, config, since, live = false) {
             // report does not name is indistinguishable from a repo that simply
             // has nothing there. Coverage is a ratio; both of its terms have to
             // be legible.
-            ...(scopedOut ? { scopedOut, excludePaths: config.providers["exclude-paths"] } : {}),
+            //
+            // Emitted for a CONFIGURED scope, not for a non-zero count. Keying
+            // it on `scopedOut` meant the two fields vanished in exactly the
+            // cases where the scope did the most damage and the least of what it
+            // advertises: `["vendor"]` removed a provider and an anchored
+            // document while pruning no fact at all, and reported neither field.
+            // `scopedOut: 0` beside a scope the user wrote is information - it
+            // says the line is not doing what they think.
+            ...(config.providers["exclude-paths"].length
+                  ? { scopedOut, excludePaths: config.providers["exclude-paths"] } : {}),
             ...(sinceInfo ? { since: sinceInfo } : {}) },
     // fail closed: a provider failure must surface as TOOL_ERROR exit 2, never
     // as a smaller-but-CLEAN report (this line was missing once - check said
@@ -227,6 +249,7 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     // absent when empty, like `conflicts`, so every clean golden stays byte-stable
     ...(unscanned.length ? { unscanned } : {}),
     ...(skipped.length ? { skipped } : {}),
+    ...(excludedDocs.length ? { excludedDocs } : {}),
     // ADR-003 conflict records ride the full report; absent when empty so
     // conflict-free goldens stay byte-stable
     ...(conflicts?.length ? { conflicts } : {}),
@@ -259,6 +282,9 @@ function humanize(envelope, report, cache = null) {
   }
   for (const u of envelope.data.unverified ?? []) {
     lines.push(`  UNVERIFIED ${u.doc}:${u.line}  ${u.id}  (${u.reason})`);
+  }
+  for (const u of envelope.data.excludedDocs ?? []) {
+    lines.push(`  EXCLUDED  ${u.doc}  (${u.anchors} anchor(s), ${u.regions} region(s) - matched [providers] exclude-paths, so it is not checked)`);
   }
   if (envelope.data.skipped?.length) {
     lines.push(`  NOT READ  ${envelope.data.skipped.join(", ")}  (neither scanned nor swept - name one in [docs] dirs to read it)`);

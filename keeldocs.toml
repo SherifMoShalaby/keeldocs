@@ -31,6 +31,13 @@ disable = ["aspnet", "django", "fastapi", "gin", "rails", "spring", "express", "
 # extraction `--since` diffs against, or the exclusion itself would read as drift.
 # Any repo with fixtures/, examples/, vendor/ or testdata/ has this problem; it
 # was a product gap, not a quirk of this one.
+#
+# An entry excludes the path AND everything under it, which is why `fixtures/**`
+# and `fixtures` are the same line. They were not: the walk tested these patterns
+# against directory names and the provenance filter tested them against file
+# paths, so `fixtures` pruned the directory here while every fact read out of it
+# stayed in the coverage denominator - the loudest half of the setting with none
+# of the advertised half, and `meta.scopedOut` at 0 saying so to nobody.
 exclude-paths = ["fixtures/**", "experiments/**", "scripts/harness.py"]
 
 # This line now carries a second job, and it is worth stating because it used to
@@ -42,9 +49,17 @@ exclude-paths = ["fixtures/**", "experiments/**", "scripts/harness.py"]
 # The sweep no longer skips `golden/`, `dist/` or `coverage/`: they are a
 # repository's own test data and build output, and a repository may document into
 # them. Measured on this tree: without the `fixtures/**` line above, the sweep
-# reports eleven anchored fixture documents, six of them the goldens that name
-# made invisible. With it, none - and the reason is a line in this file instead
-# of a set in src/scope.js.
+# reports twelve anchored fixture documents - eleven when that measurement was
+# first taken, plus `exclude-shape-scenario` - seven of them under a `golden/`
+# directory, which is the name that made them invisible. (This line and the
+# changelog entry beside it both said six; recounted from the sweep's own output,
+# it is seven, and every one of the seven predates the measurement.)
+# With it, none is a FINDING and every one of them is NAMED: an
+# `EXCLUDED` line per document, in `data.excludedDocs` and in the full report,
+# because this line hides them from the tool whose whole claim is that it does
+# not go quiet about documents it stopped reading. The verdict is unmoved; the
+# reason is a line in this file instead of a set in src/scope.js, and now the
+# line's cost is legible on every run.
 #
 # `scripts/harness.py` is in the list for the same reason and is worth naming,
 # because it is a FILE rather than a directory and because it is real project

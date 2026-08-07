@@ -206,8 +206,8 @@ over a dependency tree says so, by path, rather than counting a document it neve
 opened as clean. Outside the scan roots, an anchored document is reported by name
 rather than counted as clean, with three exceptions: those same three trees, a
 path you put in `exclude-paths` (which scopes this sweep as well as the
-providers), and a directory carrying its own `.git`, which is refused as somebody
-else's repository.
+providers, and names every anchored document it kept out), and a directory
+carrying its own `.git`, which is refused as somebody else's repository.
 
 `exclude-paths` is what you want for `fixtures/`, `examples/`, `vendor/` or
 `testdata/`: those directories are real code, so providers extract them, and your
@@ -216,6 +216,15 @@ Disabling the provider is too blunt — you still want your own env vars. A fact
 read from both an excluded and an included path survives with the excluded read
 site dropped, and `check` reports how many facts the scope removed, because a
 blind spot the report does not name is indistinguishable from an empty one.
+
+An entry excludes the path **and everything under it**, so `vendor` and
+`vendor/**` mean the same thing. Paths are repo-relative and never basenames:
+`demo.js` is the file at the root of your repository, not every `demo.js` in it.
+And because the same line also scopes the sweep above, an entry can hide an
+anchored document from `check` without excluding a single line of code —
+`["**/*.md"]` does exactly that — so any anchored document your scope suppressed
+is named in the run that skipped it. Naming it is all that happens: you asked for
+the blind spot, so it is never a finding and never moves the exit code.
 
 ### Live database introspection (opt-in)
 
@@ -239,7 +248,7 @@ Secrets are structurally excluded: env **values** never enter a fact, and every 
 
 `0.4.2`, Apache-2.0. **Upgrading from `0.3.0`, `0.4.0` or `0.4.1`?** `check` can now fail on repositories it used to pass — every such case is one where it was reporting clean while checking nothing. [`CHANGELOG.md`](https://github.com/SherifMoShalaby/keeldocs/blob/main/CHANGELOG.md) has the measured before-and-after table.
 
-`0.4.2`, Apache-2.0. Covered by 191 unit tests, 40 byte-compared extractor goldens and 98 end-to-end harness checks, with double-run determinism gates on Linux and macOS. Windows runs the same matrix and reports rather than gates.
+`0.4.2`, Apache-2.0. Covered by 197 unit tests, 40 byte-compared extractor goldens and 98 end-to-end harness checks, with double-run determinism gates on Linux and macOS. Windows runs the same matrix and reports rather than gates.
 
 Verified at scale: a synthetic 200-package, 1M-line repository extracts and checks end to end inside a 2 GB memory budget. Warm and cold runs produce byte-identical facts, gated on every fixture in the harness. **No speed figure is claimed** — that measurement is not yet trustworthy.
 

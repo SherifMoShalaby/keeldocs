@@ -12,7 +12,7 @@ the file, and three npm/yarn workspace manifests `0.4.1` passes over in silence
 are each named, with a clean single-package manifest still silent on both.
 3-OS CI green including
 `action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
-runs before it and fixed the same day (§4 item 6) · 191 unit tests · 40 extractor goldens · 98 harness checks ·
+runs before it and fixed the same day (§4 item 6) · 197 unit tests · 40 extractor goldens · 98 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -49,6 +49,26 @@ second of them is the point:
 every rails, next, compose and sql-policies fixture in the tree was root-layout,
 so every one of those goldens had been passing against a shape none of them
 contained. See `CHANGELOG.md`.
+
+**Two more the same day, in the one setting a user writes to make the engine
+look away — and this document has stopped numbering them, which is itself worth
+saying.** The ordinals above run to sixteen; the batch after it (seven placements
+of one document, `CHANGELOG.md`'s second table) was never given any, so a reader
+counting from here would undercount. Take the count as *not converging* rather
+than as a number this file can be trusted for. `[providers] exclude-paths` is one
+line of config compiled twice: the repo walk tests its patterns against directory
+names, the provenance filter tests them against file paths. So
+`exclude-paths = ["vendor"]` pruned the directory — `services-topology` went
+`ok` → `absent` and an anchored, drifting document stopped being reported — while
+`VENDOR_SECRET_KEY`, read only from inside it, stayed in the coverage
+denominator, and the two fields that would have said so (`meta.scopedOut`,
+`meta.excludePaths`) were keyed on a count that stayed 0. The second is that
+scoping the `0.4.2` sweep with the same setting handed it a switch nobody meant
+to build: `exclude-paths = ["**/*.md"]` excludes no code at all and restored the
+whole `git mv docs handbook` regression in silence. Both are fixed by one matcher
+shared across all four consumers and by naming every anchored document a scope
+suppressed — never a finding, since the user asked for the blind spot. Six unit
+tests and one fixture whose design is the control. See `CHANGELOG.md`.
 
 The legend at the end of this section defines an **Open** status meaning
 "buildable now and not yet built", and **no row in this document carries it**.
@@ -136,7 +156,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. 34 providers across 10
-capabilities feed 8 document recipes. The engine has 191 unit tests, 40
+capabilities feed 8 document recipes. The engine has 197 unit tests, 40
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
@@ -266,7 +286,7 @@ while the gate rows under its phase are blank.**
 | Recipe migration (`sync --upgrade`) | **Done** | validated retroactively: byte-identical to a delete-and-regenerate, without the delete |
 | Per-glob read scoping | **Done** | `inputs` is now an enforced contract; undeclared files do not exist inside a provider's namespace |
 | Nested checkouts excluded | **Done 2026-08-05** | A directory holding a `.git` entry is a nested repository or a git worktree, and git itself does not track through one. Extraction walked in, so somebody else's code counted as this project's: an agent worktree under `.claude/` put this repository's fixture tree back into its own dogfood and took it from 12 documented surfaces to 32. Applied to the walk *and* to provenance, because the walk alone only bites where a sandbox view is built |
-| Path scope (`[providers] exclude-paths`) | **Done 2026-08-05** | The gap this repo's own `keeldocs.toml` recorded on its first run. `disable` removes a whole provider, which is the wrong shape when `env-readers` legitimately runs and also reads `fixtures/`. Applied to **provenance**, not to the repo walk: a walk filter only bites where the sandbox builds a view, so the same setting would have scoped on Linux and silently done nothing on macOS and Windows. A fact read from both sides survives with the excluded site pruned; `check` reports the count it removed. Dogfooded here — 24 surfaces became 16, all 8 of them fixtures |
+| Path scope (`[providers] exclude-paths`) | **Done 2026-08-05, corrected 2026-08-07** | The gap this repo's own `keeldocs.toml` recorded on its first run. `disable` removes a whole provider, which is the wrong shape when `env-readers` legitimately runs and also reads `fixtures/`. Applied to **provenance** and not only to the repo walk: a walk filter only bites where the sandbox builds a view, so the same setting would have scoped on Linux and silently done nothing on macOS and Windows. A fact read from both sides survives with the excluded site pruned; `check` reports the count it removed. Dogfooded here — 24 surfaces became 16, all 8 of them fixtures. **The correction is that those two halves were compiled from the same patterns by two different rules**: the walk tested them against directory names, provenance against file paths, so `exclude-paths = ["vendor"]` pruned the directory — removing a provider and an anchored document — while every fact read out of it stayed in the coverage denominator, with `meta.scopedOut` at 0 and `meta.excludePaths` absent. One matcher answers for all four consumers now, and an entry means the path and everything under it. See `CHANGELOG.md` |
 | Noise report (`keeldocs noise`) | **Done 2026-08-05** | E9's gate is an accept rate over four weeks across a cohort, and the kill list forbids required telemetry — so the measurement travels by hand or not at all. Counts and rates only, from the journal, gated against leaking any of the document paths, section ids or fact ids the journal is *made of*. No clock: the window anchors on the newest entry, so two people running it on one journal get the same bytes. Invoked by nothing else, and the harness checks that too |
 | `emits:` enforced at extraction | **Done 2026-08-05** | It reached the consent manifest `provider add` prints and stopped there — never entered the registry entry, so a user agreed to a list nothing held the provider to. Now fails closed like a crashed extractor. `prisma` had declared `column` and `relation` since v0.1: attributes of a table fact, not fact types. Capability dispatch became a table at the same time; its last `else` was `schemaFacts`, so an unknown capability was silently normalized as a database schema instead of failing. A record missing a field its fact type needs is now a **named gap and a partial result**: `models: [{fields: []}]` used to produce `fact:db-schema/undefined` with an undefined `name`, and `JSON.stringify` drops undefined keys, so the fact reached the fact file, the golden and the document missing part of itself |
 | Package-scoped fact identity (`pkg:<name>#<cap>/*` binds) | **Done** | monorepo guides are disjoint; editing one package leaves the others byte-identical |
@@ -933,7 +953,7 @@ re-measure the same missing cache on a lumpier tree.
 34 shipped providers across 10 capabilities (workspace-layout, module-graph,
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
-agent skills · 191 unit tests · 40 byte-compared extractor goldens · ~25
+agent skills · 197 unit tests · 40 byte-compared extractor goldens · ~25
 end-to-end integration blocks · 13 ADRs · 16 experiments.
 
 Field deployment: one real production application (Next.js App Router +

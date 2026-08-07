@@ -173,6 +173,15 @@ test("markers inside fences and prose are illustrations, not unscanned documents
 
   // the user's path scope is honoured: an excluded tree is a declared blind spot
   assert.deepEqual(unscannedAnchoredDocs(bare, docPathsOf(bare, ["docs"]), ["notes/**"]), []);
+
+  // ...and declared is not the same as invisible. The scope still wins - the
+  // finding list above is empty - but the anchored document it suppressed is
+  // named, because `exclude-paths` is written to keep fixtures out of the FACTS
+  // and a pattern like `**/*.md` switches this sweep off having excluded no code
+  // at all.
+  const declared = [];
+  assert.deepEqual(unscannedAnchoredDocs(bare, docPathsOf(bare, ["docs"]), ["notes/**"], null, declared), []);
+  assert.deepEqual(declared, [{ doc: "notes/real.md", anchors: 1, regions: 0 }]);
 });
 
 // ---------------------------------------------------------------------------
@@ -330,4 +339,13 @@ test("both walks collect what they declined to enter", (t) => {
   const scoped = [];
   assert.deepEqual(unscannedAnchoredDocs(root, docs, ["vendor/**", "golden/**"], scoped), []);
   assert.deepEqual(scoped, ["docs/node_modules"]);
+
+  // and the third list, which is the one the scope owed: every anchored document
+  // the exclusion suppressed, named. `vendor/node_modules` is in neither - it is
+  // excluded AND a dependency tree, and attributing it twice would say the
+  // engine passed over something the user had already asked it to.
+  const excluded = [], skips = [];
+  assert.deepEqual(unscannedAnchoredDocs(root, docs, ["vendor/**", "golden/**"], skips, excluded), []);
+  assert.deepEqual(excluded, [{ doc: "golden/outside.md", anchors: 1, regions: 1 }]);
+  assert.deepEqual(skips, ["docs/node_modules"]);
 });

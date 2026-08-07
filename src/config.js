@@ -214,7 +214,16 @@ export function docPathsOf(root, dirs, skipped = null) {
 //   * `repoFiles` carries the user's `exclude-paths` scope and the
 //     nested-checkout refusal, so somebody else's committed docs stay somebody
 //     else's problem - and a repo whose examples really are examples has a
-//     written way to say so.
+//     written way to say so. What it did NOT do was say which documents that
+//     cost, and the scope is written for a different purpose entirely: it exists
+//     to keep `fixtures/` out of the FACTS. `exclude-paths = ["**/*.md"]`
+//     excludes no code at all and disarmed this sweep repo-wide - measured, the
+//     same `git mv docs handbook` this function was written for went back to
+//     exit 0 CLEAN with an empty `meta`. So an exclusion still wins, and every
+//     anchored document it suppressed is now NAMED in `excluded`. That is the
+//     `skipped` precedent rather than the `unscanned` one: the user asked for
+//     this blind spot, so it moves no exit code, but a blind spot the report
+//     does not name is indistinguishable from an empty one.
 //   * What it does NOT carry any more is the PROVIDER skip set. It inherited all
 //     six names, so `golden/`, `dist/` and `coverage/` - the user's own test data
 //     and build output - were unswept as silently as `node_modules`, and an
@@ -225,16 +234,34 @@ export function docPathsOf(root, dirs, skipped = null) {
 // No git, deliberately: `check` is a pure function of the TREE, and gating this
 // on `git ls-files` would make the same bytes answer differently depending on
 // the index - and go vacuously silent in every non-git fixture.
-export function unscannedAnchoredDocs(root, docPaths, excludePaths = [], skipped = null) {
+// `excluded`, when given an array, collects the same record for every anchored
+// document the user's own scope suppressed. Asking for it is what makes the walk
+// descend into an excluded directory at all, so a caller that does not want the
+// disclosure pays nothing for it. A document inside a `[docs] dirs` scan root is
+// read whatever the scope says - the scan roots have always won - so it is
+// neither swept nor disclosed here; it is simply checked.
+export function unscannedAnchoredDocs(root, docPaths, excludePaths = [], skipped = null, excluded = null) {
   const scanned = new Set(docPaths);
   const out = [];
-  for (const rel of repoFiles(root, excludePaths, null, { skipDir: docSkip, skipped })) {
-    if (!rel.endsWith(".md") || scanned.has(rel)) continue;
+  const byScope = excluded ? [] : null;
+  const anchored = (rel) => {
     let parsed;
     try { parsed = parseDoc(readFileSync(join(root, rel), "utf8"), rel); }
-    catch { continue; } // unreadable file: not this function's finding
-    if (parsed.anchors.length + parsed.regions.length === 0) continue;
-    out.push({ doc: rel, anchors: parsed.anchors.length, regions: parsed.regions.length });
+    catch { return null; } // unreadable file: not this function's finding
+    if (parsed.anchors.length + parsed.regions.length === 0) return null;
+    return { doc: rel, anchors: parsed.anchors.length, regions: parsed.regions.length };
+  };
+  const byDoc = (a, b) => (a.doc < b.doc ? -1 : a.doc > b.doc ? 1 : 0);
+  for (const rel of repoFiles(root, excludePaths, null, { skipDir: docSkip, skipped, denied: byScope })) {
+    if (!rel.endsWith(".md") || scanned.has(rel)) continue;
+    const rec = anchored(rel);
+    if (rec) out.push(rec);
   }
-  return out.sort((a, b) => (a.doc < b.doc ? -1 : a.doc > b.doc ? 1 : 0));
+  for (const rel of byScope ?? []) {
+    if (!rel.endsWith(".md") || scanned.has(rel)) continue;
+    const rec = anchored(rel);
+    if (rec) excluded.push(rec);
+  }
+  excluded?.sort(byDoc);
+  return out.sort(byDoc);
 }

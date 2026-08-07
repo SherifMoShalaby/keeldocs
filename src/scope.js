@@ -117,6 +117,45 @@ export function globToRegExp(glob) {
   return new RegExp("^" + re + "$");
 }
 
+// ---------- the user's path scope, asked as ONE question ----------
+//
+// `[providers] exclude-paths` names a PATH, and a path names its subtree. That
+// sentence had two implementations and they disagreed. The walk below tests the
+// patterns against every entry it meets INCLUDING directories, so `vendor`
+// pruned the whole subtree; the provenance filter in src/facts.js tests the same
+// patterns against FILE paths, where `^vendor$` matches nothing at all. So a
+// bare directory name reached three of the four consumers - it removed the
+// directory from provider detection, from `inputs` resolution and from the
+// anchored-doc sweep - while the facts read out of it were still counted, and
+// `meta.scopedOut` stayed 0, which is the field that would have said so.
+// Measured on `fixtures/exclude-shape-scenario`: `["vendor"]` reported
+// `0/2 surfaces documented` with `VENDOR_SECRET_KEY` still in the denominator
+// and `services-topology` gone, where `["vendor/**"]` reported `0/1` and named
+// the scope. One spelling, two meanings, and the more destructive one was the
+// silent one.
+//
+// One matcher now answers for every consumer: a path is out of scope when the
+// path itself matches, or when ANY of its ancestor directories does. That is
+// the walk's semantics - the one a user writing `vendor` is asking for - applied
+// everywhere instead of in the one place a directory name is visible.
+//
+// What it deliberately does NOT do is widen a pattern that was already about
+// files. `fixtures/**` still leaves the `fixtures` directory itself unmatched
+// and prunes its contents one by one, exactly as before; `demo.js` still means
+// the file at the repository root and never a basename anywhere in the tree.
+export function pathScope(patterns) {
+  const res = (patterns ?? []).map(globToRegExp);
+  if (!res.length) return () => false;
+  return (rel) => {
+    if (res.some((re) => re.test(rel))) return true;
+    for (let i = rel.indexOf("/"); i !== -1; i = rel.indexOf("/", i + 1)) {
+      const ancestor = rel.slice(0, i);
+      if (res.some((re) => re.test(ancestor))) return true;
+    }
+    return false;
+  };
+}
+
 // The literal directory prefix before the first wildcard - what a walk can be
 // anchored to, and what makes `dir/` cheap.
 function baseOf(glob) {
@@ -154,18 +193,30 @@ function baseOf(glob) {
 // the user scoped out is attributed to the line they wrote rather than counted
 // as an engine skip - it changes which list a directory lands in, never which
 // files come back.
+// `denied`, when given an array, turns the exclusion from a prune into a
+// CLASSIFICATION: excluded files land in it instead of in the result, and the
+// walk descends into an excluded directory to find them. Only the doc sweep asks
+// for this, because it is the one consumer that has something to say about what
+// the scope removed - an anchored document nobody is checking. With the
+// collector absent (extraction, `inputs` resolution, every existing caller) the
+// walk short-circuits exactly where it always did and returns the same list.
+// Inside an excluded subtree `skipDir` still applies but never NAMES: a
+// dependency tree under a directory the user scoped out is attributed to the
+// line the user wrote, not reported as an engine skip.
 export function repoFiles(root, exclude = [], nested = null,
-                          { skipDir = (name) => (SKIP_DIRS.has(name) ? "silent" : null), skipped = null } = {}) {
-  const deny = exclude.map(globToRegExp);
+                          { skipDir = (name) => (SKIP_DIRS.has(name) ? "silent" : null),
+                            skipped = null, denied = null } = {}) {
+  const outOfScope = pathScope(exclude);
   const out = [];
-  const walk = (dir, rel) => {
+  const walk = (dir, rel, inDenied) => {
     let names;
     try { names = readdirSync(dir).sort(); } catch { return; }
     for (const name of names) {
       const r = rel ? `${rel}/${name}` : name;
-      if (deny.some((re) => re.test(r))) continue;
+      const excluded = inDenied || outOfScope(r);
+      if (excluded && !denied) continue;
       const why = skipDir(name, r);
-      if (why) { if (why === "named") skipped?.push(r); continue; }
+      if (why) { if (why === "named" && !excluded) skipped?.push(r); continue; }
       const abs = join(dir, name);
       let st;
       try { st = statSync(abs); } catch { continue; } // broken symlink
@@ -176,12 +227,12 @@ export function repoFiles(root, exclude = [], nested = null,
       // tree back into its own dogfood and took it from 12 documented surfaces
       // to 32. `.git` is a FILE in a linked worktree and a directory in a clone,
       // so both forms are checked.
-      if (st.isDirectory() && existsSync(join(abs, ".git"))) { nested?.push(r); continue; }
-      if (st.isDirectory()) walk(abs, r);
-      else if (st.isFile()) out.push(r);
+      if (st.isDirectory() && existsSync(join(abs, ".git"))) { if (!excluded) nested?.push(r); continue; }
+      if (st.isDirectory()) walk(abs, r, excluded);
+      else if (st.isFile()) (excluded ? denied : out).push(r);
     }
   };
-  walk(root, "");
+  walk(root, "", false);
   return out;
 }
 
