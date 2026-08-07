@@ -50,6 +50,27 @@ Measured, `0.4.1` versus this tree:
   the `["docs"]` default stays optional, so a greenfield repository with no
   `docs/`, no `keeldocs.toml` and no anchors still runs and still exits 0.
 
+- **A workspace whose members keeldocs could not resolve reported as a
+  single-package repository.** `workspace-layout` counts a declared member only
+  when it carries a `package.json` — which is what pnpm itself requires, so the
+  drop is right and inventing a package for the others would be a guess. Dropping
+  them *silently* is what was wrong. Measured on a pnpm workspace declaring three
+  members across two patterns, of which one is a Python package and one a Go
+  module: one package reported, and because the system-map renderer writes no
+  Packages section for a single-package repo, no generated document mentioned the
+  workspace at all. Two shapes were quieter still — a tab character where the YAML
+  wants spaces, and a valid manifest carrying no `packages:` key — each of which
+  reported `manager: single`, one package, and no error of any kind.
+
+  The provider now names every declared member it declined to resolve, every
+  manifest it could not parse and every manifest that declares no members; the
+  normalizer that hardcoded `gaps: []`, and so could not have carried them
+  anyway, passes them through. These are extraction gaps and not drift: the exit
+  code does not move, the fact set is unchanged, and nothing is guessed on your
+  behalf. What changes is that the gap count now appears beside coverage in
+  `check`'s summary and each gap is named, with its directory or manifest, in the
+  full report and in the `init` report.
+
 ## 0.4.1 — 2026-08-06
 
 **Three more of the case `0.4.0` was cut for, and all three were in the tree

@@ -287,6 +287,16 @@ MATRIX = [
         "golden": "fixtures/compose-scenario/golden/workspace-layout.json",
     },
     {
+        # The one workspace golden that is NOT invariant under suppressing the
+        # gap emission. The other five are single-package or fully-resolved
+        # trees, so a provider that reported nothing it dropped reproduced all
+        # five byte-for-byte - the gate could not have failed.
+        "name": "pnpm-mixed-scenario / workspace-layout (declared members it cannot resolve are named)",
+        "cmd": [sys.executable, "providers/workspace-layout/auto/extract_workspace.py",
+                "fixtures/pnpm-mixed-scenario"],
+        "golden": "fixtures/pnpm-mixed-scenario/golden/workspace-layout.json",
+    },
+    {
         "name": "compose-scenario / services-topology",
         "cmd": [sys.executable, "providers/services-topology/compose/extract_compose.py",
                 "fixtures/compose-scenario"],
@@ -757,6 +767,79 @@ def main():
         print("  PASS  system-map integration: owned/external topology, born-clean, drift loop, verbatim ${VAR}")
     except Exception as e:
         failures.append(f"system-map integration: {why(e)}")
+
+    # ---- workspace layout: three silent collapses, now named end-to-end ----
+    # Asserted through the CLI, not at extractor stdout, because the extractor
+    # was never the whole defect: `packageFacts` hardcoded `gaps: []`, so even a
+    # provider that reported its drops would have had them thrown away between
+    # the process boundary and the report. Only init and check can see both
+    # halves. Named kinds, never a total gap count - other providers legitimately
+    # report their own (a non-git copy costs one) and a count would tie this gate
+    # to them.
+    try:
+        import shutil, tempfile
+        tmp = tempfile.mkdtemp(prefix="keeldocs-wsdrop-")
+        dst = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(ROOT, "fixtures", "pnpm-mixed-scenario"), dst,
+                        ignore=shutil.ignore_patterns("golden", ".keeldocs"))
+        wsy = os.path.join(dst, "pnpm-workspace.yaml")
+        facts_file = os.path.join(dst, ".keeldocs", "cache", "facts", "workspace-layout.jsonl")
+
+        def layout():
+            return [json.loads(l)["payload"]["attrs"]
+                    for l in open(facts_file, encoding="utf-8") if l.strip()]
+
+        def check_gaps():
+            """`check --ci --json` -> (envelope, the gaps its full report names).
+            --ci is the mode CI actually runs, and the one whose clock is HEAD's."""
+            r = kd(dst, "check", "--ci", "--json")
+            e = json.loads(r.stdout)
+            # An extraction gap must never move the verdict: it says the answer is
+            # incomplete, not that the documentation is wrong.
+            assert r.returncode == 0 and e["code"] == "CLEAN", (r.returncode, r.stdout[:300])
+            assert "extraction gap(s)" in e["summary"], e["summary"]
+            full = json.load(open(os.path.join(dst, *e["full"].split("/")), encoding="utf-8"))
+            return e, {(g["kind"], g["file"]) for g in full.get("extractionGaps", [])}
+
+        # collapse 1: three declared members, one resolvable. The COLLAPSE still
+        # happens - pnpm would not call a package.json-less directory a member
+        # either, and guessing one is the lie this project exists to avoid. What
+        # must not happen is the collapse being invisible.
+        r = kd(dst, "init", "--yes", "--json")
+        env_ = json.loads(r.stdout)
+        assert r.returncode == 0 and env_["code"] == "INITIALIZED", r.stdout[:300]
+        rep = json.load(open(os.path.join(dst, ".keeldocs", "out", "init-nogit.json"), encoding="utf-8"))
+        dropped = {g["file"] for g in rep.get("extractionGaps", [])
+                   if g["kind"] == "workspace-member-unresolved"}
+        assert dropped == {"services/api", "services/worker"}, dropped
+        _e, gaps_ = check_gaps()
+        assert {("workspace-member-unresolved", "services/api"),
+                ("workspace-member-unresolved", "services/worker")} <= gaps_, sorted(gaps_)
+        attrs = layout()
+        assert len(attrs) == 1 and attrs[0]["manager"] == "pnpm", attrs
+
+        # collapse 2: one tab instead of two spaces. The manifest does not parse,
+        # and the repo used to report manager:single, one package, no error - a
+        # whole workspace erased by one byte, exactly like the drift marker that
+        # one byte turned off.
+        W(wsy, 'packages:\n\t- "apps/*"\n')
+        _e, gaps_ = check_gaps()
+        assert ("workspace-manifest-unparsed", "pnpm-workspace.yaml") in gaps_, sorted(gaps_)
+        attrs = layout()
+        assert len(attrs) == 1 and attrs[0]["manager"] == "single", attrs
+
+        # collapse 3: a valid manifest that declares no members at all
+        W(wsy, "onlyBuiltDependencies:\n  - esbuild\n")
+        _e, gaps_ = check_gaps()
+        assert ("workspace-no-packages-declared", "pnpm-workspace.yaml") in gaps_, sorted(gaps_)
+        assert not [k for k, _f in gaps_ if k == "workspace-member-unresolved"], sorted(gaps_)
+        attrs = layout()
+        assert len(attrs) == 1 and attrs[0]["manager"] == "single", attrs
+        rmtree(tmp)
+        print("  PASS  workspace-layout gaps: polyglot members, unparseable manifest and a memberless "
+              "manifest each named in init and check --ci, verdict still CLEAN")
+    except Exception as e:
+        failures.append(f"workspace-layout gap integration: {why(e)}")
 
     # ---- symbol identity + S1b re-anchoring: the ADR-007 loop on `ds` anchors ----
     try:

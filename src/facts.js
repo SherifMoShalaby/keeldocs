@@ -693,7 +693,16 @@ function packageFacts(raw, provenanceBase) {
       provenance: { ...provenanceBase, source: raw.file ? [{ file: raw.file }] : [] },
     });
   }
-  return { facts, gaps: [] };
+  // `gaps: []` was hardcoded here, so workspace-layout was structurally
+  // incapable of reporting anything it could not resolve - the same defect
+  // class as the db-schema normalizer that discarded `raw.warnings`. It made
+  // the collapse to a single package total: a pnpm workspace declaring three
+  // members reported one, an unparseable pnpm-workspace.yaml reported a
+  // single-package repo, and both looked exactly like the truth from the
+  // report, the coverage ratio and the rendered docs. Extraction gaps do not
+  // move the exit code; a blind spot nobody is told about does worse than that.
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? w.reason ?? "unspecified", file: w.file ?? null }));
+  return { facts, gaps };
 }
 
 function serviceFacts(raw, provenanceBase) {

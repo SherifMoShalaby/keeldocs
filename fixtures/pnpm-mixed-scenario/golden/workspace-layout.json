@@ -1,0 +1,20 @@
+{
+ "manager": "pnpm",
+ "file": "pnpm-workspace.yaml",
+ "packages": [
+  {
+   "name": "@mixed/web",
+   "path": "apps/web"
+  }
+ ],
+ "warnings": [
+  {
+   "kind": "workspace-member-unresolved",
+   "file": "services/api"
+  },
+  {
+   "kind": "workspace-member-unresolved",
+   "file": "services/worker"
+  }
+ ]
+}
