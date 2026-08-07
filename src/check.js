@@ -12,7 +12,7 @@ import { loadJournal, effective, noiseStats } from "./journal.js";
 import { extractAll } from "./facts.js";
 import { evaluate, coverage, classifySelfCaused } from "./drift.js";
 import { planUpgrade } from "./upgrade.js";
-import { loadConfig, docPathsOf, extractOpts } from "./config.js";
+import { loadConfig, docPathsOf, extractOpts, unscannedAnchoredDocs } from "./config.js";
 import { toPosix } from "./paths.js";
 import { changedFilesSince, changedFactsSince } from "./gitx.js";
 import { ENGINE_VERSION } from "./registry.js";
@@ -54,7 +54,11 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   // it should decline to headline, so UNREADABLE outranks DRIFT_FOUND.
   const refused = report.quarantined ?? [];
   const unverified = report.counts.unverified ?? 0;
-  const unreadable = refused.length + unverified;
+  // A document that is anchored and outside every scan root belongs to this
+  // family and not to DRIFT_FOUND: its sections are not clean, they are not
+  // checked, and the drift count for the run was computed without them.
+  const unscanned = report.unscanned ?? [];
+  const unreadable = refused.length + unverified + unscanned.length;
   // A refused MARKER is named by document, line and reason; an unverified
   // SECTION was only ever counted. "3 sections are not being checked" without
   // saying which three is a finding the user cannot act on - and the count alone
@@ -95,10 +99,19 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   const covTxt = (report.coverage.pct === null ? "no facts" : `${report.coverage.documented}/${report.coverage.total} surfaces documented (${report.coverage.pct}%)`)
     + (gapCount ? `; ${gapCount} extraction gap(s) - see the full report` : "");
   const sinceTxt = report.meta.since ? `; ${c.selfCaused ?? 0} caused since ${report.meta.since.ref}` : "";
+  // Each term appears only when it is non-zero, and the scan-root term NAMES
+  // documents: "1 anchored doc(s) outside every scan root" without saying which
+  // one is the same unactionable count that let `rebaseline` hide, and the fix
+  // (which directory to add to `[docs] dirs`) is not derivable from a number.
+  const unreadableParts = [
+    ...(unscanned.length ? [`${unscanned.length} anchored doc(s) outside every scan root, unchecked (${unscanned.slice(0, 3).map((u) => u.doc).join(", ")}${unscanned.length > 3 ? ", ..." : ""}; add to [docs] dirs)`] : []),
+    ...(refused.length ? [`${refused.length} unparseable marker(s)`] : []),
+    ...(unverified ? [`${unverified} section(s) the engine cannot verify`] : []),
+  ];
   const summary = report.toolError
     ? `tooling error: ${report.toolError}`.slice(0, 300)
     : unreadable
-    ? `${refused.length} unparseable marker(s) and ${unverified} section(s) the engine cannot verify - no drift verdict for this run; repair them, then re-run`.slice(0, 300)
+    ? `${unreadableParts.join("; ")} - no drift verdict for this run; fix them, then re-run`.slice(0, 300)
     : `${c.driftTotal} drift finding(s) [stale ${c.stale ?? 0}, dead ${c.dead ?? 0}, tampered ${c.tampered ?? 0}]${sinceTxt} across ${report.meta.docsScanned} doc(s); ${c.clean ?? 0} clean; ${covTxt}`.slice(0, 300);
 
   const top = report.findings.filter((f) => DRIFT_STATES.has(f.state)).slice(0, 20)
@@ -111,6 +124,9 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
     v: 1, ok: exit === 0, code, summary,
     data: { counts: c, coverage: report.coverage, noise: report.noise, top,
             ...(refused.length ? { refused: refused.slice(0, 20) } : {}),
+            // capped like `refused`: the 8KB trimmer only shrinks `data.top`,
+            // so an uncapped list here could bust a cap it cannot repair
+            ...(unscanned.length ? { unscanned: unscanned.slice(0, 20) } : {}),
             ...(unverifiedTop.length ? { unverified: unverifiedTop } : {}),
             ...(upgrades?.length ? { upgrades } : {}) },
     truncated: report.findings.length > top.length,
@@ -142,6 +158,9 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     regions.push(...parsed.regions);
     quarantined.push(...parsed.quarantined);
   }
+  // What the scan roots did NOT cover, computed from the same doc list so the
+  // two can never disagree about which documents were read.
+  const unscanned = unscannedAnchoredDocs(repoRoot, docPaths, config.providers["exclude-paths"]);
 
   const { findings, documented } = evaluate({ anchors, regions, factsById, capabilities, journal });
   const cov = coverage(factsById, documented);
@@ -191,6 +210,8 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     capabilities, counts, findings, coverage: cov,
     noise: noiseStats(rawJournal, nowIso), upgrades,
     quarantined, extractionGaps: gaps,
+    // absent when empty, like `conflicts`, so every clean golden stays byte-stable
+    ...(unscanned.length ? { unscanned } : {}),
     // ADR-003 conflict records ride the full report; absent when empty so
     // conflict-free goldens stay byte-stable
     ...(conflicts?.length ? { conflicts } : {}),
@@ -217,6 +238,9 @@ function humanize(envelope, report, cache = null) {
   for (const f of envelope.data.top ?? []) {
     lines.push(`  ${f.state.toUpperCase().padEnd(9)} ${f.doc}:${f.line}  ${f.id}${f.missing ? `  (missing: ${f.missing.join(", ")})` : ""}`);
     if (f.candidates?.length) lines.push(`            candidates: ${f.candidates.join(", ")}`);
+  }
+  for (const u of envelope.data.unscanned ?? []) {
+    lines.push(`  UNSCANNED ${u.doc}  (${u.anchors} anchor(s), ${u.regions} region(s) - outside every [docs] dirs scan root)`);
   }
   for (const u of envelope.data.unverified ?? []) {
     lines.push(`  UNVERIFIED ${u.doc}:${u.line}  ${u.id}  (${u.reason})`);

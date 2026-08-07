@@ -1,5 +1,55 @@
 # Changelog
 
+## Unreleased
+
+**A tenth and eleventh member of the same class, and this pair retires the whole
+repository rather than one section.** Every case in `0.4.0` and `0.4.1` was a
+marker or a file the engine skipped inside documentation it was reading. These
+two are about which documentation it reads at all.
+
+Measured, `0.4.1` versus this tree:
+
+| what your repository contains | 0.4.1 | now |
+|---|---|---|
+| anchored `.md` files outside every `[docs] dirs` scan root | `CLEAN`, exit 0 | `UNREADABLE`, exit 1, each file named |
+| a `[docs] dirs` entry naming a directory that does not exist | `CLEAN`, exit 0 | `CONFIG`, exit 2 |
+
+### Fixed
+
+- **`git mv docs handbook` silently retired a whole repository from drift
+  detection.** `[docs] dirs` defaults to `["docs"]` and nothing outside the
+  configured roots is ever read — correct, and completely silent. Measured on
+  this project: after the rename, five committed markers were still tracked, every
+  anchor still real, and `check` still reported `CLEAN` and exited 0 while
+  checking none of them. One `mv`, one PR, no warning; the documents go on being
+  wrong and the tool that exists to say so says nothing.
+
+  `check` now sweeps the rest of the tree and reports any document that is
+  anchored and unread, under `UNREADABLE` — because such sections are not clean,
+  they are not checked, and the drift count for the run was computed without
+  them. Each file is named in `data.unscanned` and in the summary, with the
+  directory to add to `[docs] dirs`, since a count nobody can act on is not a
+  finding.
+
+  It fires on real structure only — parsed anchors and regions, never a
+  quarantined marker — and it reuses the anchor parser, so fenced illustrations
+  stay silent. Both are load-bearing: this repository's own `CLAUDE.md`,
+  `AGENTS.md` and `skills/keeldocs-core/SKILL.md` each mention
+  `<!-- keeldocs:gen -->` in an inline code span, and a sweep that flagged those
+  would go red on its own dogfood for three sentences of prose. The sweep honours
+  `[providers] exclude-paths` and refuses to enter nested checkouts, so a vendored
+  repository's documents stay somebody else's. No git and no clock: it is the same
+  pure function of the tree the rest of `check` is.
+
+- **A scan root that does not exist was a quieter run, not an error.** `dirs =
+  ["docz"]` loaded, scanned nothing, and — because `README.md` is always scanned —
+  reported `CLEAN` with a summary reading `across 1 doc(s)`, which looks like an
+  answer. It is now a `CONFIG` error at exit 2, the same treatment `[providers]
+  disable` already gave an unknown provider id, and for the same reason: it names
+  something that cannot be read. Only a root the config file *names* is enforced —
+  the `["docs"]` default stays optional, so a greenfield repository with no
+  `docs/`, no `keeldocs.toml` and no anchors still runs and still exits 0.
+
 ## 0.4.1 — 2026-08-06
 
 **Three more of the case `0.4.0` was cut for, and all three were in the tree

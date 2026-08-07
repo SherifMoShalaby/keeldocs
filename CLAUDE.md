@@ -16,7 +16,7 @@ everything in it needs a physical machine (real agent binaries, stable hardware,
 a registry login, people). §5 is refusals with written evidence thresholds, not
 backlog. §6 is closed and is a record, not a queue.
 
-Current: `keeldocs@0.4.1` on npm (`latest`), 178 unit tests, 39 extractor goldens,
+Current: `keeldocs@0.4.1` on npm (`latest`), 184 unit tests, 39 extractor goldens,
 93 harness checks, 3-OS CI green (Windows non-blocking; it was silently red for
 twelve runs until 2026-08-03 — see ROADMAP §4 item 6 before trusting that lane).
 

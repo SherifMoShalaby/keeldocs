@@ -17,6 +17,8 @@ import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { toPosix } from "./paths.js";
 import { parsePins } from "./resolve.js";
+import { parseDoc } from "./anchors.js";
+import { repoFiles } from "./scope.js";
 import { REGISTRY, REGISTRY_ERROR } from "./registry.js";
 
 const SCHEMA = {
@@ -115,6 +117,22 @@ export function loadConfig(root) {
   if (cfg.docs.dirs.some((d) => d.startsWith("/") || d.includes(".."))) {
     return { ok: false, error: "keeldocs.toml: [docs] dirs must be repo-relative paths without `..`" };
   }
+  // A scan root the user WROTE DOWN and that does not exist is a CONFIG error
+  // for exactly the reason an unknown provider id is: it names something that
+  // cannot be read, and the run that follows is quieter than what was asked for
+  // rather than louder. Measured: `dirs = ["docz"]` exited 0 CLEAN, and because
+  // README.md is always scanned the summary read `across 1 doc(s)` - a number on
+  // screen that looks like an answer while the entire handbook goes unread.
+  // Only what the FILE names is checked, never the `["docs"]` default: a
+  // greenfield repo with no docs/ and no config still has to run, which is the
+  // first thing anyone does with this tool.
+  for (const d of parsed.docs?.dirs ?? []) {
+    let isDir = false;
+    try { isDir = statSync(join(root, d)).isDirectory(); } catch { isDir = false; }
+    if (!isDir) {
+      return { ok: false, error: `keeldocs.toml: [docs] dirs names \`${d}\`, which is not a directory in this repo (create it, or remove the entry - nothing under a missing scan root is ever checked)` };
+    }
+  }
   // Same rule as [docs] dirs, and for a sharper reason: an absolute or escaping
   // pattern in a path SCOPE would silently widen or misdirect what the engine is
   // allowed to look at, and a scope that does not mean what it says is worse than
@@ -155,4 +173,46 @@ export function docPathsOf(root, dirs) {
   for (const d of dirs) if (existsSync(join(root, d))) rec(join(root, d));
   if (existsSync(join(root, "README.md"))) out.push("README.md");
   return [...new Set(out)].sort();
+}
+
+// The scan roots are the widest blind spot the engine has, and they were a
+// SILENT one: nothing outside them is read, and nothing said so. `git mv docs
+// handbook` retires every anchored document in a repository from drift
+// detection in one command - measured on this project: five committed markers
+// still tracked, `check` still CLEAN, still exit 0. The documents went on being
+// wrong and the tool that exists to say so said nothing, which is the precise
+// failure "your documentation is not lying to you" is a claim against.
+//
+// So sweep what the scan roots do not cover and report any document that is
+// ANCHORED and unread. Three properties, each load-bearing:
+//
+//   * It fires on real structure only - `parseDoc` anchors and regions - and
+//     never on a quarantined marker. This repository's own CLAUDE.md, AGENTS.md
+//     and skills/keeldocs-core/SKILL.md each mention `<!-- keeldocs:gen -->`
+//     inside an inline code span, which quarantines as `no-keys`; a
+//     quarantine-inclusive sweep would turn keeldocs' own dogfood gate red for
+//     three sentences of prose telling people not to hand-edit.
+//   * `parseDoc` masks fenced blocks, so a vendored README that DOCUMENTS an
+//     anchor in a code fence stays silent. That is the difference between a
+//     scan-root warning and a nuisance nobody leaves switched on.
+//   * `repoFiles` carries the shared skip set, the user's `exclude-paths` scope
+//     and the nested-checkout refusal, so somebody else's committed docs stay
+//     somebody else's problem - and a repo whose examples really are examples
+//     has a written way to say so.
+//
+// No git, deliberately: `check` is a pure function of the TREE, and gating this
+// on `git ls-files` would make the same bytes answer differently depending on
+// the index - and go vacuously silent in every non-git fixture.
+export function unscannedAnchoredDocs(root, docPaths, excludePaths = []) {
+  const scanned = new Set(docPaths);
+  const out = [];
+  for (const rel of repoFiles(root, excludePaths)) {
+    if (!rel.endsWith(".md") || scanned.has(rel)) continue;
+    let parsed;
+    try { parsed = parseDoc(readFileSync(join(root, rel), "utf8"), rel); }
+    catch { continue; } // unreadable file: not this function's finding
+    if (parsed.anchors.length + parsed.regions.length === 0) continue;
+    out.push({ doc: rel, anchors: parsed.anchors.length, regions: parsed.regions.length });
+  }
+  return out.sort((a, b) => (a.doc < b.doc ? -1 : a.doc > b.doc ? 1 : 0));
 }
