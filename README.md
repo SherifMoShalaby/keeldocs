@@ -198,13 +198,16 @@ keys = ["acme:<spki-base64>"]      # trusted signers for third-party providers
 A misspelled key is an error, never a silent no-op.
 
 A scan root is read to the bottom: name `docs` and every `.md` under it is
-checked, whatever the subdirectories are called. keeldocs walks into three trees
-only when you name one as a scan root itself — `node_modules` at any depth, `.git`
-at any depth, and the `.keeldocs` directory it creates at the repository root —
-and a run that passed over a dependency tree says so, by path, rather than
-counting a document it never opened as clean. Anything anchored that no scan root
-covers is reported by name, not counted as clean; `exclude-paths` is how you say
-a tree is somebody else's, and it scopes this sweep as well as the providers.
+checked, including `golden/`, `dist/`, `coverage/` and anything else a build or
+test tool left there. keeldocs walks into three trees only when you name one as a
+scan root itself — `node_modules` at any depth, `.git` at any depth, and the
+`.keeldocs` directory it creates at the repository root — and a run that passed
+over a dependency tree says so, by path, rather than counting a document it never
+opened as clean. Outside the scan roots, an anchored document is reported by name
+rather than counted as clean, with three exceptions: those same three trees, a
+path you put in `exclude-paths` (which scopes this sweep as well as the
+providers), and a directory carrying its own `.git`, which is refused as somebody
+else's repository.
 
 `exclude-paths` is what you want for `fixtures/`, `examples/`, `vendor/` or
 `testdata/`: those directories are real code, so providers extract them, and your
