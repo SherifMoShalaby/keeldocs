@@ -49,6 +49,58 @@ export function buildPlan(factsById, documented) {
     .map(({ _score, ...p }) => p);
 }
 
+// The two git files the spec ASSUMES exist and that nothing ever wrote.
+//
+// Spec §6 does not describe `merge=union` as a nicety: it is the premise the
+// journal's whole reader contract rests on ("`merge=union` via `.gitattributes`
+// written by `init` - THEREFORE entries are self-contained, idempotent,
+// order-independent"). Nothing in the reader resolves a conflict, because the
+// spec says a conflict cannot arise. `grep -rn gitattributes src/ bin/` returned
+// nothing, so it did arise: two branches that each tombstone one finding produce
+// `CONFLICT (content)` on a strictly append-only file, and whoever resolves it
+// by hand - or does not - leaves `<<<<<<< HEAD`, `=======` and `>>>>>>> theirs`
+// in a file the reader parses line by line. §7's "index/facts/graph: gitignored"
+// is the same shape of assumption about `.keeldocs/cache/` and `.keeldocs/out/`,
+// which are run state: a repository that commits them diffs its own cache.
+//
+// APPEND, and only ever append. `init`'s rule for a file it did not write is to
+// skip it whole (a document is human-authored prose and replacing it is theft),
+// but these two are line-oriented rule lists that many tools contribute to, so
+// the faithful reading of "never overwrite" is "add the missing line, touch no
+// existing byte". Membership is tested line by line, which makes a re-run
+// byte-idempotent and leaves an unrelated `.gitattributes` exactly as it was.
+//
+// The patterns are anchored (they contain a `/`, so git resolves them against
+// this file's directory) rather than `**/`-prefixed, because `loadJournal` and
+// the report writer only ever address the repo-root `.keeldocs`. A `**/` form
+// would claim a scope the engine does not have.
+const GIT_FILES = [
+  [".gitattributes", "spec section 6 - the journal is append-only; union-merge keeps two branches' decisions",
+   [".keeldocs/decisions.jsonl merge=union"]],
+  [".gitignore", "spec section 7 - run state, not repository state",
+   [".keeldocs/cache/", ".keeldocs/out/"]],
+];
+
+export function ensureGitFiles(root, yes) {
+  const written = [], skipped = [], planned = [];
+  for (const [name, why, rules] of GIT_FILES) {
+    const abs = join(root, name);
+    const existing = existsSync(abs) ? readFileSync(abs, "utf8") : "";
+    const have = new Set(existing.split("\n").map((l) => l.trim()));
+    const missing = rules.filter((r) => !have.has(r));
+    if (!missing.length) { skipped.push(name); continue; }
+    planned.push(name);
+    if (!yes) continue;
+    // Existing bytes are reproduced verbatim; a file that did not end in a
+    // newline gets one before anything is appended, or the append would corrupt
+    // the user's own last rule.
+    const head = existing === "" ? "" : (existing.endsWith("\n") ? existing : existing + "\n");
+    writeFileSync(abs, `${head}${head ? "\n" : ""}# keeldocs (${why})\n${missing.join("\n")}\n`);
+    written.push(name);
+  }
+  return { written, skipped, planned };
+}
+
 export function runInit({ root, json, yes, live = false }) {
   const cfg = loadConfig(root);
   if (!cfg.ok) {
@@ -106,6 +158,7 @@ export function runInit({ root, json, yes, live = false }) {
       liesSuppressed: l.suppressed,
       ...(report.redactions?.length ? { redactions: report.redactions } : {}),
       docs: report.docs,
+      gitFiles: report.gitFiles,
       coverage: report.coverage,
       plan: report.plan.slice(0, 10),
     },
@@ -165,6 +218,11 @@ function doInit(root, yes, config, live = false) {
     }
   }
 
+  // After the docs, before coverage: neither file is a document and neither is
+  // read by any provider, so where it sits cannot move a number - it sits here
+  // because this is where `init` stops proposing and starts writing.
+  const gitFiles = ensureGitFiles(root, yes);
+
   const journal = effective(loadJournal(root), "9999-12-31T00:00:00Z");
   const covOf = (docPaths) => {
     const anchors = [], regions = [];
@@ -189,6 +247,7 @@ function doInit(root, yes, config, live = false) {
               mode: yes ? "apply" : "dry-run" },
       card, lies, toolError, redactions,
       docs: { written, skipped, planned },
+      gitFiles,
       coverage: { before: before.cov, after: after.cov },
       plan,
       // absent when empty so goldens stay byte-stable
@@ -218,6 +277,12 @@ function humanize(envelope, applied) {
     ? `  wrote: ${d.docs.written.join(", ") || "(nothing new)"}`
     : `  would write: ${d.docs.planned.join(", ") || "(nothing - no undocumented facts or no facts)"}`);
   if (d.docs.skipped.length) lines.push(`  skipped (already exist, human-owned): ${d.docs.skipped.join(", ")}`);
+  const g = d.gitFiles ?? { written: [], planned: [], skipped: [] };
+  if (g.planned.length) {
+    lines.push(applied
+      ? `  git rules appended (existing lines untouched): ${g.written.join(", ")}`
+      : `  would append git rules to: ${g.planned.join(", ")}`);
+  }
   lines.push(`  coverage: ${d.coverage.before.pct ?? 0}% -> ${d.coverage.after.pct ?? 0}% of ${d.coverage.after.total} surfaces`);
   if (d.plan.length) lines.push(`  plan: ${d.plan.length} surface(s) still undocumented (full report has the list)`);
   lines.push("", applied ? "  next: keeldocs check" : "  apply with: keeldocs init --yes", "");

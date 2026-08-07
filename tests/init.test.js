@@ -295,3 +295,116 @@ test("a primary key is an attribute of a table, not a countable surface", () => 
   assert.deepEqual(counted, ["table", "view"],
     "a view IS an exposed surface and counts; a key is not, exactly like rls");
 });
+
+// ---------------------------------------------------------------------------
+// The two git files spec sections 6 and 7 assume exist, and that `init` never
+// wrote: `grep -rn gitattributes src/ bin/` returned nothing. Section 6 makes
+// `merge=union` the PREMISE of the journal's reader contract - entries may be
+// order-independent because a conflict cannot arise - and nothing in the reader
+// resolves a conflict, so without the rule a plain two-branch merge leaves
+// `<<<<<<< HEAD` in a strictly append-only file that is parsed line by line.
+// ---------------------------------------------------------------------------
+
+import { readFileSync, existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { ensureGitFiles } from "../src/init.js";
+
+const RULE = ".keeldocs/decisions.jsonl merge=union";
+
+test("init writes the merge=union rule and the ignore lines, appending only", (t) => {
+  // A fresh repository gets both files with the rules spec 6 and 7 name.
+  const fresh = tmpRepo({ "package.json": "{}" });
+  t.after(() => rmSync(fresh, { recursive: true, force: true }));
+
+  // DRY-RUN first: init is dry-run by default and must write nothing at all.
+  assert.deepEqual(ensureGitFiles(fresh, false),
+    { written: [], skipped: [], planned: [".gitattributes", ".gitignore"] });
+  assert.equal(existsSync(join(fresh, ".gitattributes")), false, "dry-run must not write");
+  assert.equal(existsSync(join(fresh, ".gitignore")), false, "dry-run must not write");
+
+  const first = ensureGitFiles(fresh, true);
+  assert.deepEqual(first.written, [".gitattributes", ".gitignore"]);
+  const ga = readFileSync(join(fresh, ".gitattributes"), "utf8");
+  const gi = readFileSync(join(fresh, ".gitignore"), "utf8");
+  assert.ok(ga.split("\n").includes(RULE), `the merge rule is a line of its own:\n${ga}`);
+  for (const line of [".keeldocs/cache/", ".keeldocs/out/"]) {
+    assert.ok(gi.split("\n").includes(line), `.gitignore is missing ${line}:\n${gi}`);
+  }
+
+  // CONTROL (3), first half: byte-idempotent. A second init changes no byte and
+  // claims no write.
+  const second = ensureGitFiles(fresh, true);
+  assert.deepEqual(second, { written: [], skipped: [".gitattributes", ".gitignore"], planned: [] });
+  assert.equal(readFileSync(join(fresh, ".gitattributes"), "utf8"), ga, ".gitattributes is not byte-idempotent");
+  assert.equal(readFileSync(join(fresh, ".gitignore"), "utf8"), gi, ".gitignore is not byte-idempotent");
+
+  // CONTROL (3), second half: an existing file's own rules survive verbatim -
+  // this repo's `* -text` is a byte-determinism guarantee, and clobbering it
+  // would break every golden comparison on Windows. The missing trailing newline
+  // is deliberate: appending to it blindly would corrupt the user's last rule.
+  const used = tmpRepo({ "package.json": "{}",
+    ".gitattributes": "* -text\n*.png binary",        // no trailing newline
+    ".gitignore": "node_modules/\n.keeldocs/cache/\n" }); // one of the two rules already there
+  t.after(() => rmSync(used, { recursive: true, force: true }));
+  ensureGitFiles(used, true);
+  const ga2 = readFileSync(join(used, ".gitattributes"), "utf8");
+  const gi2 = readFileSync(join(used, ".gitignore"), "utf8");
+  assert.ok(ga2.startsWith("* -text\n*.png binary\n"), `unrelated rules must survive verbatim:\n${ga2}`);
+  assert.ok(ga2.split("\n").includes(RULE));
+  assert.equal(gi2.split("\n").filter((l) => l === ".keeldocs/cache/").length, 1,
+    `an already-present rule must not be duplicated:\n${gi2}`);
+  assert.ok(gi2.split("\n").includes(".keeldocs/out/"));
+  assert.ok(gi2.startsWith("node_modules/\n"), "the user's own ignores survive");
+  ensureGitFiles(used, true);
+  assert.equal(readFileSync(join(used, ".gitattributes"), "utf8"), ga2, "not idempotent over an existing file");
+  assert.equal(readFileSync(join(used, ".gitignore"), "utf8"), gi2, "not idempotent over an existing file");
+});
+
+// CONTROL (4). The rule is only worth writing if it does the thing spec 6 says
+// it does, so this asserts against git itself rather than against the file's
+// text. Measured without the rule: `CONFLICT (content)`, exit 1,
+// `UU .keeldocs/decisions.jsonl`.
+test("with the rule written, two branches tombstoning different findings merge clean", (t) => {
+  const entry = (target, at) => JSON.stringify({ at, target, type: "tombstone" }) + "\n";
+  const build = (withRule) => {
+    const dir = mkdtempSync(join(tmpdir(), "keeldocs-merge-"));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    mkdirSync(join(dir, ".keeldocs"), { recursive: true });
+    writeFileSync(join(dir, "package.json"), "{}");
+    const g = (...a) => {
+      const r = spawnSync("git", ["-C", dir, "-c", "user.name=h", "-c", "user.email=h@x",
+        "-c", "core.autocrlf=false", ...a], { encoding: "utf8" });
+      return r;
+    };
+    assert.equal(g("init", "-q", "-b", "main").status, 0, "git init");
+    writeFileSync(join(dir, ".keeldocs", "decisions.jsonl"), entry("seed", "2026-07-01T00:00:00Z"));
+    if (withRule) ensureGitFiles(dir, true);   // exactly what `init --yes` writes
+    g("add", "-A"); assert.equal(g("commit", "-qm", "seed").status, 0, "seed commit");
+    // alice tombstones A
+    g("checkout", "-qb", "alice");
+    writeFileSync(join(dir, ".keeldocs", "decisions.jsonl"),
+      readFileSync(join(dir, ".keeldocs", "decisions.jsonl"), "utf8") + entry("A", "2026-08-01T00:00:00Z"));
+    g("commit", "-qam", "alice");
+    // bob tombstones B, from the same base
+    g("checkout", "-q", "main"); g("checkout", "-qb", "bob");
+    writeFileSync(join(dir, ".keeldocs", "decisions.jsonl"),
+      readFileSync(join(dir, ".keeldocs", "decisions.jsonl"), "utf8") + entry("B", "2026-08-02T00:00:00Z"));
+    g("commit", "-qam", "bob");
+    g("checkout", "-q", "alice");
+    const merged = g("merge", "bob", "-m", "merge");
+    return { dir, merged, text: readFileSync(join(dir, ".keeldocs", "decisions.jsonl"), "utf8") };
+  };
+
+  const withRule = build(true);
+  assert.equal(withRule.merged.status, 0,
+    `the merge must complete: ${withRule.merged.stdout}${withRule.merged.stderr}`);
+  const targets = withRule.text.split("\n").filter(Boolean).map((l) => JSON.parse(l).target);
+  assert.deepEqual(targets.sort(), ["A", "B", "seed"], "both branches' decisions survive");
+  assert.ok(!withRule.text.includes("<<<<<<<"), "no conflict marker reaches the journal");
+
+  // The control on the control: without the rule the same merge conflicts, so
+  // this test would pass just as happily if `merge=union` did nothing.
+  const without = build(false);
+  assert.equal(without.merged.status, 1, "without the rule this merge must still conflict");
+  assert.match(without.text, /^<<<<<<< /m, "and leave markers a JSON reader cannot parse");
+});

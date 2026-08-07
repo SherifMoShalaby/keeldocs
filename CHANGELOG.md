@@ -71,7 +71,85 @@ chose, and honouring a written scope is the point of having one. What changes is
 that one spelling stops meaning two things, and that a scope which suppressed a
 document says which one.
 
+**And two more, in a fourth batch, in the file where a human overrules the
+engine.** `.keeldocs/decisions.jsonl` is append-only and read line by line, and
+`loadJournal` has always collected the lines it could not parse into a
+`malformed` list. The only thing that ever read that list was `keeldocs noise` —
+an opt-in counts report that nothing in CI invokes — so to `check`, a line it
+could not parse was a line that had never been written. The asymmetry is what
+makes it dangerous: dropping a line does not lose a decision, it silently
+reinstates the decision that line revoked. Measured with the published `0.4.2`
+engine and this tree, on one anchored section bound to a fact that no longer
+exists, with a tombstone that a human later revoked:
+
+| what `.keeldocs/decisions.jsonl` contains | 0.4.2 | now |
+|---|---|---|
+| the tombstone, intact | `CLEAN`, exit 0, `[stale 0, dead 0, tampered 0]` | unchanged |
+| the tombstone plus an intact `revoke` of it | `DRIFT_FOUND`, exit 1, `dead 1` | unchanged |
+| the same `revoke`, truncated mid-line | `CLEAN`, exit 0 — **byte-identical** to the first row, tombstone still standing | `UNREADABLE`, exit 1, `line 2: bad-json` |
+| a `revoke` missing `type`, `target` or `at` | `CLEAN`, exit 0 | `UNREADABLE`, exit 1, `line 2: missing-fields` |
+| what a plain `git merge` leaves behind | `CLEAN`, exit 0 | `UNREADABLE`, exit 1, lines 2, 4 and 6 named |
+| the same journal, through `keeldocs noise` | `3 malformed line(s) skipped` | unchanged — `noise` was always right, and nothing asked it |
+
+The third row is the whole defect in one line: a corrupted revocation and an
+intact tombstone produced the same bytes on stdout, the same exit code and the
+same report, so there was no observation a user or a CI job could have made that
+distinguished "this finding was deliberately retired" from "the retirement was
+countermanded and the countermand was eaten".
+
+The fifth row is how a repository reaches that state without anyone corrupting
+anything by hand, and it is the second defect. Spec §6 does not offer
+`merge=union` as advice — it is the premise the reader's contract rests on
+("`merge=union` via `.gitattributes` written by `init` — therefore entries are
+self-contained, idempotent, order-independent"), and nothing in the reader
+resolves a conflict because the spec says a conflict cannot arise. But
+`grep -rn gitattributes src/ bin/` returned nothing: `init` wrote no
+`.gitattributes` at all, and no `.gitignore` either, though §7 assumes both. So
+the conflict did arise, on a strictly append-only file, and what it leaves is
+three lines that are not JSON.
+
+| `keeldocs init --yes` on a fresh repository | 0.4.2 | now |
+|---|---|---|
+| `.gitattributes` | not written | `.keeldocs/decisions.jsonl merge=union` |
+| `.gitignore` | not written | `.keeldocs/cache/` and `.keeldocs/out/` |
+| alice tombstones A, bob tombstones B, then `git merge` | `CONFLICT (content)`, exit 1, `UU .keeldocs/decisions.jsonl` | exit 0, both decisions present, no marker in the file |
+
+Neither file is ever overwritten, and neither is written by a dry run. `init`
+appends the missing rule lines and nothing else, so an existing `.gitattributes`
+carrying `* -text` keeps it, an already-present ignore line is not duplicated, a
+file that did not end in a newline gets one before the append rather than having
+its last rule corrupted, and a second `init` is byte-idempotent on both files.
+
 ### Fixed
+
+- **A decisions-journal line the reader could not parse was dropped in silence,
+  and a corrupted revocation re-suppressed a finding a human had explicitly
+  un-suppressed.** `loadJournal` already returned `{ entries, malformed }`;
+  `check` read only `entries`. It now names every unreadable line by number and
+  reason and exits 1 `UNREADABLE`, which outranks `DRIFT_FOUND` for the reason
+  every other member of that code does: the effective decision set was computed
+  from a journal the engine could not fully read, so the drift count for the run
+  is a number it should decline to headline. Named, never counted — "3 lines are
+  unreadable" is not something a human can act on, and the repair is per line.
+  Both reasons `loadJournal` records reach the same verdict: a line that is not
+  JSON, and a line that is JSON but lacks `type`, `target` or `at`. Suppression
+  is untouched — a standing tombstone still exits 0 `CLEAN`, and an intact
+  `revoke` of it still exits 1 with `dead 1`.
+
+- **`init` wrote neither the `.gitattributes` rule spec §6 promises nor the
+  `.gitignore` lines §7 assumes.** §6 states the journal is union-merged "via
+  `.gitattributes` written by `init`", and that this is *why* entries may be
+  order-independent; `grep -rn gitattributes src/ bin/` found no such writer, so
+  the premise was never established in any repository keeldocs initialised.
+  `init --yes` now appends `.keeldocs/decisions.jsonl merge=union` to
+  `.gitattributes` and `.keeldocs/cache/` and `.keeldocs/out/` to `.gitignore`.
+  Both patterns are anchored rather than `**/`-prefixed, because the reader and
+  the report writer only ever address the repository-root `.keeldocs`, and a
+  `**/` form would claim a scope the engine does not have. Consistent with
+  init's rule that an existing file is human-owned: these are appended to, never
+  replaced — existing rules survive byte for byte, a rule already present is not
+  duplicated, a missing trailing newline is supplied before the append, a
+  dry-run writes nothing, and a re-run changes no byte.
 
 - **Detection proved a path and then threw it away.** For `argMode: root` —
   every provider that is not the prisma-style single-file case — the engine

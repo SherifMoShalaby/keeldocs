@@ -84,6 +84,17 @@
    "docs/architecture/system-map.md"
   ]
  },
+ "gitFiles": {
+  "written": [
+   ".gitattributes",
+   ".gitignore"
+  ],
+  "skipped": [],
+  "planned": [
+   ".gitattributes",
+   ".gitignore"
+  ]
+ },
  "coverage": {
   "before": {
    "perCapability": {

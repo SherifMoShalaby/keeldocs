@@ -70,7 +70,30 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   // no exit code - but `exclude-paths = ["**/*.md"]` excludes no code whatsoever
   // and used to disarm the sweep across the whole repository in silence.
   const excludedDocs = report.excludedDocs ?? [];
-  const unreadable = refused.length + unverified + unscanned.length;
+  // The same family, one file further in. `loadJournal` has always COLLECTED the
+  // lines it could not parse, and until now the only thing that ever read the
+  // list was `keeldocs noise` - an opt-in report nothing in CI invokes. So a
+  // line the reader cannot parse was, to `check`, a line that was never written.
+  //
+  // That is not a cosmetic loss, because the journal is where a human REVOKES a
+  // decision. Measured: a repository whose tombstone had been revoked - the
+  // human said "start reporting this again" - exits 1 DRIFT_FOUND with dead 1.
+  // Truncate the revoke line and the run becomes BYTE-IDENTICAL to the one where
+  // the tombstone still stood: exit 0, CLEAN, `[stale 0, dead 0, tampered 0]`.
+  // Dropping a line does not lose a decision, it silently reinstates the decision
+  // that line countermanded. A plain `git merge` of two branches that each
+  // tombstoned something reaches exactly this state, because `.gitattributes`
+  // carried no `merge=union` rule for the journal (see src/init.js) and the
+  // `<<<<<<< HEAD` / `=======` / `>>>>>>> theirs` markers left behind are three
+  // lines that are not JSON.
+  //
+  // Named by line and reason, never counted, for the reason `unverified` records
+  // below: "3 lines are unreadable" is not something a human can act on, and the
+  // fix is per-line. UNREADABLE, not DRIFT_FOUND, because the effective decision
+  // set was computed from a journal the engine could not fully read, and a drift
+  // count over a partial journal is a number it should decline to headline.
+  const journalMalformed = report.journalMalformed ?? [];
+  const unreadable = refused.length + unverified + unscanned.length + journalMalformed.length;
   // A refused MARKER is named by document, line and reason; an unverified
   // SECTION was only ever counted. "3 sections are not being checked" without
   // saying which three is a finding the user cannot act on - and the count alone
@@ -117,6 +140,7 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   // (which directory to add to `[docs] dirs`) is not derivable from a number.
   const unreadableParts = [
     ...(unscanned.length ? [`${unscanned.length} anchored doc(s) outside every scan root, unchecked (${unscanned.slice(0, 3).map((u) => u.doc).join(", ")}${unscanned.length > 3 ? ", ..." : ""}; add to [docs] dirs)`] : []),
+    ...(journalMalformed.length ? [`${journalMalformed.length} unreadable decisions-journal line(s) (.keeldocs/decisions.jsonl ${journalMalformed.slice(0, 3).map((m) => `line ${m.line}: ${m.reason}`).join(", ")}${journalMalformed.length > 3 ? ", ..." : ""}; a dropped line reinstates the decision it revoked)`] : []),
     ...(refused.length ? [`${refused.length} unparseable marker(s)`] : []),
     ...(unverified ? [`${unverified} section(s) the engine cannot verify`] : []),
   ];
@@ -140,6 +164,9 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
             // so an uncapped list here could bust a cap it cannot repair
             ...(unscanned.length ? { unscanned: unscanned.slice(0, 20) } : {}),
             ...(skipped.length ? { skipped: skipped.slice(0, 20) } : {}),
+            // capped like `refused` and `unscanned`, and for the same reason:
+            // the 8KB trimmer only shrinks `data.top`
+            ...(journalMalformed.length ? { journalMalformed: journalMalformed.slice(0, 20) } : {}),
             ...(excludedDocs.length ? { excludedDocs: excludedDocs.slice(0, 20) } : {}),
             ...(unverifiedTop.length ? { unverified: unverifiedTop } : {}),
             ...(upgrades?.length ? { upgrades } : {}) },
@@ -247,6 +274,7 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     noise: noiseStats(rawJournal, nowIso), upgrades,
     quarantined, extractionGaps: gaps,
     // absent when empty, like `conflicts`, so every clean golden stays byte-stable
+    ...(rawJournal.malformed.length ? { journalMalformed: rawJournal.malformed } : {}),
     ...(unscanned.length ? { unscanned } : {}),
     ...(skipped.length ? { skipped } : {}),
     ...(excludedDocs.length ? { excludedDocs } : {}),
@@ -282,6 +310,9 @@ function humanize(envelope, report, cache = null) {
   }
   for (const u of envelope.data.unverified ?? []) {
     lines.push(`  UNVERIFIED ${u.doc}:${u.line}  ${u.id}  (${u.reason})`);
+  }
+  for (const m of envelope.data.journalMalformed ?? []) {
+    lines.push(`  UNREADABLE .keeldocs/decisions.jsonl:${m.line}  (${m.reason} - a line the reader drops reinstates whatever it revoked)`);
   }
   for (const u of envelope.data.excludedDocs ?? []) {
     lines.push(`  EXCLUDED  ${u.doc}  (${u.anchors} anchor(s), ${u.regions} region(s) - matched [providers] exclude-paths, so it is not checked)`);

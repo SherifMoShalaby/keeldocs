@@ -121,6 +121,17 @@
    "docs/reference/configuration.md"
   ]
  },
+ "gitFiles": {
+  "written": [
+   ".gitattributes",
+   ".gitignore"
+  ],
+  "skipped": [],
+  "planned": [
+   ".gitattributes",
+   ".gitignore"
+  ]
+ },
  "coverage": {
   "before": {
    "perCapability": {
