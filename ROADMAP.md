@@ -14,7 +14,25 @@ runs before it and fixed the same day (§4 item 6) · 184 unit tests · 40 extra
 quotes its own commit is false the moment it lands and needs a second commit to
 become true. That happened four times in one day; the fix is to stop.)*
 
-**Nothing in this document is waiting to be built.** The two experiments that
+**Everything this document records is resolved — which is not the same claim as
+"nothing is waiting to be built", and the header made the second one until
+2026-08-07.** Three defects were found and fixed that day, none of them written
+down anywhere before they were walked into: a scan root that silently retired a
+whole repository from drift detection, a workspace whose dropped members read as
+a single-package repo, and the npm/yarn half of that second fix, which shipped
+its claim in three documents while covering only pnpm. That is the tenth,
+eleventh and twelfth instance of `CLEAN` over something unchecked, across three
+releases. The count is not converging, and a header asserting the queue is empty
+is the same failure in the tracking layer that `check` exists to catch in the
+documentation layer.
+
+The legend at the end of this section defines an **Open** status meaning
+"buildable now and not yet built", and **no row in this document carries it**.
+That is the mechanical version of the same problem: open engineering has never
+had a home here, so it accumulated on a separate board — and the absence of an
+Open row is not evidence that nothing is open.
+
+The two experiments that
 ran on 2026-08-01 both failed and both are resolved. E11: the flagship ERD
 stopped rendering between 100 and 250 tables, and `src/render.js` gained
 budget-driven chunking — every size to 1,000 tables now draws every table. E8:
