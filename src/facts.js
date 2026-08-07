@@ -44,12 +44,26 @@ function walk(root, pred, out = [], dir = root) {
 // provider that names files - 20-odd full traversals of the tree, ~50ms each at
 // 1M LOC, for a list already in memory. The walk orders are identical (same
 // skip set, same sorted depth-first order), so "first match" is unchanged.
+// Pick by (depth, declared-name order, path) rather than by walk order alone.
+// Walk order is lexicographic, so once detection started searching the whole tree
+// a root `compose.yaml` beat a root `docker-compose.yml` for no better reason than
+// "c" < "d" - the engine read a DIFFERENT file than every release before it and
+// dropped the one it used to read, silently, on a repository nobody had touched.
+// Depth first means any repository with a candidate at the root resolves exactly
+// as it always did; the manifest's own `detect.files` order breaks ties at equal
+// depth, because that order is the provider's stated preference and not incidental.
 const firstNamed = (repoRoot, allFiles, names) => {
+  const rank = (rel) => {
+    const idx = names.indexOf(rel.slice(rel.lastIndexOf("/") + 1));
+    return idx === -1 ? null : [rel.split("/").length, idx, rel];
+  };
+  const before = (a, b) => a[0] !== b[0] ? a[0] < b[0] : a[1] !== b[1] ? a[1] < b[1] : a[2] < b[2];
+  let best = null, bestKey = null;
   for (const rel of allFiles) {
-    const base = rel.slice(rel.lastIndexOf("/") + 1);
-    if (names.includes(base)) return join(repoRoot, rel);
+    const key = rank(rel);
+    if (key && (bestKey === null || before(key, bestKey))) { best = rel; bestKey = key; }
   }
-  return null;
+  return best === null ? null : join(repoRoot, best);
 };
 
 function detect(reg, repoRoot, allFiles) {

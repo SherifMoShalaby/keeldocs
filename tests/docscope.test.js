@@ -293,6 +293,16 @@ test("node_modules is not swept, and the run says so without moving the verdict"
   const n = check(named);
   assert.equal(n.code, 1, "a scan root that IS the dependency tree is read");
   assert.equal(docsIn(n.env)[0], "docs/node_modules/pkg/reference.md");
+  // and having read it, the run must not also announce that it did not. This
+  // assertion is the half that was missing: the sweep reaches `docs/node_modules`
+  // by a different path than the scan does, so it collected the directory as
+  // skipped while the scan was reading the very file the finding above came out
+  // of - and the human line then advised naming it in `[docs] dirs`, which is
+  // exactly what this config already does. The assertion above it, that the same
+  // directory IS named when it is not a scan root, is the control: without that
+  // pair, dropping the disclosure entirely would satisfy either one alone.
+  assert.equal(n.env.data.skipped, undefined,
+    "a directory the run read must never be reported as one it did not");
 });
 
 // (h) The two directories that are read by nothing and named by nothing, pinned

@@ -214,7 +214,18 @@ function buildReport(repoRoot, ci, config, since, live = false) {
   const excludedDocs = [];
   const unscanned = unscannedAnchoredDocs(repoRoot, docPaths, config.providers["exclude-paths"],
                                           skippedDirs, excludedDocs);
-  const skipped = [...new Set(skippedDirs)].sort(); // both walks reach docs/node_modules
+  // Both walks reach `docs/node_modules`, so the raw list double-counts - and it
+  // also names directories that WERE read. `node_modules` is skipped during
+  // recursion but never as a root, so naming one in `[docs] dirs` is the
+  // documented escape hatch; reporting it as `NOT READ` told a user their
+  // documents were unchecked when the findings above came out of those very
+  // files, and then advised the exact thing they had already done. A disclosure
+  // that fires when it is false is the same defect as silence, pointed the other
+  // way, and it is worse in one respect: it teaches the reader to discount the
+  // line. `docPaths` is what was actually read, so it - not the walk - decides.
+  const roots = new Set(config.docs.dirs.map((d) => d.replace(/\/+$/, "")));
+  const wasRead = (d) => roots.has(d) || docPaths.some((p) => p.startsWith(`${d}/`));
+  const skipped = [...new Set(skippedDirs)].filter((d) => !wasRead(d)).sort();
 
   const { findings, documented } = evaluate({ anchors, regions, factsById, capabilities, journal });
   const cov = coverage(factsById, documented);
