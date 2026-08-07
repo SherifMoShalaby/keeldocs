@@ -1,12 +1,16 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-07.** Published: **`keeldocs@0.4.1` on npm** — `latest` — built by
+**As of 2026-08-07.** Published: **`keeldocs@0.4.2` on npm** — `latest` — built by
 `release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
 provenance attestation and no publish token anywhere. Verified cold from the
-registry, not from the workflow log: attestation naming `refs/tags/v0.4.1`, and
-all three fixes reproduced against the published tarball on repositories built
-for the purpose — including that `sync --apply-all` re-baselines an unreadable
-hash in one pass, because the changelog claims it does. 3-OS CI green including
+registry, not from the workflow log: attestation naming `refs/tags/v0.4.2`, and
+every fix reproduced against the published tarball on repositories built for the
+purpose, each one run against the *previous* published version on the same tree
+so the before-and-after is measured rather than asserted — `0.4.1` reports
+`CLEAN` across zero documents after a `git mv docs handbook` where `0.4.2` names
+the file, and three npm/yarn workspace manifests `0.4.1` passes over in silence
+are each named, with a clean single-package manifest still silent on both.
+3-OS CI green including
 `action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
 runs before it and fixed the same day (§4 item 6) · 184 unit tests · 40 extractor goldens · 95 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
@@ -154,7 +158,7 @@ through `11`). The constraints are where the honest scoring lives.
 ### v0.1 — the loop, proven on one ecosystem
 
 Everything in the v0.1 scope table shipped. It is tagged `v0.1.0-rc.1`. The line
-that ships to users is now stable `0.4.1` on npm, so promoting the v0.1 tag is a
+that ships to users is now stable `0.4.2` on npm, so promoting the v0.1 tag is a
 bookkeeping decision rather than a blocked one.
 
 | Item | Status |
