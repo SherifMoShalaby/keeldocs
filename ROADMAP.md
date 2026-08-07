@@ -1,9 +1,9 @@
 # keeldocs — Roadmap and Status Board
 
-**As of 2026-08-07.** Published: **`keeldocs@0.4.2` on npm** — `latest` — built by
+**As of 2026-08-07.** Published: **`keeldocs@0.4.3` on npm** — `latest` — built by
 `release.yml` on a `v*` tag under npm Trusted Publishing, with a SLSA v1
 provenance attestation and no publish token anywhere. Verified cold from the
-registry, not from the workflow log: attestation naming `refs/tags/v0.4.2`, and
+registry, not from the workflow log: attestation naming `refs/tags/v0.4.3`, and
 every fix reproduced against the published tarball on repositories built for the
 purpose, each one run against the *previous* published version on the same tree
 so the before-and-after is measured rather than asserted — `0.4.1` reports
@@ -198,7 +198,7 @@ through `11`). The constraints are where the honest scoring lives.
 ### v0.1 — the loop, proven on one ecosystem
 
 Everything in the v0.1 scope table shipped. It is tagged `v0.1.0-rc.1`. The line
-that ships to users is now stable `0.4.2` on npm, so promoting the v0.1 tag is a
+that ships to users is now stable `0.4.3` on npm, so promoting the v0.1 tag is a
 bookkeeping decision rather than a blocked one.
 
 | Item | Status |

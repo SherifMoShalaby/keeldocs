@@ -16,16 +16,18 @@ everything in it needs a physical machine (real agent binaries, stable hardware,
 a registry login, people). §5 is refusals with written evidence thresholds, not
 backlog. §6 is closed and is a record, not a queue.
 
-Current: `keeldocs@0.4.2` on npm (`latest`), 201 unit tests, 40 extractor goldens,
+Current: `keeldocs@0.4.3` on npm (`latest`), 201 unit tests, 40 extractor goldens,
 98 harness checks, 3-OS CI green (Windows non-blocking; it was silently red for
 twelve runs until 2026-08-03 — see ROADMAP §4 item 6 before trusting that lane).
 
 `0.4.0` was the first release that changes what `check` returns for an unchanged
 repository: six shapes `0.3.0` called `CLEAN` while checking nothing now report.
-`0.4.1` adds three more of that class and `0.4.2` a further three — every one
-found in the tree its predecessor shipped from, and the `0.4.2` pair retires a
-whole repository rather than one section. The count is not converging, and
-treating it as closed is the mistake.
+`0.4.1` added three more of that class, `0.4.2` three, and `0.4.3` twelve —
+every one found in the tree its predecessor shipped from, and every one found by
+walking into it rather than by reading any list. **The count is not converging.**
+Three releases have opened with that sentence now; assume the next batch exists
+and has not been found yet, and treat any claim that the set is closed as the
+mistake.
 `CHANGELOG.md` opens with the measured before-and-after and is the file to update
 when that set changes — not this line.
 
