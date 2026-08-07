@@ -391,12 +391,16 @@ artifact**, and it should be made deliberately rather than discovered by
 whichever one an implementation reached for first. Nothing is wired to the
 fingerprint until it is made. The signal is measured; the carrier is not chosen.
 
-*And the sequencing in the ticket is backwards.* Carrying the previous
-provider-set fingerprint requires committing it, and the only committed place is
-the anchor. The anchor grammar rejects unknown keys — it quarantines them — so a
-document written by a keeldocs that emits a new key is **quarantined by every
-older keeldocs that reads it**. The compatibility policy has to exist before the
-key does, which puts the spec-freeze work *before* the field, not after it.
+*And the sequencing in the ticket is backwards.* The ticket takes the anchor as
+the place the previous fingerprint goes — it considers no other, which is why the
+three-way choice above had to be stated separately rather than assumed away. On
+the ticket's own premise the ordering it gives is still wrong: the anchor grammar
+rejects unknown keys — it quarantines them — so a document written by a keeldocs
+that emits a new key is **quarantined by every older keeldocs that reads it**.
+The compatibility policy has to exist before the key does, which puts the
+spec-freeze work *before* the field, not after it. That work landed on
+2026-08-05, so the sequencing objection is now spent: it no longer argues against
+the anchor, and it never argued for it over the other two.
 
 ### v1.0 — the gates that are not about features
 
