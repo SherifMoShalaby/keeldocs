@@ -1,21 +1,28 @@
 # Changelog
 
-## Unreleased
+## 0.4.3 — 2026-08-07
 
-**Eleven more of the same class, in two batches, and both were sitting in the
-tree `0.4.2` shipped from.** The first is about which files the engine reads at
-all rather than which documents: detection proved a path, and the extractor was
-handed the repository root and re-guessed the layout at it. The second is about
-a list of directory NAMES the engine kept to itself — `golden/` among six — which
-had become the boundary of a user-facing guarantee without anyone deciding that
-it should be one.
+**Twelve more of the same class, in five batches, every one of them sitting in
+the tree `0.4.2` shipped from.** Three releases have now opened with a sentence
+of this shape. The count is not converging, and each batch was found by walking
+into it rather than by reading any list — which is the argument for this file,
+and against believing that the next release will be the one that closes the set.
+
+The first batch is about which files the engine reads at all rather than which
+documents: detection proved a path, and the extractor was handed the repository
+root and re-guessed the layout at it. The second is about a list of directory
+NAMES the engine kept to itself — `golden/` among six — which had become the
+boundary of a user-facing guarantee without anyone deciding that it should be
+one. The third is the one setting a user writes to make the engine look away.
+The fourth is the file in which a human overrules the engine. The fifth is a
+recorded hash with half of itself missing.
 
 Measured on `fixtures/nested-layout-scenario` — a Rails app at
 `apps/api/`, a Next.js App Router project at `apps/web/`, a compose file at
 `deploy/` and a migration chain at `packages/db/` — with the published `0.4.2`
 engine and this tree, on the same repository:
 
-| what your repository contains | 0.4.2 | now |
+| what your repository contains | 0.4.2 | 0.4.3 |
 |---|---|---|
 | a Rails `config/routes.rb` below the root | `http-endpoints: ok`, zero facts, no gap | 18 endpoints, cited at `apps/api/config/routes.rb` |
 | an App Router below the root | `client-routes: ok`, zero facts, no gap | 3 routes, cited under `apps/web/app/` |
@@ -33,7 +40,7 @@ anchored document whose recorded hash nothing can match, moved from directory to
 directory and nothing else changed. Where it lands decides the verdict, and the
 deciding directory names are ones the user never wrote down.
 
-| where the anchored, drifting document is | 0.4.2 | now |
+| where the anchored, drifting document is | 0.4.2 | 0.4.3 |
 |---|---|---|
 | `docs/reference.md`, under `dirs = ["docs"]` | `DRIFT_FOUND`, exit 1, named | unchanged |
 | `docs/golden/reference.md`, same config | `CLEAN`, exit 0, `across 1 doc(s)` | `DRIFT_FOUND`, exit 1, named |
@@ -58,7 +65,7 @@ destructive one was the silent one. Measured on `fixtures/exclude-shape-scenario
 under `vendor/`, and an anchored, drifting `vendor/notes.md` — with the published
 `0.4.2` engine and this tree:
 
-| what your `keeldocs.toml` says | 0.4.2 | now |
+| what your `keeldocs.toml` says | 0.4.2 | 0.4.3 |
 |---|---|---|
 | `exclude-paths = ["vendor/**"]` | `0/1 surfaces`, `scopedOut: 1`, the line named | unchanged |
 | `exclude-paths = ["vendor"]`, same tree | `0/2` — `VENDOR_SECRET_KEY` still counted — `services-topology` gone, `meta` carrying neither field | identical to `["vendor/**"]` in every observable |
@@ -82,7 +89,7 @@ reinstates the decision that line revoked. Measured with the published `0.4.2`
 engine and this tree, on one anchored section bound to a fact that no longer
 exists, with a tombstone that a human later revoked:
 
-| what `.keeldocs/decisions.jsonl` contains | 0.4.2 | now |
+| what `.keeldocs/decisions.jsonl` contains | 0.4.2 | 0.4.3 |
 |---|---|---|
 | the tombstone, intact | `CLEAN`, exit 0, `[stale 0, dead 0, tampered 0]` | unchanged |
 | the tombstone plus an intact `revoke` of it | `DRIFT_FOUND`, exit 1, `dead 1` | unchanged |
@@ -108,7 +115,7 @@ resolves a conflict because the spec says a conflict cannot arise. But
 the conflict did arise, on a strictly append-only file, and what it leaves is
 three lines that are not JSON.
 
-| `keeldocs init --yes` on a fresh repository | 0.4.2 | now |
+| `keeldocs init --yes` on a fresh repository | 0.4.2 | 0.4.3 |
 |---|---|---|
 | `.gitattributes` | not written | `.keeldocs/decisions.jsonl merge=union` |
 | `.gitignore` | not written | `.keeldocs/cache/` and `.keeldocs/out/` |
@@ -119,6 +126,25 @@ appends the missing rule lines and nothing else, so an existing `.gitattributes`
 carrying `* -text` keeps it, an already-present ignore line is not duplicated, a
 file that did not end in a newline gets one before the append rather than having
 its last rule corrupted, and a second `init` is byte-idempotent on both files.
+
+**And a fifth batch: half a recorded hash was treated as a whole one.** A
+generated region records TWO hashes that check different things — `content`
+against the body it rendered, `hash` against the facts it rendered FROM. `0.4.1`
+made a region carrying neither `unverified` and left the case where one is
+missing, which is what a badly resolved merge produces. Measured on a genuinely
+drifted repository, deleting one attribute:
+
+| the generated region records | 0.4.2 | 0.4.3 |
+|---|---|---|
+| both hashes, facts drifted | `DRIFT_FOUND`, exit 1, `stale` | unchanged |
+| both hashes, body hand-edited | `DRIFT_FOUND`, exit 1, `tampered` | unchanged |
+| `hash=` deleted, facts drifted | `CLEAN`, exit 0, and `sync` said `NOTHING_TO_SYNC` | `UNREADABLE`, exit 1, named |
+| `content=` deleted, body hand-edited | `CLEAN`, exit 0 | `UNREADABLE`, exit 1, named |
+| neither hash | `UNREADABLE`, exit 1 | unchanged |
+
+A prose slot legitimately records no `content=` — prose is not engine-generated,
+so there is nothing to tamper-check — and slots are evaluated by a different loop
+that this does not touch.
 
 ### Fixed
 
@@ -332,7 +358,7 @@ repository rather than one section.** Every case in `0.4.0` and `0.4.1` was a
 marker or a file the engine skipped inside documentation it was reading. These
 two are about which documentation it reads at all.
 
-Measured, `0.4.1` versus this tree:
+Measured, `0.4.1` versus `0.4.2`:
 
 | what your repository contains | 0.4.1 | now |
 |---|---|---|

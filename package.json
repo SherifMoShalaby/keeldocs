@@ -1,6 +1,6 @@
 {
   "name": "keeldocs",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "keeldocs - test coverage for your docs: anchors doc sections to the code they describe, deterministically flags drift with receipts, proposes reviewable patches. Any stack, any agent, no SaaS.",
   "keywords": [
     "documentation",
