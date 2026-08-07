@@ -96,6 +96,19 @@ test("a greenfield repo with no docs, no config and no anchors is still CLEAN, e
   assert.equal(code, 0, `first run must not fail: ${env.summary}`);
   assert.equal(env.code, "CLEAN");
   assert.equal(loadConfig(root).ok, true, "the default ['docs'] root is not required to exist");
+
+  // And the shape that assertion missed on its first draft. With NO
+  // keeldocs.toml, `loadConfig` returns before it validates anything, so the
+  // check above cannot see whether the rule is explicit-only - it passed
+  // unchanged against a mutation that enforced the DEFAULT root too. A config
+  // that exists and simply says nothing about [docs] is an ordinary repository
+  // and the only place that distinction is observable.
+  writeFileSync(join(root, "keeldocs.toml"), '[providers]\ndisable = ["compose"]\n');
+  assert.equal(loadConfig(root).ok, true,
+    "a keeldocs.toml that never mentions [docs] must not make the default root mandatory");
+  const withCfg = check(root);
+  assert.equal(withCfg.code, 0, `a configured repo with no docs/ must still run: ${withCfg.env.summary}`);
+  assert.equal(withCfg.env.code, "CLEAN");
 });
 
 // (d) The sweep reuses the anchor parser, so fence masking comes with it. A
