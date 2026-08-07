@@ -116,15 +116,32 @@ def main(root):
                 # this provider cannot enumerate - not a repo without one.
                 warnings.append({"kind": "workspace-no-packages-declared", "file": "pnpm-workspace.yaml"})
     elif os.path.exists(pj):
+        # The same three collapses as the pnpm branch above, and for a while this
+        # branch had only the first of them fixed - so npm and yarn, which is most
+        # repositories, kept the silence pnpm had lost. A bare `except: pass` here
+        # covered the read, the parse AND the expansion, and a falsy `workspaces`
+        # fell through to the `single` fallback with nothing appended. Worse than
+        # the pnpm case: an unparseable package.json also defeats `pkg_name`, so
+        # the repo was reported under its DIRECTORY name rather than its declared
+        # one - an invented identity, with no gap saying so.
         try:
-            ws = json.load(open(pj)).get("workspaces")
+            data = json.load(open(pj))
+        except Exception:
+            data = None
+        if not isinstance(data, dict):
+            warnings.append({"kind": "workspace-manifest-unparsed", "file": "package.json"})
+        else:
+            ws = data.get("workspaces")
             pats = ws.get("packages") if isinstance(ws, dict) else ws
             if pats:
                 manager, mfile = "npm-yarn", "package.json"
                 packages, w = expand(root, pats)
                 warnings.extend(w)
-        except Exception:
-            pass
+            elif ws is not None:
+                # `workspaces` present but unusable - `[]`, or yarn's dict form
+                # carrying only `nohoist`. A package.json with no `workspaces` key
+                # at all is a genuine single-package repo and stays silent.
+                warnings.append({"kind": "workspace-no-packages-declared", "file": "package.json"})
     if not packages:
         packages = [{"name": pkg_name(root), "path": "."}]
         manager = "single"

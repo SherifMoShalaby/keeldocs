@@ -835,9 +835,36 @@ def main():
         assert not [k for k, _f in gaps_ if k == "workspace-member-unresolved"], sorted(gaps_)
         attrs = layout()
         assert len(attrs) == 1 and attrs[0]["manager"] == "single", attrs
+
+        # The same three collapses on npm/yarn, which is most repositories. This
+        # half exists because the first version of the fix was pnpm-only while the
+        # changelog, the commit and the provider docstring all said "every
+        # manifest" - and no gate could catch the gap, because every multi-package
+        # fixture here is pnpm. A gate that cannot fail for the majority manager is
+        # not a gate. Removing the pnpm manifest is what reaches the npm/yarn branch.
+        os.remove(wsy)
+        pjp = os.path.join(dst, "package.json")
+        W(pjp, '{"name":"nw","workspaces":["apps/*"],}')          # trailing comma
+        _e, gaps_ = check_gaps()
+        assert ("workspace-manifest-unparsed", "package.json") in gaps_, sorted(gaps_)
+
+        W(pjp, '{"name":"nw","workspaces":{"nohoist":["**/rn"]}}')  # yarn dict, no packages
+        _e, gaps_ = check_gaps()
+        assert ("workspace-no-packages-declared", "package.json") in gaps_, sorted(gaps_)
+
+        # Control, and the load-bearing half: a package.json with no `workspaces`
+        # key at all is a genuine single-package repo. If this ever warns, the two
+        # assertions above are passing on a provider that simply always complains.
+        W(pjp, '{"name":"nw","version":"1.0.0"}')
+        _e, gaps_ = check_gaps()
+        assert not [k for k, f in gaps_ if f == "package.json"
+                    and k.startswith("workspace-")], sorted(gaps_)
+        attrs = layout()
+        assert len(attrs) == 1 and attrs[0]["manager"] == "single", attrs
         rmtree(tmp)
         print("  PASS  workspace-layout gaps: polyglot members, unparseable manifest and a memberless "
-              "manifest each named in init and check --ci, verdict still CLEAN")
+              "manifest each named in init and check --ci on BOTH pnpm and npm/yarn, a clean "
+              "single-package manifest still silent, verdict still CLEAN")
     except Exception as e:
         failures.append(f"workspace-layout gap integration: {why(e)}")
 
