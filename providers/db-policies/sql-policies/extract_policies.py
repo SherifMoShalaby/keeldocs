@@ -23,6 +23,12 @@ import re
 import sys
 
 MIGRATION_DIRS = ("supabase/migrations", "migrations", "db/migrations", "sql")
+# Directories a repository walk must never descend into. The engine's own walk
+# already refuses these and refuses nested checkouts, but this extractor is also
+# invoked directly (the fixture harness) and on hosts with no per-glob sandbox
+# it sees the whole tree, so the refusal has to live here as well.
+SKIP_DIRS = {".git", ".keeldocs", "node_modules", "vendor", "dist", "build",
+             ".next", "__pycache__", ".venv", "venv", "target"}
 CREATE_RE = re.compile(r"\bcreate\s+policy\s+(\"[^\"]+\"|[A-Za-z_][\w$]*)\s+on\s+([\w.\"]+)", re.I)
 DROP_RE = re.compile(r"\bdrop\s+policy\s+(?:if\s+exists\s+)?(\"[^\"]+\"|[A-Za-z_][\w$]*)\s+on\s+([\w.\"]+)", re.I)
 RLS_RE = re.compile(r"\balter\s+table\s+(?:only\s+)?(?:if\s+exists\s+)?([\w.\"]+)\s+(enable|disable|force|no\s+force)\s+row\s+level\s+security", re.I)
@@ -128,17 +134,36 @@ def parse_policy(stmt, m):
     }
 
 
+def under_migration_dir(rel):
+    """True when `rel`'s DIRECTORY chain contains one of MIGRATION_DIRS as a
+    consecutive run of path segments, at any depth.
+
+    The four names were joined to the repository root, so a migration chain in a
+    monorepo package - `packages/db/migrations/0001_init.sql` - was not walked at
+    all. db-policies then reported `status: ok` with zero policies, zero rls
+    facts and zero gaps, which reads exactly like a database with no row-level
+    security rather than like a directory nobody opened. Segment matching, not
+    substring matching: `mysql/queries.sql` must not read as `sql/`.
+    """
+    parts = rel.split("/")[:-1]
+    for d in MIGRATION_DIRS:
+        seg = d.split("/")
+        for i in range(len(parts) - len(seg) + 1):
+            if parts[i:i + len(seg)] == seg:
+                return True
+    return False
+
+
 def main(root):
     files = []
-    for d in MIGRATION_DIRS:
-        base = os.path.join(root, d)
-        if not os.path.isdir(base):
-            continue
-        for dirpath, dirnames, filenames in os.walk(base):
-            dirnames.sort()
-            for fn in sorted(filenames):
-                if fn.endswith(".sql"):
-                    files.append(os.path.relpath(os.path.join(dirpath, fn), root).replace(os.sep, "/"))
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        for fn in sorted(filenames):
+            if not fn.endswith(".sql"):
+                continue
+            rel = os.path.relpath(os.path.join(dirpath, fn), root).replace(os.sep, "/")
+            if under_migration_dir(rel):
+                files.append(rel)
     files.sort()
 
     policies, rls = {}, {}

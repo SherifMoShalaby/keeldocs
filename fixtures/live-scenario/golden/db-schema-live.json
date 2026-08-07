@@ -82,5 +82,11 @@
    "comment": null
   }
  ],
+ "warnings": [
+  {
+   "kind": "live-entry-not-modelled: view",
+   "file": "public.order_totals"
+  }
+ ],
  "source": "canned"
 }

@@ -14,13 +14,31 @@ HANDLER = {"route.ts", "route.js", "route.tsx"}
 SKIP = {"node_modules", ".git", ".keeldocs", "golden", ".next", "dist"}
 
 
-def main(root):
+def main(root, detected=None):
+    # argv[2], when the engine supplies it, is the `next.config.*` DETECTION
+    # proved. The App Router root lives beside that file, not at the repository
+    # root: an app at `apps/web/` was detected, ran, and returned
+    # `{"routes": [], "warnings": []}` - a literal empty warnings list, so
+    # client-routes reported `status: ok` over nothing at all. The candidate
+    # ORDER inside a Next project is deliberately unchanged; only where it is
+    # anchored moved.
+    anchor = root
+    if detected:
+        p = detected if os.path.isabs(detected) else os.path.join(root, detected)
+        anchor = os.path.dirname(p) or root
     base = None
     for cand in ("app", os.path.join("src", "app")):
-        if os.path.isdir(os.path.join(root, cand)):
-            base = os.path.join(root, cand)
+        if os.path.isdir(os.path.join(anchor, cand)):
+            base = os.path.join(anchor, cand)
             break
-    routes = []
+    routes, warns = [], []
+    if base is None:
+        # A Next project with neither `app/` nor `src/app/` is a Pages Router
+        # project, or a router root this provider does not resolve. Either way
+        # the honest answer is a named gap - "no routes" and "I did not look in
+        # the right place" are the same bytes without one.
+        warns.append({"kind": "app-router-root-not-found",
+                      "file": os.path.relpath(anchor, root).replace(os.sep, "/")})
     if base is not None:
         for dirpath, dirnames, filenames in os.walk(base):
             dirnames[:] = sorted(d for d in dirnames if d not in SKIP and not d.startswith("@"))
@@ -40,8 +58,9 @@ def main(root):
             continue
         seen.add(r["path"])
         uniq.append(r)
-    print(json.dumps({"routes": uniq, "warnings": []}, indent=1))
+    warns.sort(key=lambda w: (w["kind"], w["file"]))
+    print(json.dumps({"routes": uniq, "warnings": warns}, indent=1))
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)

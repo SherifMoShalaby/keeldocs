@@ -9,7 +9,11 @@ tier: code            # E9 field gap: Next.js routes ARE the filesystem (App
                       # route.* handlers are the app's API URLs and emit too.
 entry: ./extract_next.py
 detect: { files: ["next.config.ts", "next.config.js", "next.config.mjs"] }
-inputs: ["app/**", "src/app/**"]
+argMode: detectedFile # the App Router root is resolved beside the next.config
+                      # detection found, not at the repository root: a Next app
+                      # under apps/web/ produced `routes: []` with a literal
+                      # empty `warnings`, and client-routes still said `ok`
+inputs: ["**/app/**", "**/src/app/**"]
 requires: []
 timeout_class: B
-emits: [route]
+emits: [route, extraction-gap]   # a tree with no app router is now a NAMED gap

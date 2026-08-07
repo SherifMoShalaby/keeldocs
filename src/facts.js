@@ -331,12 +331,43 @@ function argsFor(reg, repoRoot, detectInfo, allFiles) {
     // a prisma repo names prisma in package.json, which wins before `files` is
     // ever consulted. Both paths take found[0]: same walk, same order, same set.
     const schema = detectInfo.file ?? (found.length ? join(repoRoot, found[0]) : null);
-    if (!schema) return { args: null, ignored: [] };
+    if (!schema) return { args: null, ignored: [], ignoredKind: null };
     const chosen = toPosix(relative(repoRoot, schema));
-    return { args: [schema], ignored: found.filter((rel) => rel !== chosen) };
+    return { args: [schema], ignored: found.filter((rel) => rel !== chosen), ignoredKind: "schema-ignored" };
   }
-  if (reg.argMode === "providerDir") return { args: [reg.dir, repoRoot], ignored: [] }; // .scm runtime: which provider + which repo
-  return { args: [repoRoot], ignored: [] };
+  if (reg.argMode === "providerDir") return { args: [reg.dir, repoRoot], ignored: [], ignoredKind: null }; // .scm runtime: which provider + which repo
+  // `argMode: detectedFile` is the same double duty one step out. These
+  // providers are handed the repository root and then re-derive, at the root,
+  // the very path detection had already proved somewhere else in the tree:
+  // rails re-joined `config/routes.rb`, next-routes re-tested `app` and
+  // `src/app`, compose re-walked its four filenames. Measured on `main` before
+  // this existed, on a tree with `apps/api/config/routes.rb`,
+  // `apps/web/app/**`, `deploy/docker-compose.yml` and
+  // `packages/db/migrations/*.sql`: http-endpoints, client-routes,
+  // services-topology and db-policies each reported `status: ok` with an empty
+  // fact set, no gap of any kind, and `check` exited 0. Detection proving a
+  // file and the extractor never being told which one is the same defect
+  // `schemaFile` carried, and it is louder here because the answer is not a
+  // smaller one - it is nothing at all.
+  //
+  // It is opt-in per manifest rather than the default for `root`, because most
+  // root-mode providers walk the whole tree and their unchosen `detect.files`
+  // matches are read, not skipped: naming `aspnet`'s second `Program.cs` or
+  // `django`'s second `manage.py` as ignored would be a manufactured gap.
+  if (reg.argMode === "detectedFile") {
+    const found = allNamed(allFiles, reg.detect?.files ?? []);
+    // `deps` detection carries no file; fall back to the same walk order the
+    // `schemaFile` branch uses so the two modes cannot disagree about which
+    // match wins.
+    const picked = detectInfo.file ?? (found.length ? join(repoRoot, found[0]) : null);
+    if (!picked) return { args: [repoRoot], ignored: [], ignoredKind: null };
+    const chosen = toPosix(relative(repoRoot, picked));
+    // Root first, so an extractor that ignores argv[2] keeps its old behaviour
+    // and every committed golden is byte-stable.
+    return { args: [repoRoot, picked], ignored: found.filter((rel) => rel !== chosen),
+             ignoredKind: "candidate-ignored" };
+  }
+  return { args: [repoRoot], ignored: [], ignoredKind: null };
 }
 
 function runProvider(reg, repoRoot, args, factEnv = {}, scope = null, resolved = null, inputBytes = 0) {
@@ -417,7 +448,14 @@ function envFacts(raw, provenanceBase) {
         source: (v.sources ?? []).slice(0, 20).map((s) => ({ file: s.file, line: s.line, kind: s.kind })) },
     });
   }
-  return { facts, gaps: [] };
+  // `gaps: []` was hardcoded here - the third and last survivor of the class
+  // that made `drizzle` declare `extraction-gap` while being structurally
+  // unable to produce one, and that made `workspace-layout` collapse a
+  // three-member workspace to one package in silence. A config-surface provider
+  // that cannot say "I could not read this .env.example" has no way to report a
+  // blind spot at all, and the engine would drop the sentence even if it did.
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? w.reason ?? "unspecified", file: w.file ?? null }));
+  return { facts, gaps };
 }
 
 // The re-anchoring matcher (ADR-007 S2) compares NAMELESS signature sets, so a
@@ -515,7 +553,12 @@ function liveTableFacts(raw, provenanceBase, declaredTables) {
       provenance: { ...provenanceBase, source: [{ kind: "live-catalog" }] },
     });
   }
-  return { facts, gaps: [] };
+  // Same hardcoded `gaps: []`. The declared-beats-live skip above is a
+  // documented identity rule, but anything the live provider itself could not
+  // read - a schema the role cannot see, a catalog entry it will not model -
+  // had nowhere to go and was reported as a complete answer.
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? w.reason ?? "unspecified", file: w.file ?? null }));
+  return { facts, gaps };
 }
 
 function replayFacts(raw, provenanceBase, declaredTables, declaredEnums) {
@@ -661,7 +704,12 @@ function policyFacts(raw, provenanceBase) {
       provenance: { ...provenanceBase, source: [{ file: r.file }] },
     });
   }
-  return { facts, gaps: [] };
+  // And the third. `sql-policies` is a PATTERN-tier parser by its own manifest -
+  // it says so in its docstring, that exotic quoting "is simply not matched" -
+  // so it is precisely the provider that most needs to be able to say what it
+  // walked past. It could not, and neither could the engine on its behalf.
+  const gaps = (raw.warnings ?? []).map((w) => ({ kind: w.kind ?? w.reason ?? "unspecified", file: w.file ?? null }));
+  return { facts, gaps };
 }
 
 function churnFacts(raw, provenanceBase) {
@@ -949,13 +997,15 @@ export function extractAll(repoRootIn, { disable = [], live = null, trustKeys = 
     }
     // ---- D1: the subprocess, or the answer it gave last time ----
     const resolved = resolveInputs(repoRoot, reg.inputs, allFiles);
-    const { args, ignored } = argsFor(reg, repoRoot, d, allFiles);
+    const { args, ignored, ignoredKind } = argsFor(reg, repoRoot, d, allFiles);
     // The engine chose the file, so the engine names the ones it did not choose.
     // Pushed here rather than left to the extractor because the extractor is
     // never told the others exist - it receives one path in argv. Recorded even
     // on a cache hit: what was skipped is a property of the tree, not of how
-    // this run was served.
-    for (const rel of ignored) gaps.push({ kind: "schema-ignored", file: rel });
+    // this run was served. The kind comes from the mode that did the choosing
+    // (`schema-ignored` / `candidate-ignored`), because a gap whose noun is
+    // wrong is a receipt a reader cannot act on.
+    for (const rel of ignored) gaps.push({ kind: ignoredKind, file: rel });
     let run;
     if (args === null) {
       run = { status: "not_applicable" }; // argMode: schemaFile with no schema

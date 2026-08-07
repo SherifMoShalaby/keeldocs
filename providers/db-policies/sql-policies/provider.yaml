@@ -5,7 +5,12 @@ tier: declarative     # anchored scans + balanced-paren walker over migration SQ
 confidence: PATTERN   # conventional migration SQL; exotic quoting is unmatched, never guessed
 entry: ./extract_policies.py
 detect: { always: true }   # zero migration dirs = zero facts, honestly
-inputs: ["supabase/migrations/**/*.sql", "migrations/**/*.sql", "db/migrations/**/*.sql", "sql/**/*.sql"]
+inputs: ["**/supabase/migrations/**/*.sql", "**/migrations/**/*.sql", "**/db/migrations/**/*.sql", "**/sql/**/*.sql"]
+# `**/` because these were repo-root-anchored and MIGRATION_DIRS in the
+# extractor was the same four literals: `packages/db/migrations/*.sql` was
+# neither readable nor walked, and db-policies reported `status: ok` with no
+# policies and no gap. `**/` matches zero directories too, so a root-layout
+# repository resolves to exactly the same file set it did before.
 requires: []
 timeout_class: D
 emits: [policy, rls]

@@ -27,6 +27,11 @@ const KNOWN_KEYS = new Set([
   "exec", "association", "incremental",
 ]);
 const DETECT_KEYS = new Set(["always", "deps", "files", "dirs"]);
+// What the engine puts in argv. `root` (default) = the repository root;
+// `schemaFile` = the one file detection selected; `providerDir` = the .scm
+// runtime's provider dir + root; `detectedFile` = root PLUS the path detection
+// proved, for providers whose detect.files decides which file is read.
+const ARG_MODES = new Set(["root", "schemaFile", "providerDir", "detectedFile"]);
 
 // ---------- strict YAML-subset parser ----------
 
@@ -132,6 +137,17 @@ function validate(y, dir, file, { entry = true } = {}) {
   if (typeof y.detect !== "object" || Array.isArray(y.detect)) throw new Error(`${file}: \`detect\` must be a flow map`);
   for (const k of Object.keys(y.detect)) {
     if (!DETECT_KEYS.has(k)) throw new Error(`${file}: detect.\`${k}\` unknown (known: ${[...DETECT_KEYS].join(", ")})`);
+  }
+  // `argMode` decides what the extractor is handed, and an unrecognised value
+  // fell through to the default `root` - which is exactly the shape that made
+  // `detectedFile` necessary in the first place: the provider is handed the
+  // repository root, re-guesses the layout at it, finds nothing, and reports
+  // `status: ok` over an empty fact set. A typo here must not spell "silence".
+  if (y.argMode !== undefined && !ARG_MODES.has(y.argMode)) {
+    throw new Error(`${file}: argMode \`${y.argMode}\` unknown (known: ${[...ARG_MODES].join(", ")})`);
+  }
+  if (y.argMode === "detectedFile" && !(Array.isArray(y.detect?.files) && y.detect.files.length)) {
+    throw new Error(`${file}: argMode \`detectedFile\` needs \`detect.files\` - there is no path to hand over without it`);
   }
   if (y.runtime !== undefined && y.runtime !== "query") throw new Error(`${file}: runtime must be \`query\` when present`);
   if (y.exec !== undefined && y.exec !== "python" && y.exec !== "node") {

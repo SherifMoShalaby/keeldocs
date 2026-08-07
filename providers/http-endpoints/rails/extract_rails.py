@@ -35,10 +35,22 @@ def only_except(rest):
     return names(only), names(exc)
 
 
-def main(root):
-    rel = "config/routes.rb"
-    p = os.path.join(root, rel)
+def main(root, detected=None):
+    # argv[2], when the engine supplies it, is the `config/routes.rb` DETECTION
+    # proved - which is not necessarily the one at the repository root. A Rails
+    # API under `apps/api/` was found by detection, the provider ran, and this
+    # function then looked for `<root>/config/routes.rb`, found nothing, and
+    # printed an empty result with no warning: `http-endpoints` reported
+    # `status: ok` over zero endpoints. Optional, so a direct invocation (the
+    # fixture harness) keeps the root-relative behaviour and its golden.
+    p = os.path.join(root, "config", "routes.rb") if not detected \
+        else (detected if os.path.isabs(detected) else os.path.join(root, detected))
+    rel = os.path.relpath(p, root).replace(os.sep, "/")
     endpoints, warns = [], []
+    if not os.path.exists(p):
+        # Being handed a path that is not there is a fact about the tree, not a
+        # reason to answer "no endpoints" as though that had been measured.
+        warns.append({"file": rel, "reason": "routes file not found"})
     if os.path.exists(p):
         stack = []  # (kind, prefix_segment) ; kind in {ns, scope, resources, plain}
         for i, raw in enumerate(open(p, encoding="utf-8", errors="replace")):
@@ -98,4 +110,4 @@ def main(root):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)

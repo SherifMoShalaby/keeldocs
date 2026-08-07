@@ -56,10 +56,18 @@ def main(_root):
         if child and parent and cols:
             rels_by_child.setdefault(child, []).append({"field": cols[0], "target": parent})
 
-    tables = []
+    tables, warns = [], []
     for t in doc.get("tables") or []:
         ttype = (t.get("type") or "").upper()
-        if "TABLE" not in ttype:  # views/materialized views are not ERD surface (v0.2)
+        if "TABLE" not in ttype:
+            # Views and materialized views are not ERD surface (v0.2) - a scope
+            # decision, not an absence. It was made SILENTLY: the catalog said
+            # `public.order_totals` exists and this provider dropped it without
+            # a word, so a live run over a schema that is mostly views reported
+            # a complete-looking answer over a fraction of it. Named, so the
+            # scope is visible; still not modelled, so nothing is guessed.
+            warns.append({"kind": f"live-entry-not-modelled: {ttype.lower() or 'unknown type'}",
+                          "file": t.get("name") or ""})
             continue
         name = t.get("name") or ""
         schema, _, table = name.rpartition(".")
@@ -74,7 +82,8 @@ def main(_root):
                                            key=lambda r: (r["field"], r["target"])),
                        "comment": t.get("comment") or None})
     tables.sort(key=lambda t: t["name"])
-    print(json.dumps({"tables": tables, "source": source}, indent=1))
+    warns.sort(key=lambda w: (w["kind"], w["file"]))
+    print(json.dumps({"tables": tables, "warnings": warns, "source": source}, indent=1))
 
 
 if __name__ == "__main__":

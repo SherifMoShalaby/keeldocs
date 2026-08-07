@@ -21,8 +21,20 @@ def port_str(p):
         return json.dumps(p, sort_keys=True)
     return str(p)
 
-def main(root):
-    path = next((os.path.join(root, c) for c in CANDIDATES if os.path.exists(os.path.join(root, c))), None)
+def main(root, detected=None):
+    # argv[2], when the engine supplies it, is the compose file DETECTION proved,
+    # wherever it lives. CANDIDATES stays as the direct-invocation fallback: it
+    # is a ROOT-anchored first-wins list, so `deploy/docker-compose.yml` was
+    # detected, this provider ran, printed `{"services": []}`, and
+    # services-topology reported `status: ok` over an empty fact set. Which of
+    # several candidates wins is the engine's walk order and is NOT a claim
+    # about Docker's own precedence - the engine names every one it did not
+    # choose rather than implying the others were considered and rejected.
+    if detected:
+        p = detected if os.path.isabs(detected) else os.path.join(root, detected)
+        path = p if os.path.exists(p) else None
+    else:
+        path = next((os.path.join(root, c) for c in CANDIDATES if os.path.exists(os.path.join(root, c))), None)
     if not path:
         print(json.dumps({"services": []}))
         return
@@ -47,4 +59,4 @@ def main(root):
     print(json.dumps({"services": out, "file": os.path.relpath(path, root).replace(os.sep, "/")}, indent=1))
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)

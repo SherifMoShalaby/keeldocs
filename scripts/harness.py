@@ -1202,6 +1202,19 @@ def main():
         assert "public.orders" in dm and "public.users" in dm and "Item" in dm
         assert "public.item" not in dm, "declared-beats-live must skip the shadowed table"
         assert "order_totals" not in dm, "views are not ERD surface"
+        # ...and NOT modelling it is a scope decision, so it has to be legible.
+        # `liveTableFacts` hardcoded `gaps: []`, so the live provider had no way
+        # to report anything it walked past: a catalog that is mostly views
+        # produced a complete-looking answer over a fraction of it. This is the
+        # third of the three hardcoded normalizers, and the only one an external
+        # stub cannot reach - dispatch is `reg.id === "tbls-live"` and the engine
+        # refuses a duplicate provider id (exit 2), so it is proved here.
+        rep_live = json.load(open([os.path.join(dst, ".keeldocs", "out", f)
+                                   for f in os.listdir(os.path.join(dst, ".keeldocs", "out"))
+                                   if f.startswith("init-")][0], encoding="utf-8"))
+        live_gaps = {(g["kind"], g["file"]) for g in rep_live.get("extractionGaps", [])}
+        assert ("live-entry-not-modelled: view", "public.order_totals") in live_gaps, \
+            f"the catalog entry the live provider declined to model must be NAMED: {sorted(live_gaps)}"
         # born clean UNDER --live (live-initialized docs need live checks - documented)
         rc = kd(dst, "check", "--live", "--json", env=lenv)
         assert rc.returncode == 0 and json.loads(rc.stdout)["code"] == "CLEAN", rc.stdout[:300]
@@ -3238,6 +3251,268 @@ def main():
         rmtree(tmp)
     except Exception as e:
         failures.append(f"schemaFile selection: {why(e)}")
+
+    # `argMode: root` threw away the path detection had just proved, and three
+    # extractors re-derived it at the repository root: rails re-joined
+    # `config/routes.rb`, next-routes re-tested `app` and `src/app`, compose
+    # re-walked its four filenames, and sql-policies' MIGRATION_DIRS were four
+    # root-anchored literals. Measured on `main` before this gate existed, on
+    # fixtures/nested-layout-scenario: `http-endpoints`, `client-routes`,
+    # `services-topology` and `db-policies` each reported `status: ok` with an
+    # EMPTY fact set, no gap of any kind, and `check` exited 0 - the strongest
+    # form of the class this file's changelog opens with, because the answer is
+    # not merely smaller, it is nothing.
+    #
+    # The root-layout twin is the control and it is the whole point. Every other
+    # rails, next, compose and sql-policies fixture in this tree is root-layout,
+    # so every one of their goldens passed against a shape none of them
+    # contained. A nested gate that passed because the nested fixture had
+    # stopped containing routes would still pass; the twin pins what this exact
+    # content produces, and the two trees hold the four inputs byte for byte.
+    try:
+        import shutil as _sh_nl, tempfile as _tf_nl
+        # The outer `kd` is shadowed by a later block's own local of the same
+        # name; use an explicit runner rather than depending on which one wins.
+        def kdx(cwd, *a):
+            return subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js"), *a],
+                                  cwd=cwd, capture_output=True, text=True, timeout=600,
+                                  env={**os.environ, "CI": ""})
+
+        NEST = os.path.join(ROOT, "fixtures", "nested-layout-scenario")
+        ROOTFX = os.path.join(ROOT, "fixtures", "root-layout-scenario")
+
+        def extract(script, root, detected=None):
+            cmd = [sys.executable, os.path.join(ROOT, *script.split("/")), root]
+            if detected:
+                cmd.append(os.path.join(root, *detected.split("/")))
+            r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=180)
+            assert r.returncode == 0, f"{script}: rc={r.returncode} {r.stderr[-300:]}"
+            return json.loads(r.stdout)
+
+        RAILS = "providers/http-endpoints/rails/extract_rails.py"
+        NEXT = "providers/client-routes/next-routes/extract_next.py"
+        COMPOSE = "providers/services-topology/compose/extract_compose.py"
+        POLICIES = "providers/db-policies/sql-policies/extract_policies.py"
+
+        # (1) The twins hold the same bytes, so a count that moves here means the
+        #     fixture changed, not the layout. Asserted rather than assumed.
+        for a, b in (("apps/api/config/routes.rb", "config/routes.rb"),
+                     ("apps/web/next.config.ts", "next.config.ts"),
+                     ("apps/web/app/page.tsx", "app/page.tsx"),
+                     ("apps/web/app/dashboard/page.tsx", "app/dashboard/page.tsx"),
+                     ("apps/web/app/api/health/route.ts", "app/api/health/route.ts"),
+                     ("deploy/docker-compose.yml", "docker-compose.yml"),
+                     ("packages/db/migrations/0001_init.sql", "migrations/0001_init.sql"),
+                     ("packages/db/migrations/0002_policies.sql", "migrations/0002_policies.sql")):
+            assert open(os.path.join(NEST, *a.split("/")), "rb").read() == \
+                   open(os.path.join(ROOTFX, *b.split("/")), "rb").read(), \
+                   f"the twins have drifted apart: {a} != {b}"
+
+        # (2) CONTROL: the root-layout twin still extracts in full. These numbers
+        #     are the fixture's content, so a nested gate cannot pass by the
+        #     nested tree quietly emptying out.
+        r_rails = extract(RAILS, ROOTFX)
+        r_next = extract(NEXT, ROOTFX)
+        r_comp = extract(COMPOSE, ROOTFX)
+        r_pol = extract(POLICIES, ROOTFX)
+        assert len(r_rails["endpoints"]) == 18, \
+            f"control: root config/routes.rb must still yield 18 endpoints, got {len(r_rails['endpoints'])}"
+        assert not r_rails["warnings"], f"control: a root routes.rb is not a gap: {r_rails['warnings']}"
+        assert len(r_next["routes"]) == 3, \
+            f"control: root app/** must still yield 3 routes, got {len(r_next['routes'])}"
+        assert not r_next["warnings"], f"control: a root app/ is not a gap: {r_next['warnings']}"
+        owned = [s for s in r_comp["services"] if s["kind"] == "owned"]
+        assert len(owned) == 2, f"control: a root compose file must still yield 2 owned services, got {owned}"
+        assert (len(r_pol["policies"]), len(r_pol["rls"])) == (2, 1), \
+            f"control: root migrations/ must still yield 2 policies + 1 rls, got " \
+            f"{len(r_pol['policies'])}/{len(r_pol['rls'])}"
+
+        # (3) THE CASE: the same bytes, one directory deeper. Same counts, and
+        #     every receipt points at the nested path rather than a root guess.
+        n_rails = extract(RAILS, NEST, "apps/api/config/routes.rb")
+        n_next = extract(NEXT, NEST, "apps/web/next.config.ts")
+        n_comp = extract(COMPOSE, NEST, "deploy/docker-compose.yml")
+        n_pol = extract(POLICIES, NEST)
+        assert len(n_rails["endpoints"]) == 18 and \
+            {e["file"] for e in n_rails["endpoints"]} == {"apps/api/config/routes.rb"}, \
+            f"nested routes.rb: {len(n_rails['endpoints'])} endpoints from " \
+            f"{sorted({e['file'] for e in n_rails['endpoints']})}"
+        assert len(n_next["routes"]) == 3 and \
+            all(r["file"].startswith("apps/web/app/") for r in n_next["routes"]), \
+            f"nested app router: {n_next['routes']}"
+        assert len([s for s in n_comp["services"] if s["kind"] == "owned"]) == 2 and \
+            n_comp.get("file") == "deploy/docker-compose.yml", \
+            f"nested compose: {n_comp.get('file')} {n_comp['services']}"
+        assert (len(n_pol["policies"]), len(n_pol["rls"])) == (2, 1) and \
+            {p["file"] for p in n_pol["policies"]} == {"packages/db/migrations/0001_init.sql",
+                                                       "packages/db/migrations/0002_policies.sql"}, \
+            f"nested migrations: {n_pol}"
+
+        # (4) End to end, through the engine, which is where the defect was
+        #     visible: `status: ok` over nothing, and a coverage figure that read
+        #     like a repository with no API, no screens, no services and no RLS.
+        tmp = _tf_nl.mkdtemp(prefix="keeldocs-nested-layout-")
+        dst = os.path.join(tmp, "repo")
+        _sh_nl.copytree(NEST, dst, ignore=_sh_nl.ignore_patterns("golden", ".keeldocs"))
+        for c in (["init", "-q", "."], ["config", "user.email", "t@t"],
+                  ["config", "user.name", "t"], ["add", "-A"], ["commit", "-qm", "i"]):
+            subprocess.run(["git", *c], cwd=dst, capture_output=True, timeout=60)
+        ri = kdx(dst, "init", "--yes", "--json")
+        assert ri.returncode == 0, f"nested init rc={ri.returncode}: {ri.stdout[-400:]}{ri.stderr[-400:]}"
+        caps = json.loads(ri.stdout)["data"]["card"]["capabilities"]
+        counts = {}
+        for cap in ("http-endpoints", "client-routes", "services-topology", "db-policies"):
+            path = os.path.join(dst, ".keeldocs", "cache", "facts", f"{cap}.jsonl")
+            counts[cap] = len([l for l in open(path, encoding="utf-8")]) if os.path.exists(path) else 0
+        # The exact shape the gate forbids: ok, and nothing behind it.
+        vacuous = [c for c in counts if caps[c]["status"] == "ok" and counts[c] == 0]
+        assert not vacuous, \
+            f"capabilities reporting `status: ok` over an EMPTY fact set: {vacuous} ({counts})"
+        assert counts == {"http-endpoints": 18, "client-routes": 3,
+                          "services-topology": 3, "db-policies": 3}, counts
+        rc = kdx(dst, "check", "--json")
+        envc = node_json(rc, "nested check")
+        assert rc.returncode == 0 and envc["code"] == "CLEAN", f"{rc.returncode} {envc['summary']}"
+        # `0.4.2` summarised this exact tree as `no facts` - a coverage ratio with
+        # nothing in either term, printed beside four capabilities reporting `ok`.
+        assert "no facts" not in envc["summary"], envc["summary"]
+        # the receipts a user reads must name the nested files, not a root guess
+        ep = open(os.path.join(dst, "docs", "reference", "endpoints.md"), encoding="utf-8").read()
+        assert "apps/api/config/routes.rb" in ep, "the endpoint table must cite the nested routes.rb"
+        rmtree(tmp)
+        print("  PASS  nested layout: rails/next/compose/sql-policies all extract from a monorepo "
+              "(18 endpoints, 3 routes, 3 services, 3 policy facts, nested receipts); "
+              "root-layout twin control unchanged")
+    except Exception as e:
+        failures.append(f"nested layout: {why(e)}")
+
+    # The second half of the same mechanism. `detect.files` is a basename match
+    # over the whole tree and `argMode: detectedFile` makes it a SELECTION, so
+    # the engine must name every candidate it did not choose - the argument
+    # `schema-ignored` and `chain-ignored` already make. Which candidate wins is
+    # the walk's order and this gate deliberately does NOT assert it: that would
+    # be a claim about Docker's own file precedence, which nothing here has
+    # checked. The control is the load-bearing half - one compose file must
+    # produce NO gap, or all this asserts is that gaps appear.
+    try:
+        import shutil as _sh_ci, tempfile as _tf_ci
+        # The outer `kd` is shadowed by a later block's own local of the same
+        # name; use an explicit runner rather than depending on which one wins.
+        def kdx(cwd, *a):
+            return subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js"), *a],
+                                  cwd=cwd, capture_output=True, text=True, timeout=600,
+                                  env={**os.environ, "CI": ""})
+
+        tmp = _tf_ci.mkdtemp(prefix="keeldocs-candidate-")
+
+        def compose_repo(name, extra_names=()):
+            d = os.path.join(tmp, name)
+            _sh_ci.copytree(os.path.join(ROOT, "fixtures", "root-layout-scenario"), d,
+                            ignore=_sh_ci.ignore_patterns("golden", ".keeldocs"))
+            for extra in extra_names:
+                _sh_ci.copyfile(os.path.join(d, "docker-compose.yml"), os.path.join(d, extra))
+            for c in (["init", "-q", "."], ["config", "user.email", "t@t"],
+                      ["config", "user.name", "t"], ["add", "-A"], ["commit", "-qm", "i"]):
+                subprocess.run(["git", *c], cwd=d, capture_output=True, timeout=60)
+            assert kdx(d, "init", "--yes", "--json").returncode == 0, name
+            rr = kdx(d, "check", "--json")
+            ee = node_json(rr, f"check in {name}")
+            sp = json.load(open(os.path.join(d, *ee["full"].split("/")), encoding="utf-8"))
+            return ee, [g for g in sp.get("extractionGaps", []) if g["kind"] == "candidate-ignored"]
+
+        env_one, ign_one = compose_repo("one")
+        assert not ign_one, f"control: a single compose file must name nothing as ignored: {ign_one}"
+        assert "extraction gap" not in env_one["summary"], \
+            f"control: the summary must stay quiet when there is nothing to say: {env_one['summary']}"
+        env_two, ign_two = compose_repo("two", ("compose.yaml",))
+        assert len(ign_two) == 1 and ign_two[0]["file"] in ("docker-compose.yml", "compose.yaml"), \
+            f"the compose file the engine did not choose must be named, once, by path: {ign_two}"
+        assert "extraction gap" in env_two["summary"], \
+            f"an unread input has to be legible beside coverage: {env_two['summary']}"
+        # ...and both candidates must be accounted for: one read, one named.
+        assert {ign_two[0]["file"]} | {"docker-compose.yml", "compose.yaml"} == \
+            {"docker-compose.yml", "compose.yaml"}, ign_two
+        rmtree(tmp)
+        print("  PASS  candidate selection: with two root compose files the unchosen one is named "
+              "and counted beside coverage; the single-file control names nothing")
+    except Exception as e:
+        failures.append(f"candidate selection: {why(e)}")
+
+    # Three normalizers still hardcoded `gaps: []` - `envFacts` (config-surface),
+    # `liveTableFacts` (db-schema/tbls-live) and `policyFacts` (db-policies).
+    # They are the last of the class `0.4.0` opened with `drizzle` (which
+    # DECLARED `extraction-gap` for three releases while being structurally
+    # unable to emit one) and `0.4.2` continued with `packageFacts` (which
+    # collapsed a three-member workspace to one package in silence). A provider
+    # in one of these capabilities could report a blind spot perfectly and the
+    # engine would drop the sentence on the floor.
+    #
+    # Two of the three are proved with signed external stub providers, because a
+    # stub is the only way to assert "whatever the extractor says, the engine
+    # carries" rather than "this particular extractor happens to say something".
+    # The third cannot be: `liveTableFacts` is dispatched by `reg.id ===
+    # "tbls-live"` and the engine refuses a duplicate provider id outright
+    # (verified: `duplicate provider id(s): tbls-live`, exit 2), so it is proved
+    # through the real provider and the canned tbls seam instead - see the live
+    # integration block, which now asserts the dropped view is NAMED.
+    try:
+        import shutil as _sh_gp, tempfile as _tf_gp
+        # The outer `kd` is shadowed by a later block's own local of the same
+        # name; use an explicit runner rather than depending on which one wins.
+        def kdx(cwd, *a):
+            return subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js"), *a],
+                                  cwd=cwd, capture_output=True, text=True, timeout=600,
+                                  env={**os.environ, "CI": ""})
+
+        tmp = _tf_gp.mkdtemp(prefix="keeldocs-gappass-")
+        author = os.path.join(tmp, "author")
+        os.makedirs(author)
+        STUBS = {
+            "stub-config": ("config-surface", "env-var",
+                            '{"vars": [], "warnings": [{"kind": "stub-config-gap", "file": "stub/config.env"}]}'),
+            "stub-policies": ("db-policies", "policy",
+                              '{"policies": [], "rls": [], '
+                              '"warnings": [{"kind": "stub-policy-gap", "file": "stub/policy.sql"}]}'),
+        }
+        for pid, (cap, fact, out) in STUBS.items():
+            d = os.path.join(author, pid)
+            os.makedirs(d)
+            W(os.path.join(d, "provider.yaml"),
+              f"id: {pid}\ncapability: {cap}\nsemver: 1.0.0\ntier: code\n"
+              f"entry: ./extract.py\ndetect: {{ always: true }}\ninputs: [\"**/*.stub\"]\n"
+              f"timeout_class: A\nemits: [{fact}, extraction-gap]\n")
+            W(os.path.join(d, "extract.py"), f"import json\nprint(json.dumps({out}))\n")
+        dst = os.path.join(tmp, "repo")
+        _sh_gp.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), dst,
+                        ignore=_sh_gp.ignore_patterns("golden", ".keeldocs"))
+        r = kdx(author, "provider", "keygen", "--json")
+        pub = json.loads(r.stdout)["data"]["publicKeyB64"]
+        key = os.path.join(author, "keeldocs-signing-key.pem")
+        assert kdx(dst, "provider", "trust", "acme", pub, "--json").returncode == 0
+        for pid in STUBS:
+            d = os.path.join(author, pid)
+            assert kdx(author, "provider", "sign", d, "--key", key, "--signer", "acme",
+                      "--json").returncode == 0, pid
+            rr = kdx(dst, "provider", "add", d, "--yes", "--json")
+            assert rr.returncode == 0, f"{pid}: {rr.stdout[-300:]}"
+        assert kdx(dst, "init", "--yes", "--json").returncode == 0
+        rc = kdx(dst, "check", "--json")
+        envg = node_json(rc, "gap pass-through check")
+        spill = json.load(open(os.path.join(dst, *envg["full"].split("/")), encoding="utf-8"))
+        got = {(g["kind"], g["file"]) for g in spill.get("extractionGaps", [])}
+        for want in (("stub-config-gap", "stub/config.env"), ("stub-policy-gap", "stub/policy.sql")):
+            assert want in got, \
+                f"a warning the extractor emitted never reached extractionGaps: {want} not in {sorted(got)}"
+        # CONTROL: a gap is a receipt, not a verdict. If it moved the exit code
+        # these assertions would be indistinguishable from asserting drift.
+        assert rc.returncode == 0 and envg["code"] == "CLEAN", \
+            f"an extraction gap must not move the verdict: {rc.returncode} {envg['summary']}"
+        assert "extraction gap" in envg["summary"], envg["summary"]
+        rmtree(tmp)
+        print("  PASS  normalizer gap pass-through: config-surface and db-policies carry an extractor's "
+              "warning to extractionGaps (was hardcoded `gaps: []`), and it moves no exit code")
+    except Exception as e:
+        failures.append(f"normalizer gap pass-through: {why(e)}")
 
     # KEEL-28. `emits:` reached the permission manifest a human reads before
     # consenting to a third-party provider, and stopped there: it never entered

@@ -10,7 +10,11 @@ tier: code            # config/routes.rb is a CONSTRAINED DSL, not general Ruby:
                       # guessed route.
 entry: ./extract_rails.py
 detect: { files: ["routes.rb"] }
-inputs: ["config/routes.rb"]
+argMode: detectedFile # detection already proves WHICH routes.rb; `inputs` was
+                      # root-anchored and the extractor re-joined config/routes.rb
+                      # at the root, so a Rails app under apps/api/ extracted
+                      # nothing and the capability still reported `ok`
+inputs: ["**/config/routes.rb"]
 requires: []
 timeout_class: B
 emits: [endpoint, extraction-gap]

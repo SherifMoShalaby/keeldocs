@@ -1,5 +1,100 @@
 # Changelog
 
+## Unreleased
+
+**Four more of the same class, and this batch is about which files the engine
+reads at all rather than which documents.** `0.4.2` was about scan roots. These
+are one directory deeper: detection proved a path, and the extractor was handed
+the repository root and re-guessed the layout at it. Every batch so far has been
+sitting in the tree the previous release shipped from, and this one is no
+different.
+
+Measured on `fixtures/nested-layout-scenario` — a Rails app at
+`apps/api/`, a Next.js App Router project at `apps/web/`, a compose file at
+`deploy/` and a migration chain at `packages/db/` — with the published `0.4.2`
+engine and this tree, on the same repository:
+
+| what your repository contains | 0.4.2 | now |
+|---|---|---|
+| a Rails `config/routes.rb` below the root | `http-endpoints: ok`, zero facts, no gap | 18 endpoints, cited at `apps/api/config/routes.rb` |
+| an App Router below the root | `client-routes: ok`, zero facts, no gap | 3 routes, cited under `apps/web/app/` |
+| a compose file below the root | `services-topology: ok`, zero facts, no gap | 3 services, cited at `deploy/docker-compose.yml` |
+| a migration chain below the root | `db-policies: ok`, zero facts, no gap | 2 policies + 1 rls, cited under `packages/db/migrations/` |
+| all four at once | `CLEAN`, exit 0, summary `no facts` | `CLEAN`, exit 0, `23/25 surfaces documented (92%)` |
+| a second compose candidate the engine did not read | `100%` documented, no gap | `100%`, and the skipped file named |
+
+Exit codes do not move: a repository that was clean stays clean, and every
+root-layout repository resolves to exactly the same file set it did before.
+What changes is that four capabilities stop reporting `ok` over nothing.
+
+### Fixed
+
+- **Detection proved a path and then threw it away.** For `argMode: root` —
+  every provider that is not the prisma-style single-file case — the engine
+  passed the repository root and nothing else, so `rails` re-joined
+  `config/routes.rb` at the root, `next-routes` re-tested `app` and `src/app` at
+  the root, `compose` re-walked its four filenames at the root, and
+  `sql-policies` used four root-anchored migration directories. In a monorepo
+  none of those exist, so each provider ran, found nothing, and returned an
+  empty result that the engine could not tell apart from a repository with no
+  API, no screens, no services and no row-level security. This is the same
+  double duty `0.4.1` fixed for `schemaFile`, one step out: there, detection
+  chose the wrong one of several files; here it chose correctly and was not
+  asked.
+
+  A new `argMode: detectedFile` hands the extractor the path detection proved,
+  alongside the root. It is declared per provider rather than applied to every
+  root-mode provider, and that distinction is load-bearing: `aspnet`, `django`,
+  `spring`, `gin` and the rest detect on a marker file and then walk the whole
+  tree, so naming their unchosen `detect.files` matches would manufacture gaps
+  for files that were read. An unknown `argMode` used to fall through to the
+  default; it is now a manifest error, because a typo there spells exactly the
+  silence above.
+
+  **Exactly which providers changed, because the last release shipped a claim
+  like this one that was true of a subset.** Three manifests declare
+  `argMode: detectedFile` and no others do: `rails`, `next-routes` and
+  `compose`. `sql-policies` is *not* one of them — it detects with
+  `always: true`, so there is no single proven path to hand it, and its half of
+  this is a different change: its four migration directories are now matched as
+  path segments anywhere in the tree rather than joined to the root, and its
+  `inputs` gained the matching `**/` prefixes. `tbls-live` changed for the
+  normalizer reason below, not this one. Five provider directories in total; no
+  other provider's behaviour moves.
+
+- **Every candidate the engine did not read is named.** `detect.files` is a
+  basename match over the whole tree, so a repository with both
+  `docker-compose.yml` and `compose.yaml` at the root has one of them read and
+  the other passed over. It is now a `candidate-ignored` extraction gap naming
+  the path, counted beside the coverage figure — the argument `schema-ignored`
+  and `chain-ignored` already make. Which candidate wins is the engine's walk
+  order, and nothing here claims it matches Docker's own precedence.
+
+- **Three normalizers still discarded every warning a provider sent.**
+  `config-surface`, `db-policies` and live `db-schema` hardcoded an empty gap
+  list, so a provider in one of those capabilities could report a blind spot
+  perfectly and the engine would drop the sentence. This is the last of the
+  class that had `drizzle` declaring `extraction-gap` for three releases while
+  being structurally unable to emit one, and `workspace-layout` collapsing a
+  three-member workspace to one package in silence.
+
+  One consequence ships with it: the live provider deliberately does not model
+  views, and it dropped them without a word, so a `--live` run over a catalog
+  that is mostly views reported a complete-looking answer over a fraction of it.
+  Each unmodelled catalog entry is now named. It is still not modelled — the
+  scope decision is unchanged, only its silence.
+
+### Also
+
+- Two new fixtures, and they are a pair. `nested-layout-scenario` holds all four
+  inputs below the root; `root-layout-scenario` holds the same four files, byte
+  for byte, at the root. Every rails, next, compose and sql-policies fixture in
+  this tree was root-layout, so all of their goldens passed against a shape none
+  of them contained — the same reason the three refused breadth providers stay
+  refused. The root twin is the control: it pins what this exact content yields
+  (18 endpoints, 3 routes, 2 owned services, 2 policies and 1 rls), so a nested
+  gate cannot pass by the nested fixture quietly emptying out.
+
 ## 0.4.2 — 2026-08-07
 
 **A tenth and eleventh member of the same class, and this pair retires the whole

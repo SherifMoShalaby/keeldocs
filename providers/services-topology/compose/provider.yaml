@@ -5,7 +5,12 @@ tier: declarative     # static YAML parse; never executes compose, never resolve
 confidence: PARSED    # full yaml parse - overrides the tier default
 entry: ./extract_compose.py
 detect: { files: ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"] }
-inputs: ["docker-compose*.{yml,yaml}", "compose*.{yml,yaml}"]
+argMode: detectedFile # detection proves WHICH compose file; the extractor used
+                      # to re-walk its own four names at the repository root, so
+                      # `deploy/docker-compose.yml` was found by detection and
+                      # then never opened. Every candidate the engine did not
+                      # choose is now named as `candidate-ignored`.
+inputs: ["**/docker-compose*.{yml,yaml}", "**/compose*.{yml,yaml}"]
 requires: ["pyyaml"]
 timeout_class: D
 emits: [service]

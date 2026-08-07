@@ -12,7 +12,7 @@ the file, and three npm/yarn workspace manifests `0.4.1` passes over in silence
 are each named, with a clean single-package manifest still silent on both.
 3-OS CI green including
 `action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
-runs before it and fixed the same day (§4 item 6) · 184 unit tests · 40 extractor goldens · 95 harness checks ·
+runs before it and fixed the same day (§4 item 6) · 184 unit tests · 40 extractor goldens · 98 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -29,6 +29,26 @@ eleventh and twelfth instance of `CLEAN` over something unchecked, across three
 releases. The count is not converging, and a header asserting the queue is empty
 is the same failure in the tracking layer that `check` exists to catch in the
 documentation layer.
+
+**Four more the same day, and they were also in the tree `0.4.2` shipped from —
+thirteenth through sixteenth.** `argMode: root` discarded the path detection had
+just proved, so `rails`, `next-routes`, `compose` and `sql-policies` were each
+handed the repository root and re-derived a layout at it. On a monorepo — a
+Rails app under `apps/api/`, an App Router under `apps/web/`, a compose file
+under `deploy/`, a migration chain under `packages/db/` — all four reported
+`status: ok` over an *empty* fact set, with no gap of any kind, and `check`
+exited 0 summarising the tree as `no facts`. The fix is an opt-in
+`argMode: detectedFile` declared on three manifests and no others — `rails`,
+`next-routes` and `compose`; `sql-policies` detects with `always: true`, so
+there is no proven path to hand it and its half was to match its migration
+directories as path segments anywhere in the tree instead of joining them to the
+root. Also fixed: the three normalizers (`config-surface`, `db-policies`, live
+`db-schema`) that still hardcoded an empty gap list and so could not have
+carried a warning even if one had been sent. Two new fixtures gate it, and the
+second of them is the point:
+every rails, next, compose and sql-policies fixture in the tree was root-layout,
+so every one of those goldens had been passing against a shape none of them
+contained. See `CHANGELOG.md`.
 
 The legend at the end of this section defines an **Open** status meaning
 "buildable now and not yet built", and **no row in this document carries it**.
