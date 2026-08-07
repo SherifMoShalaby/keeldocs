@@ -58,6 +58,12 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   // family and not to DRIFT_FOUND: its sections are not clean, they are not
   // checked, and the drift count for the run was computed without them.
   const unscanned = report.unscanned ?? [];
+  // Named, never counted. A directory the engine will not walk on its own is a
+  // statement about coverage, not a finding against the repository: making it
+  // one would exit 1 on every repository that has ever run `npm install`, and a
+  // gate that fires on everything is the one people turn off. What it must not
+  // do is stay invisible, which is what it did until now.
+  const skipped = report.skipped ?? [];
   const unreadable = refused.length + unverified + unscanned.length;
   // A refused MARKER is named by document, line and reason; an unverified
   // SECTION was only ever counted. "3 sections are not being checked" without
@@ -127,6 +133,7 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
             // capped like `refused`: the 8KB trimmer only shrinks `data.top`,
             // so an uncapped list here could bust a cap it cannot repair
             ...(unscanned.length ? { unscanned: unscanned.slice(0, 20) } : {}),
+            ...(skipped.length ? { skipped: skipped.slice(0, 20) } : {}),
             ...(unverifiedTop.length ? { unverified: unverifiedTop } : {}),
             ...(upgrades?.length ? { upgrades } : {}) },
     truncated: report.findings.length > top.length,
@@ -151,7 +158,13 @@ function buildReport(repoRoot, ci, config, since, live = false) {
   const journal = effective(rawJournal, nowIso);
 
   const anchors = [], regions = [], quarantined = [];
-  const docPaths = docPathsOf(repoRoot, config.docs.dirs);
+  // One list for both walks: what the doc scan and the sweep declined to enter
+  // and have to say so about (`docSkip`). It is deliberately NOT part of the
+  // verdict - a repository with a dependency tree is not a repository with a
+  // problem - but a run that passed over part of the tree in silence is the
+  // defect this family keeps producing, so the directories are named.
+  const skippedDirs = [];
+  const docPaths = docPathsOf(repoRoot, config.docs.dirs, skippedDirs);
   for (const p of docPaths) {
     const parsed = parseDoc(readFileSync(join(repoRoot, p), "utf8"), p);
     anchors.push(...parsed.anchors);
@@ -160,7 +173,8 @@ function buildReport(repoRoot, ci, config, since, live = false) {
   }
   // What the scan roots did NOT cover, computed from the same doc list so the
   // two can never disagree about which documents were read.
-  const unscanned = unscannedAnchoredDocs(repoRoot, docPaths, config.providers["exclude-paths"]);
+  const unscanned = unscannedAnchoredDocs(repoRoot, docPaths, config.providers["exclude-paths"], skippedDirs);
+  const skipped = [...new Set(skippedDirs)].sort(); // both walks reach docs/node_modules
 
   const { findings, documented } = evaluate({ anchors, regions, factsById, capabilities, journal });
   const cov = coverage(factsById, documented);
@@ -212,6 +226,7 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     quarantined, extractionGaps: gaps,
     // absent when empty, like `conflicts`, so every clean golden stays byte-stable
     ...(unscanned.length ? { unscanned } : {}),
+    ...(skipped.length ? { skipped } : {}),
     // ADR-003 conflict records ride the full report; absent when empty so
     // conflict-free goldens stay byte-stable
     ...(conflicts?.length ? { conflicts } : {}),
@@ -244,6 +259,9 @@ function humanize(envelope, report, cache = null) {
   }
   for (const u of envelope.data.unverified ?? []) {
     lines.push(`  UNVERIFIED ${u.doc}:${u.line}  ${u.id}  (${u.reason})`);
+  }
+  if (envelope.data.skipped?.length) {
+    lines.push(`  NOT READ  ${envelope.data.skipped.join(", ")}  (neither scanned nor swept - name one in [docs] dirs to read it)`);
   }
   if (report?.quarantined?.length) lines.push(`  note: ${report.quarantined.length} malformed marker(s) quarantined`);
   // Stated, not silent: a reader must be able to tell that work was skipped,

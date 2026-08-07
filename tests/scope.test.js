@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, statSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
-import { globToRegExp, isExcluded, repoFiles, resolveInputs, buildView } from "../src/scope.js";
+import { docSkip, globToRegExp, isExcluded, repoFiles, resolveInputs, buildView } from "../src/scope.js";
 
 function tmpRepo(t, files) {
   const root = mkdtempSync(join(tmpdir(), "kd-scope-"));
@@ -92,6 +92,36 @@ test("repoFiles skips engine-owned and vendored trees", (t) => {
     ".keeldocs/cache/facts/db-schema.jsonl": "{}", "golden/out.json": "{}",
   });
   assert.deepEqual(repoFiles(root), ["src/a.ts"]);
+});
+
+// The extraction walk above and the DOCUMENT walk are two different questions,
+// and for one release they were the same answer. Six names nobody wants a
+// provider to spend a walk on became six names no anchored document could be
+// found in, so `golden/reference.md` was as unreadable as `node_modules/`'s -
+// and unlike a provider, a document has no manifest to name it back in.
+// `docSkip` is the narrower question; this pins that they stay different, and
+// that the walk reports what it passed over rather than dropping it.
+test("the document walk asks a narrower question than the provider walk, and says what it skipped", (t) => {
+  const root = tmpRepo(t, {
+    "src/a.ts": "x", "node_modules/pkg/README.md": "x", "vendor/node_modules/p/README.md": "x",
+    ".keeldocs/out/check.json": "{}", ".git/objects/o": "x",
+    "golden/docs/ref.md": "x", "dist/docs/ref.md": "x", "coverage/docs/ref.md": "x",
+  });
+  // unchanged for providers: all six names, silently, exactly as before
+  assert.deepEqual(repoFiles(root), ["src/a.ts"]);
+
+  const skipped = [];
+  assert.deepEqual(repoFiles(root, [], null, { skipDir: docSkip, skipped }),
+    ["coverage/docs/ref.md", "dist/docs/ref.md", "golden/docs/ref.md", "src/a.ts"],
+    "test data and build output are the user's own tree, and may hold documentation");
+  assert.deepEqual(skipped.sort(), ["node_modules", "vendor/node_modules"],
+    "a dependency tree is skipped at any depth - and named, because it is still in the repository");
+
+  // `.git` and the root `.keeldocs` are not repository content: an export of the
+  // same tree has no `.git`, and `.keeldocs` is created by the run itself, so
+  // naming it would make the report depend on whether the tool had run before.
+  assert.ok(!skipped.some((s) => s === ".git" || s === ".keeldocs"),
+    "silence here is deliberate - see docSkip");
 });
 
 

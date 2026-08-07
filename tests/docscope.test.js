@@ -24,6 +24,43 @@ import { loadConfig, docPathsOf, unscannedAnchoredDocs } from "../src/config.js"
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+// One anchored document, used at every placement below. Its anchor binds facts
+// no fixture here produces and its gen region records a hash nothing can match,
+// so wherever the engine actually READS it the verdict is drift. That is what
+// makes "checked" distinguishable from "skipped" rather than from "clean".
+const ANCHORED = `# Reference
+
+## Orders
+
+<!-- keeldocs: id=api.orders binds=fact:http-endpoints/GET /orders hash-kind=fact -->
+
+<!-- keeldocs:gen id=api.orders.table binds=fact:http-endpoints/GET /orders hash=h1:0000000000000000 -->
+| method | path |
+|---|---|
+| GET | /orders |
+<!-- /keeldocs:gen -->
+`;
+
+// A repository built from a map of path -> contents, plus the two files every
+// case needs: a plain README (always scanned, so `across N doc(s)` is never
+// zero) and a package.json.
+function repoWith(t, files, toml = null) {
+  const root = mkdtempSync(join(tmpdir(), "kd-skipset-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "docs"), { recursive: true });
+  writeFileSync(join(root, "docs", "notes.md"), "# notes\n\nprose, no anchors.\n");
+  writeFileSync(join(root, "README.md"), "# skipset\n");
+  writeFileSync(join(root, "package.json"), '{ "name": "skipset", "private": true }\n');
+  if (toml) writeFileSync(join(root, "keeldocs.toml"), toml);
+  for (const [rel, body] of Object.entries(files)) {
+    mkdirSync(join(root, dirname(rel)), { recursive: true });
+    writeFileSync(join(root, rel), body);
+  }
+  return root;
+}
+
+const docsIn = (env) => (env.data.top ?? []).map((f) => f.doc);
+
 // Always on a COPY: `check` spills a report into `.keeldocs/out`, and a test
 // that writes into the tracked fixture makes the next run depend on the last.
 function fixtureCopy(t, name) {
@@ -136,4 +173,161 @@ test("markers inside fences and prose are illustrations, not unscanned documents
 
   // the user's path scope is honoured: an excluded tree is a declared blind spot
   assert.deepEqual(unscannedAnchoredDocs(bare, docPathsOf(bare, ["docs"]), ["notes/**"]), []);
+});
+
+// ---------------------------------------------------------------------------
+// The engine's internal skip set as the boundary of a user-facing guarantee.
+//
+// `docPathsOf` carried a hand-copied subset of the provider skip set while
+// recursing INSIDE a directory the user had written into `[docs] dirs`, and the
+// unscanned sweep inherited the whole of it. Measured on the tree `0.4.2`
+// shipped from, with one anchored, drifting document and nothing else changed:
+//
+//   docs/reference.md          exit 1  DRIFT_FOUND, named
+//   docs/golden/reference.md   exit 0  CLEAN, `across 1 doc(s)`, empty top
+//   docs/node_modules/…        exit 0  CLEAN
+//   docs/.keeldocs/…           exit 0  CLEAN
+//   golden|dist|coverage|node_modules/reference.md, outside every root:
+//                              exit 0  CLEAN, nothing in data.unscanned
+//
+// Same bytes, same anchors, four verdicts decided by a directory NAME the user
+// never wrote down. The four tests below are that gate.
+
+// (e) Inside a root the user named, nothing is skipped in silence. `golden`,
+// `dist` and `coverage` are the user's own tree - test data and build output are
+// things a repository documents - and a nested `.keeldocs` is an ordinary
+// directory. All of them are read.
+test("inside a configured scan root, a doc under an engine-skipped name is checked", (t) => {
+  const root = repoWith(t, {
+    "docs/golden/reference.md": ANCHORED,
+    "docs/.keeldocs/reference.md": ANCHORED,
+    "docs/dist/reference.md": ANCHORED,
+    "docs/coverage/reference.md": ANCHORED,
+  }, '[docs]\ndirs = ["docs"]\n');
+  const { code, env } = check(root);
+  assert.equal(code, 1, `a scan root the user wrote down must be read to the bottom: ${env.summary}`);
+  assert.equal(env.code, "DRIFT_FOUND");
+  for (const doc of ["docs/golden/reference.md", "docs/.keeldocs/reference.md",
+                     "docs/dist/reference.md", "docs/coverage/reference.md"]) {
+    assert.ok(docsIn(env).includes(doc), `${doc} is inside the scan root and was not checked`);
+  }
+  assert.equal(env.data.unscanned, undefined, "these are scanned, not swept");
+});
+
+// The control that makes (e) non-vacuous, and it is the whole argument that this
+// was an artefact rather than a decision: the SAME bytes at docs/reference.md
+// always drifted, and pointing `dirs` straight at docs/golden always read it -
+// the skip applied to the recursion, never to the root itself. If the fixture's
+// anchor ever stopped being dead, both of these go green-and-wrong and (e)'s
+// pass would mean nothing.
+test("the same bytes drift at docs/reference.md, and under `dirs = [\"docs/golden\"]`", (t) => {
+  const plain = repoWith(t, { "docs/reference.md": ANCHORED }, '[docs]\ndirs = ["docs"]\n');
+  const a = check(plain);
+  assert.equal(a.code, 1, `the fixture must actually be lying: ${a.env.summary}`);
+  assert.equal(a.env.code, "DRIFT_FOUND");
+  assert.equal(docsIn(a.env)[0], "docs/reference.md");
+
+  const proof = repoWith(t, { "docs/golden/reference.md": ANCHORED }, '[docs]\ndirs = ["docs/golden"]\n');
+  const b = check(proof);
+  assert.equal(b.code, 1, "named as the root itself, docs/golden was always read - only the recursion skipped it");
+  assert.equal(b.env.code, "DRIFT_FOUND");
+  assert.equal(docsIn(b.env)[0], "docs/golden/reference.md");
+
+  // and the third placement of the same bytes, unchanged since 0.4.2: outside
+  // every root it is UNREADABLE by name, not clean
+  const out = repoWith(t, { "handbook/reference.md": ANCHORED }, '[docs]\ndirs = ["docs"]\n');
+  const c = check(out);
+  assert.equal(c.code, 1);
+  assert.equal(c.env.code, "UNREADABLE");
+  assert.deepEqual(c.env.data.unscanned, [{ doc: "handbook/reference.md", anchors: 1, regions: 1 }]);
+});
+
+// (f) Outside every scan root, the sweep no longer inherits the provider skip
+// set. Three of those six names hid documents the user wrote; the sweep reports
+// them exactly as it reports handbook/.
+test("outside every scan root, golden, dist and coverage are swept like any other directory", (t) => {
+  const root = repoWith(t, {
+    "golden/reference.md": ANCHORED,
+    "dist/reference.md": ANCHORED,
+    "coverage/reference.md": ANCHORED,
+  }, '[docs]\ndirs = ["docs"]\n');
+  const { code, env } = check(root);
+  assert.equal(code, 1, `three anchored docs the run never read must not exit 0: ${env.summary}`);
+  assert.equal(env.code, "UNREADABLE");
+  assert.deepEqual(env.data.unscanned.map((u) => u.doc).sort(),
+    ["coverage/reference.md", "dist/reference.md", "golden/reference.md"]);
+  for (const doc of ["coverage/reference.md", "dist/reference.md", "golden/reference.md"]) {
+    assert.match(env.summary, new RegExp(doc.replace("/", "\\/")), "a count nobody can act on is not a finding");
+  }
+});
+
+// (g) The one tree that stays unread is named instead. A dependency tree is
+// still part of the repository on disk, so passing over it is a statement the
+// run has to make - but it is not a finding, or every repository that has run
+// `npm install` would exit 1 and the check would be the first thing switched off.
+test("node_modules is not swept, and the run says so without moving the verdict", (t) => {
+  const root = repoWith(t, {
+    "node_modules/pkg/reference.md": ANCHORED,
+    "docs/node_modules/pkg/reference.md": ANCHORED,
+  }, '[docs]\ndirs = ["docs"]\n');
+  const { code, env } = check(root);
+  assert.equal(code, 0, `naming a skipped tree must never become a finding: ${env.summary}`);
+  assert.equal(env.code, "CLEAN");
+  assert.deepEqual(env.data.skipped, ["docs/node_modules", "node_modules"],
+    "both walks reach it - inside the scan root and outside - and both must name it");
+  assert.equal(env.data.unscanned, undefined, "named is not the same as swept");
+
+  // and the escape hatch is the same one `[docs] dirs` always was: the skip is a
+  // default, not a ban
+  const named = repoWith(t, { "docs/node_modules/pkg/reference.md": ANCHORED },
+    '[docs]\ndirs = ["docs/node_modules"]\n');
+  const n = check(named);
+  assert.equal(n.code, 1, "a scan root that IS the dependency tree is read");
+  assert.equal(docsIn(n.env)[0], "docs/node_modules/pkg/reference.md");
+});
+
+// (h) The two directories that are read by nothing and named by nothing, pinned
+// with their reason. `.git` is the VCS's own storage - an export of the
+// identical tree has none - and `<root>/.keeldocs` is the directory THIS COMMAND
+// creates, so naming it would make the report say something different on the
+// second run than on the first, which is the run-state leak the cold/warm
+// byte-identical contract forbids. Both are silence, and both are arguable; this
+// test exists so the next person changes them deliberately.
+test(".git and the engine's own .keeldocs are not repository content, and are not named", (t) => {
+  const root = repoWith(t, {
+    ".keeldocs/reference.md": ANCHORED,
+    ".git/objects/reference.md": ANCHORED,
+  }, '[docs]\ndirs = ["docs"]\n');
+  const { code, env } = check(root);
+  assert.equal(code, 0, `neither is repository content: ${env.summary}`);
+  assert.equal(env.code, "CLEAN");
+  assert.equal(env.data.skipped, undefined, "no dependency tree here, so nothing to name");
+  assert.equal(env.data.unscanned, undefined);
+});
+
+// And the same two mechanisms at the unit boundary, where the collector is
+// visible: a `skipped` array is filled by BOTH walks, and every path in it is
+// repo-relative and posix.
+test("both walks collect what they declined to enter", (t) => {
+  const root = repoWith(t, {
+    "docs/node_modules/a/x.md": ANCHORED,
+    "vendor/node_modules/b/y.md": ANCHORED,
+    "docs/golden/inside.md": ANCHORED,
+    "golden/outside.md": ANCHORED,
+  });
+  const scanSkips = [];
+  const docs = docPathsOf(root, ["docs"], scanSkips);
+  assert.deepEqual(scanSkips, ["docs/node_modules"]);
+  assert.ok(docs.includes("docs/golden/inside.md"), "the scan reads the rest of the root");
+
+  const sweepSkips = [];
+  const unscanned = unscannedAnchoredDocs(root, docs, [], sweepSkips);
+  assert.deepEqual(unscanned, [{ doc: "golden/outside.md", anchors: 1, regions: 1 }]);
+  assert.deepEqual(sweepSkips.sort(), ["docs/node_modules", "vendor/node_modules"]);
+
+  // the user's written scope answers first: an excluded tree is disclosed by the
+  // line the user wrote, not counted as an engine skip
+  const scoped = [];
+  assert.deepEqual(unscannedAnchoredDocs(root, docs, ["vendor/**", "golden/**"], scoped), []);
+  assert.deepEqual(scoped, ["docs/node_modules"]);
 });

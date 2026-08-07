@@ -197,6 +197,15 @@ keys = ["acme:<spki-base64>"]      # trusted signers for third-party providers
 
 A misspelled key is an error, never a silent no-op.
 
+A scan root is read to the bottom: name `docs` and every `.md` under it is
+checked, whatever the subdirectories are called. keeldocs walks into three trees
+only when you name one as a scan root itself — `node_modules` at any depth, `.git`
+at any depth, and the `.keeldocs` directory it creates at the repository root —
+and a run that passed over a dependency tree says so, by path, rather than
+counting a document it never opened as clean. Anything anchored that no scan root
+covers is reported by name, not counted as clean; `exclude-paths` is how you say
+a tree is somebody else's, and it scopes this sweep as well as the providers.
+
 `exclude-paths` is what you want for `fixtures/`, `examples/`, `vendor/` or
 `testdata/`: those directories are real code, so providers extract them, and your
 docs end up describing your test fixtures as though they were your application.
@@ -227,7 +236,7 @@ Secrets are structurally excluded: env **values** never enter a fact, and every 
 
 `0.4.2`, Apache-2.0. **Upgrading from `0.3.0`, `0.4.0` or `0.4.1`?** `check` can now fail on repositories it used to pass — every such case is one where it was reporting clean while checking nothing. [`CHANGELOG.md`](https://github.com/SherifMoShalaby/keeldocs/blob/main/CHANGELOG.md) has the measured before-and-after table.
 
-`0.4.2`, Apache-2.0. Covered by 184 unit tests, 40 byte-compared extractor goldens and 98 end-to-end harness checks, with double-run determinism gates on Linux and macOS. Windows runs the same matrix and reports rather than gates.
+`0.4.2`, Apache-2.0. Covered by 191 unit tests, 40 byte-compared extractor goldens and 98 end-to-end harness checks, with double-run determinism gates on Linux and macOS. Windows runs the same matrix and reports rather than gates.
 
 Verified at scale: a synthetic 200-package, 1M-line repository extracts and checks end to end inside a 2 GB memory budget. Warm and cold runs produce byte-identical facts, gated on every fixture in the harness. **No speed figure is claimed** — that measurement is not yet trustworthy.
 

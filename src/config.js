@@ -18,7 +18,7 @@ import { join, relative } from "node:path";
 import { toPosix } from "./paths.js";
 import { parsePins } from "./resolve.js";
 import { parseDoc } from "./anchors.js";
-import { repoFiles } from "./scope.js";
+import { docSkip, repoFiles } from "./scope.js";
 import { REGISTRY, REGISTRY_ERROR } from "./registry.js";
 
 const SCHEMA = {
@@ -159,15 +159,31 @@ export const extractOpts = (config) => ({
 
 // Shared doc discovery for every command: configured scan roots + README.md,
 // repo-relative, deduped, sorted (was triplicated across check/init/sync).
-export function docPathsOf(root, dirs) {
+//
+// What it does NOT read is `docSkip`'s three names and nothing else. It used to
+// carry a hand-copied subset of the PROVIDER skip set - `.keeldocs`,
+// `node_modules`, `golden`, `.git` - applied while recursing inside a directory
+// the user had named in `[docs] dirs`, and that subset had drifted from the set
+// it was copied from: `dist/` and `coverage/` under a scan root were read all
+// along, `golden/` was not, and nothing anywhere said so. An anchored, drifting
+// document at `docs/golden/reference.md` measured exit 0 CLEAN with the same
+// bytes at `docs/reference.md` exiting 1 DRIFT_FOUND, and at
+// `dirs = ["docs/golden"]` exiting 1 too - which is the proof it was an
+// artefact of the skip rather than anyone's intent.
+//
+// `skipped`, when given an array, collects the repo-relative path of every
+// directory that was skipped LOUDLY, for the caller to report. A silent skip
+// inside a root the user wrote down is the shape of defect this whole family is.
+export function docPathsOf(root, dirs, skipped = null) {
   const out = [];
-  const skip = new Set([".keeldocs", "node_modules", "golden", ".git"]);
   const rec = (dir) => {
     for (const name of readdirSync(dir).sort()) {
-      if (skip.has(name)) continue;
       const p = join(dir, name);
+      const rel = toPosix(relative(root, p)); // emitted paths are posix on every OS
+      const why = docSkip(name, rel);
+      if (why) { if (why === "named") skipped?.push(rel); continue; }
       if (statSync(p).isDirectory()) rec(p);
-      else if (name.endsWith(".md")) out.push(toPosix(relative(root, p))); // emitted paths are posix on every OS
+      else if (name.endsWith(".md")) out.push(rel);
     }
   };
   for (const d of dirs) if (existsSync(join(root, d))) rec(join(root, d));
@@ -195,18 +211,24 @@ export function docPathsOf(root, dirs) {
 //   * `parseDoc` masks fenced blocks, so a vendored README that DOCUMENTS an
 //     anchor in a code fence stays silent. That is the difference between a
 //     scan-root warning and a nuisance nobody leaves switched on.
-//   * `repoFiles` carries the shared skip set, the user's `exclude-paths` scope
-//     and the nested-checkout refusal, so somebody else's committed docs stay
-//     somebody else's problem - and a repo whose examples really are examples
-//     has a written way to say so.
+//   * `repoFiles` carries the user's `exclude-paths` scope and the
+//     nested-checkout refusal, so somebody else's committed docs stay somebody
+//     else's problem - and a repo whose examples really are examples has a
+//     written way to say so.
+//   * What it does NOT carry any more is the PROVIDER skip set. It inherited all
+//     six names, so `golden/`, `dist/` and `coverage/` - the user's own test data
+//     and build output - were unswept as silently as `node_modules`, and an
+//     anchored document in any of them measured exit 0 CLEAN. The sweep asks
+//     `docSkip` instead: three names, one of which (`node_modules`) is reported
+//     by path rather than passed over in silence.
 //
 // No git, deliberately: `check` is a pure function of the TREE, and gating this
 // on `git ls-files` would make the same bytes answer differently depending on
 // the index - and go vacuously silent in every non-git fixture.
-export function unscannedAnchoredDocs(root, docPaths, excludePaths = []) {
+export function unscannedAnchoredDocs(root, docPaths, excludePaths = [], skipped = null) {
   const scanned = new Set(docPaths);
   const out = [];
-  for (const rel of repoFiles(root, excludePaths)) {
+  for (const rel of repoFiles(root, excludePaths, null, { skipDir: docSkip, skipped })) {
     if (!rel.endsWith(".md") || scanned.has(rel)) continue;
     let parsed;
     try { parsed = parseDoc(readFileSync(join(root, rel), "utf8"), rel); }

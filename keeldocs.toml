@@ -33,6 +33,19 @@ disable = ["aspnet", "django", "fastapi", "gin", "rails", "spring", "express", "
 # was a product gap, not a quirk of this one.
 exclude-paths = ["fixtures/**", "experiments/**", "scripts/harness.py"]
 
+# This line now carries a second job, and it is worth stating because it used to
+# be done by a directory name nobody wrote down. `check` sweeps the tree outside
+# the scan roots for anchored documents it did not read, and that sweep used to
+# inherit the extraction walk's skip list - six names, `golden` among them. So
+# the six anchored fixture goldens under `fixtures/*/golden/docs/*.md` were
+# passed over by an engine convention rather than by a decision recorded here.
+# The sweep no longer skips `golden/`, `dist/` or `coverage/`: they are a
+# repository's own test data and build output, and a repository may document into
+# them. Measured on this tree: without the `fixtures/**` line above, the sweep
+# reports eleven anchored fixture documents, six of them the goldens that name
+# made invisible. With it, none - and the reason is a line in this file instead
+# of a set in src/scope.js.
+#
 # `scripts/harness.py` is in the list for the same reason and is worth naming,
 # because it is a FILE rather than a directory and because it is real project
 # code: the harness builds fixture repositories inline, so every `process.env.X`

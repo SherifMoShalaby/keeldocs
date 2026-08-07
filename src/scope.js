@@ -26,6 +26,48 @@ import { toPosix } from "./paths.js";
 // explicitly (a `dir/` glob) still reaches it - the skip is a default, not a ban.
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".keeldocs", "golden", "coverage"]);
 
+// ---------- the same question, asked about DOCUMENTS ----------
+//
+// The set above is an extraction convenience: six directory names nobody wants
+// a provider to waste a walk on, and harmless there because a manifest that
+// names one still reaches it. It was also, silently, the boundary of a
+// user-facing guarantee. `docPathsOf` carried a hand-copied subset of it while
+// recursing INSIDE a directory the user had written into `[docs] dirs`, and the
+// unscanned sweep inherited the whole of it, so an anchored, drifting document
+// at `docs/golden/reference.md` was read by neither: measured at exit 0 CLEAN,
+// `across 1 doc(s)`, with the same bytes at `docs/reference.md` exiting 1
+// DRIFT_FOUND. `golden/`, `dist/` and `coverage/` are the user's own tree - a
+// repository's test data and its build output are things a repository may
+// document into - and skipping them was keeldocs' convention imposed as if it
+// were a rule.
+//
+// So documentation asks a narrower question, and answers out loud. Three names
+// are not read, each for a reason that is about the directory rather than about
+// convenience, and only one of them is the user's:
+//
+//   * `node_modules` - somebody else's tree, at any depth. Sweeping it would
+//     make every repository that installs keeldocs as a dependency answer for
+//     documents it did not write, the day the published tarball carries an
+//     anchored one. Skipped, and NAMED at runtime, because a dependency tree is
+//     still part of the repository on disk.
+//   * `.git` - the VCS's own storage, at any depth. Not repository content in
+//     any form: an export of the identical tree has none, and `check` is a pure
+//     function of the tree.
+//   * `.keeldocs`, at the repo root only - keeldocs' own directory, which this
+//     command CREATES. Reporting it would make the report depend on whether the
+//     tool had run in this tree before, which is exactly the run-state leak the
+//     cold/warm byte-identical contract exists to forbid. A `.keeldocs`
+//     anywhere else is somebody's ordinary directory and is read.
+//
+// The default for anything added here later is "named": silence has to be
+// argued for one directory at a time, which is the property that was missing.
+export function docSkip(name, rel) {
+  if (name === "node_modules") return "named";
+  if (name === ".git") return "silent";
+  if (rel === ".keeldocs") return "silent";
+  return null;
+}
+
 // ---------- the security exclusion set ----------
 //
 // Subtracted from every provider's matches, however broadly it declared. These
@@ -104,19 +146,29 @@ function baseOf(glob) {
 // Windows, any host without user namespaces - a provider walks the real tree
 // itself and finds the nested repository anyway. The same shape as the path
 // scope, and for the same reason.
-export function repoFiles(root, exclude = [], nested = null) {
+// `skipDir` decides what the walk will not enter, and `skipped` collects the
+// repo-relative path of every directory it declined to enter LOUDLY (see
+// `docSkip`). The default is the provider skip set and reports nothing, so
+// extraction is byte-for-byte the walk it always was; the doc sweep passes its
+// own, narrower question. The user's `exclude` is now tested FIRST, so a path
+// the user scoped out is attributed to the line they wrote rather than counted
+// as an engine skip - it changes which list a directory lands in, never which
+// files come back.
+export function repoFiles(root, exclude = [], nested = null,
+                          { skipDir = (name) => (SKIP_DIRS.has(name) ? "silent" : null), skipped = null } = {}) {
   const deny = exclude.map(globToRegExp);
   const out = [];
   const walk = (dir, rel) => {
     let names;
     try { names = readdirSync(dir).sort(); } catch { return; }
     for (const name of names) {
-      if (SKIP_DIRS.has(name)) continue;
+      const r = rel ? `${rel}/${name}` : name;
+      if (deny.some((re) => re.test(r))) continue;
+      const why = skipDir(name, r);
+      if (why) { if (why === "named") skipped?.push(r); continue; }
       const abs = join(dir, name);
       let st;
       try { st = statSync(abs); } catch { continue; } // broken symlink
-      const r = rel ? `${rel}/${name}` : name;
-      if (deny.some((re) => re.test(r))) continue;
       // A directory holding a `.git` entry is a nested repository or a git
       // worktree, not part of this tree, and git itself does not track through
       // one. Walking in double-counts somebody else's code as this project's:

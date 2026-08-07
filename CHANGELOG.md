@@ -2,12 +2,13 @@
 
 ## Unreleased
 
-**Four more of the same class, and this batch is about which files the engine
-reads at all rather than which documents.** `0.4.2` was about scan roots. These
-are one directory deeper: detection proved a path, and the extractor was handed
-the repository root and re-guessed the layout at it. Every batch so far has been
-sitting in the tree the previous release shipped from, and this one is no
-different.
+**Eleven more of the same class, in two batches, and both were sitting in the
+tree `0.4.2` shipped from.** The first is about which files the engine reads at
+all rather than which documents: detection proved a path, and the extractor was
+handed the repository root and re-guessed the layout at it. The second is about
+a list of directory NAMES the engine kept to itself — `golden/` among six — which
+had become the boundary of a user-facing guarantee without anyone deciding that
+it should be one.
 
 Measured on `fixtures/nested-layout-scenario` — a Rails app at
 `apps/api/`, a Next.js App Router project at `apps/web/`, a compose file at
@@ -26,6 +27,25 @@ engine and this tree, on the same repository:
 Exit codes do not move: a repository that was clean stays clean, and every
 root-layout repository resolves to exactly the same file set it did before.
 What changes is that four capabilities stop reporting `ok` over nothing.
+
+And measured for the second batch with the same published `0.4.2` engine: ONE
+anchored document whose recorded hash nothing can match, moved from directory to
+directory and nothing else changed. Where it lands decides the verdict, and the
+deciding directory names are ones the user never wrote down.
+
+| where the anchored, drifting document is | 0.4.2 | now |
+|---|---|---|
+| `docs/reference.md`, under `dirs = ["docs"]` | `DRIFT_FOUND`, exit 1, named | unchanged |
+| `docs/golden/reference.md`, same config | `CLEAN`, exit 0, `across 1 doc(s)` | `DRIFT_FOUND`, exit 1, named |
+| `docs/.keeldocs/reference.md`, same config | `CLEAN`, exit 0 | `DRIFT_FOUND`, exit 1, named |
+| `docs/node_modules/…`, same config | `CLEAN`, exit 0 | `CLEAN`, exit 0, and `docs/node_modules` named as not read |
+| `golden/`, `dist/` or `coverage/`, outside every scan root | `CLEAN`, exit 0, nothing in `data.unscanned` | `UNREADABLE`, exit 1, each file named |
+| `node_modules/…`, outside every scan root | `CLEAN`, exit 0 | `CLEAN`, exit 0, and `node_modules` named as not read |
+| the same bytes under `dirs = ["docs/golden"]` | `DRIFT_FOUND`, exit 1 | unchanged |
+
+That last row is the proof it was an artefact rather than a decision: naming
+`docs/golden` as the scan root always read it, because the skip applied to the
+recursion and never to the root itself.
 
 ### Fixed
 
@@ -69,6 +89,55 @@ What changes is that four capabilities stop reporting `ok` over nothing.
   the path, counted beside the coverage figure — the argument `schema-ignored`
   and `chain-ignored` already make. Which candidate wins is the engine's walk
   order, and nothing here claims it matches Docker's own precedence.
+
+- **An extraction convenience was doing duty as the boundary of a guarantee.**
+  `src/scope.js` keeps six directory names the provider walk does not enter —
+  `node_modules`, `.git`, `dist`, `.keeldocs`, `golden`, `coverage` — which is
+  harmless there, because a manifest that names one still reaches it. Two other
+  places had helped themselves to that list. `docPathsOf` carried a hand-copied
+  subset of it while recursing INSIDE a directory the user had written into
+  `[docs] dirs`, and the `0.4.2` unscanned sweep inherited the whole of it. So
+  `golden/`, `dist/` and `coverage/` — a repository's own test data and build
+  output, which a repository may document into — were as unreadable as somebody
+  else's `node_modules`, and unlike a provider, a document has no manifest to
+  name it back in.
+
+  Two rules now, and they are about the directory rather than about convenience.
+  Inside a scan root the user wrote down, nothing is skipped except the three
+  below: if you name `docs`, all of `docs` is read. Outside every scan root, the
+  sweep asks the same narrower question instead of borrowing the extraction one.
+
+  The three that stay unread are `node_modules` at any depth, `.git` at any
+  depth, and `.keeldocs` at the repository root — and only the first is silent no
+  longer. A dependency tree is still part of the repository on disk, so every run
+  that passes over one names it, by path, in `data.skipped`, in the full report
+  and in the human output. It is deliberately not a finding and moves no exit
+  code: making it one would exit 1 on every repository that has run
+  `npm install`, and a gate that fires on everything is the first one switched
+  off. Sweeping it instead was the other option and is worse — the day the
+  published tarball carries an anchored document, every repository with keeldocs
+  in its dependencies would answer for a document it did not write. The skip is
+  still a default and not a ban: `dirs = ["docs/node_modules"]` reads it.
+
+  `.git` and the root `.keeldocs` are passed over without a word, and that is the
+  one silence here that was argued for rather than inherited. Neither is
+  repository content: an export of the identical tree carries no `.git`, and
+  `.keeldocs` is the directory this command CREATES, so naming it would make the
+  report say something different on the second run than on the first — the
+  run-state leak the cold/warm byte-identical contract exists to forbid. A
+  `.keeldocs` anywhere but the root is an ordinary directory and is read.
+
+  **Exactly what did not change, because a claim of "the skip is gone" would be
+  false in two directions.** The provider walk is untouched: all six names, all
+  silent, byte-for-byte the extraction it always was, and every extractor golden
+  unmoved. And `docs/dist/` and `docs/coverage/` were being scanned all along —
+  the hand-copied subset had drifted from the set it was copied from, so two of
+  the six were already read inside a scan root and four were not, which is
+  precisely the kind of difference nobody can see from a config file. This
+  repository's own `keeldocs.toml` now carries the exclusion that used to be a
+  directory name: without its `fixtures/**` line the sweep reports eleven
+  anchored fixture documents, six of them goldens the name `golden` had made
+  invisible.
 
 - **Three normalizers still discarded every warning a provider sent.**
   `config-surface`, `db-policies` and live `db-schema` hardcoded an empty gap
