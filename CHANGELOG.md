@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2 — 2026-08-07
 
 **A tenth and eleventh member of the same class, and this pair retires the whole
 repository rather than one section.** Every case in `0.4.0` and `0.4.1` was a
@@ -70,6 +70,21 @@ Measured, `0.4.1` versus this tree:
   behalf. What changes is that the gap count now appears beside coverage in
   `check`'s summary and each gap is named, with its directory or manifest, in the
   full report and in the `init` report.
+
+  All of that holds for **npm and yarn as well as pnpm**, which is worth stating
+  because for a few hours it did not. The first version of this fix handled the
+  unparseable and memberless cases in the pnpm branch alone, while this entry
+  claimed every manifest — and npm/yarn is most repositories. The npm/yarn branch
+  kept a single `except` around the read, the parse and the expansion together,
+  and an unusable `workspaces` value fell through to the single-package fallback
+  silently. That shape was the worse of the two: an unparseable `package.json`
+  also defeats the name lookup, so the repository was reported under its
+  *directory* name rather than its declared one, an invented identity with no gap
+  beside it. No gate could have caught the split, because every multi-package
+  fixture here was pnpm; the gate now runs all three shapes on both managers, and
+  its control asserts that a `package.json` with no `workspaces` key stays silent
+  — otherwise the other assertions would pass against a provider that merely
+  always complains.
 
 ## 0.4.1 — 2026-08-06
 
