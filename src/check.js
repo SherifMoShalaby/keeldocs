@@ -13,6 +13,7 @@ import { extractAll } from "./facts.js";
 import { evaluate, coverage, classifySelfCaused } from "./drift.js";
 import { planUpgrade } from "./upgrade.js";
 import { loadConfig, docPathsOf, extractOpts, unscannedAnchoredDocs } from "./config.js";
+import { ledgerOf, unreadableOf, assertClassified, CAP } from "./disclosure.js";
 import { toPosix } from "./paths.js";
 import { changedFilesSince, changedFactsSince } from "./gitx.js";
 import { ENGINE_VERSION } from "./registry.js";
@@ -29,12 +30,12 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
   const cfg = loadConfig(repoRoot);
   if (!cfg.ok) {
     return emit(json, 2, { v: 1, ok: false, code: "CONFIG",
-      summary: cfg.error.slice(0, 300), data: {}, next: [] }, null);
+      summary: cfg.error.slice(0, 300), data: {}, next: [] });
   }
   if (live && (ci || process.env.CI === "true" || process.env.CI === "1")) {
     return emit(json, 2, { v: 1, ok: false, code: "CONFIG",
       summary: "--live is disabled in CI: network must never enter the pure-function check path (run it locally)",
-      data: {}, next: [] }, null);
+      data: {}, next: [] });
   }
   let report;
   try {
@@ -43,65 +44,29 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
     return emit(json, 2, {
       v: 1, ok: false, code: "TOOL_ERROR",
       summary: `check failed: ${String(err.message).slice(0, 200)}`, data: {}, next: [],
-    }, null);
+    });
   }
 
-  // A refused marker had no verdict at all: it was recorded in the spilled report
-  // and appeared in neither the envelope, the summary, nor the exit code. So an
-  // engine that had stopped checking a section still printed CLEAN and exited
-  // zero - and the user was never told which section, or that there was one.
+  // Every point at which the engine declined to look at something has one
+  // disposition entry in the ledger, and the verdict is DERIVED from it. This
+  // line used to be a hand-maintained sum over four names:
+  //
+  //     const unreadable = refused.length + unverified + unscanned.length
+  //                      + journalMalformed.length;
+  //
+  // Six releases each added a channel and hand-wired it into the sum, the
+  // envelope, the report and the human rendering. A hand-maintained sum is a
+  // list nothing enumerates, so the ninth channel that forgot to join it would
+  // have been invisible in the exact way the previous eight were - exit 0,
+  // CLEAN, over something nobody checked. Nothing below names a channel: see
+  // src/disclosure.js, which owns the enumeration, and whose `assertClassified`
+  // makes a report key that joins neither side of it a TOOL_ERROR rather than a
+  // silence.
+  //
   // A drift count computed over a tree the engine cannot fully read is a number
   // it should decline to headline, so UNREADABLE outranks DRIFT_FOUND.
-  const refused = report.quarantined ?? [];
-  const unverified = report.counts.unverified ?? 0;
-  // A document that is anchored and outside every scan root belongs to this
-  // family and not to DRIFT_FOUND: its sections are not clean, they are not
-  // checked, and the drift count for the run was computed without them.
-  const unscanned = report.unscanned ?? [];
-  // Named, never counted. A directory the engine will not walk on its own is a
-  // statement about coverage, not a finding against the repository: making it
-  // one would exit 1 on every repository that has ever run `npm install`, and a
-  // gate that fires on everything is the one people turn off. What it must not
-  // do is stay invisible, which is what it did until now.
-  const skipped = report.skipped ?? [];
-  // The same treatment for the blind spot the user WROTE. An anchored document
-  // that `[providers] exclude-paths` kept out of the sweep is named and never
-  // counted: honouring a written scope is the point of having one, so this moves
-  // no exit code - but `exclude-paths = ["**/*.md"]` excludes no code whatsoever
-  // and used to disarm the sweep across the whole repository in silence.
-  const excludedDocs = report.excludedDocs ?? [];
-  // The same family, one file further in. `loadJournal` has always COLLECTED the
-  // lines it could not parse, and until now the only thing that ever read the
-  // list was `keeldocs noise` - an opt-in report nothing in CI invokes. So a
-  // line the reader cannot parse was, to `check`, a line that was never written.
-  //
-  // That is not a cosmetic loss, because the journal is where a human REVOKES a
-  // decision. Measured: a repository whose tombstone had been revoked - the
-  // human said "start reporting this again" - exits 1 DRIFT_FOUND with dead 1.
-  // Truncate the revoke line and the run becomes BYTE-IDENTICAL to the one where
-  // the tombstone still stood: exit 0, CLEAN, `[stale 0, dead 0, tampered 0]`.
-  // Dropping a line does not lose a decision, it silently reinstates the decision
-  // that line countermanded. A plain `git merge` of two branches that each
-  // tombstoned something reaches exactly this state, because `.gitattributes`
-  // carried no `merge=union` rule for the journal (see src/init.js) and the
-  // `<<<<<<< HEAD` / `=======` / `>>>>>>> theirs` markers left behind are three
-  // lines that are not JSON.
-  //
-  // Named by line and reason, never counted, for the reason `unverified` records
-  // below: "3 lines are unreadable" is not something a human can act on, and the
-  // fix is per-line. UNREADABLE, not DRIFT_FOUND, because the effective decision
-  // set was computed from a journal the engine could not fully read, and a drift
-  // count over a partial journal is a number it should decline to headline.
-  const journalMalformed = report.journalMalformed ?? [];
-  const unreadable = refused.length + unverified + unscanned.length + journalMalformed.length;
-  // A refused MARKER is named by document, line and reason; an unverified
-  // SECTION was only ever counted. "3 sections are not being checked" without
-  // saying which three is a finding the user cannot act on - and the count alone
-  // is what let `rebaseline` hide for as long as it did.
-  const unverifiedTop = report.findings
-    .filter((f) => f.state === "unverified")
-    .slice(0, 20)
-    .map((f) => ({ id: f.id, doc: f.doc, line: f.line, reason: f.reason }));
+  const ledger = ledgerOf(report);
+  const unreadable = unreadableOf(ledger);
   const exit = report.toolError ? 2 : (unreadable || report.counts.driftTotal > 0) ? 1 : 0;
   const code = report.toolError ? "TOOL_ERROR"
     : unreadable ? "UNREADABLE"
@@ -124,26 +89,23 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
 
   const c = report.counts;
   // Coverage is a ratio and both of its terms have to be legible - the same
-  // argument `meta.scopedOut` exists for. A path scope is a blind spot the user
-  // chose; an extraction gap is one they did not, and it was strictly less
-  // visible: "100% of surfaces documented" over a monorepo whose second
+  // argument the path-scope disclosure exists for. A path scope is a blind spot
+  // the user chose; an extraction gap is one they did not, and it was strictly
+  // less visible: "100% of surfaces documented" over a monorepo whose second
   // `schema.prisma` was never opened read exactly like a repo with one database.
-  // Counted, not classified: the full report already names every gap and its
-  // reason, and inventing a severity taxonomy here would claim more than is known.
-  const gapCount = report.extractionGaps?.length ?? 0;
+  // The note comes off the ledger, so a future channel with something to say
+  // about coverage says it here without this line being edited again.
   const covTxt = (report.coverage.pct === null ? "no facts" : `${report.coverage.documented}/${report.coverage.total} surfaces documented (${report.coverage.pct}%)`)
-    + (gapCount ? `; ${gapCount} extraction gap(s) - see the full report` : "");
+    + ledger.map((e) => e.note?.(e.items, e.total) ?? "").join("");
   const sinceTxt = report.meta.since ? `; ${c.selfCaused ?? 0} caused since ${report.meta.since.ref}` : "";
-  // Each term appears only when it is non-zero, and the scan-root term NAMES
-  // documents: "1 anchored doc(s) outside every scan root" without saying which
-  // one is the same unactionable count that let `rebaseline` hide, and the fix
-  // (which directory to add to `[docs] dirs`) is not derivable from a number.
-  const unreadableParts = [
-    ...(unscanned.length ? [`${unscanned.length} anchored doc(s) outside every scan root, unchecked (${unscanned.slice(0, 3).map((u) => u.doc).join(", ")}${unscanned.length > 3 ? ", ..." : ""}; add to [docs] dirs)`] : []),
-    ...(journalMalformed.length ? [`${journalMalformed.length} unreadable decisions-journal line(s) (.keeldocs/decisions.jsonl ${journalMalformed.slice(0, 3).map((m) => `line ${m.line}: ${m.reason}`).join(", ")}${journalMalformed.length > 3 ? ", ..." : ""}; a dropped line reinstates the decision it revoked)`] : []),
-    ...(refused.length ? [`${refused.length} unparseable marker(s)`] : []),
-    ...(unverified ? [`${unverified} section(s) the engine cannot verify`] : []),
-  ];
+  // Each term appears only when it is non-zero, and a term NAMES its documents:
+  // "1 anchored doc(s) outside every scan root" without saying which one is the
+  // same unactionable count that let `rebaseline` hide, and the fix (which
+  // directory to add to `[docs] dirs`) is not derivable from a number. Which
+  // channels contribute, and in what order, is the ledger's to say.
+  const unreadableParts = ledger
+    .filter((e) => e.disclosure === "verdict" && e.total && e.summary)
+    .map((e) => e.summary(e.items, e.total));
   const summary = report.toolError
     ? `tooling error: ${report.toolError}`.slice(0, 300)
     : unreadable
@@ -158,24 +120,22 @@ export function runCheck({ root, json, ci, since = null, live = false }) {
 
   const envelope = {
     v: 1, ok: exit === 0, code, summary,
+    // Every disclosure key is projected from the ledger, absent when empty and
+    // capped there - the 8KB trimmer only ever shrinks `data.top`, so an
+    // uncapped list here could bust a cap it cannot repair. A channel that
+    // carries no envelope key of its own (it rides `meta`, or the coverage
+    // sentence) declares that by having none, rather than by being forgotten.
     data: { counts: c, coverage: report.coverage, noise: report.noise, top,
-            ...(refused.length ? { refused: refused.slice(0, 20) } : {}),
-            // capped like `refused`: the 8KB trimmer only shrinks `data.top`,
-            // so an uncapped list here could bust a cap it cannot repair
-            ...(unscanned.length ? { unscanned: unscanned.slice(0, 20) } : {}),
-            ...(skipped.length ? { skipped: skipped.slice(0, 20) } : {}),
-            // capped like `refused` and `unscanned`, and for the same reason:
-            // the 8KB trimmer only shrinks `data.top`
-            ...(journalMalformed.length ? { journalMalformed: journalMalformed.slice(0, 20) } : {}),
-            ...(excludedDocs.length ? { excludedDocs: excludedDocs.slice(0, 20) } : {}),
-            ...(unverifiedTop.length ? { unverified: unverifiedTop } : {}),
+            ...Object.fromEntries(ledger
+              .filter((e) => e.envelope && e.items.length)
+              .map((e) => [e.envelope, e.items.slice(0, CAP)])),
             ...(upgrades?.length ? { upgrades } : {}) },
     truncated: report.findings.length > top.length,
     full: toPosix(relative(repoRoot, outPath)),
     next: [...(exit === 1 ? ["keeldocs sync"] : []),
            ...(upgrades?.length ? ["keeldocs sync --upgrade"] : [])],
   };
-  return emit(json, exit, envelope, report, cache);
+  return emit(json, exit, envelope, ledger, cache);
 }
 
 function buildReport(repoRoot, ci, config, since, live = false) {
@@ -254,7 +214,7 @@ function buildReport(repoRoot, ci, config, since, live = false) {
   counts.driftTotal = findings.filter((f) => DRIFT_STATES.has(f.state)).length;
   if (since) counts.selfCaused = findings.filter((f) => DRIFT_STATES.has(f.state) && f.selfCaused).length;
 
-  return {
+  const report = {
     v: 1,
     meta: { engine: `keeldocs@${ENGINE_VERSION}`, head, providerSetHash,
             docsScanned: docPaths.length, mode: ci ? "ci" : "local",
@@ -293,9 +253,20 @@ function buildReport(repoRoot, ci, config, since, live = false) {
     // conflict-free goldens stay byte-stable
     ...(conflicts?.length ? { conflicts } : {}),
   };
+  // The forcing function, and the reason the next decline site cannot be silent.
+  // Every top-level key above is either a disclosure channel or declared not to
+  // be one; a key that is neither throws, and a throw here is TOOL_ERROR exit 2.
+  // It runs on every repository on every run rather than only where a fixture
+  // trips a channel - the channels are absent-when-empty, so a fixture-only
+  // check would notice only the unjoined channels it was lucky enough to
+  // trigger, which is how this family stayed alive for four releases. Pure key
+  // comparison: no clock, no network, nothing that stops `check` being a pure
+  // function of the tree.
+  assertClassified(report);
+  return report;
 }
 
-function emit(json, exit, envelope, report, cache = null) {
+function emit(json, exit, envelope, ledger = [], cache = null) {
   if (json) {
     let out = JSON.stringify(envelope);
     if (out.length > 8192) { // hard envelope cap - trim top findings until it fits
@@ -305,33 +276,23 @@ function emit(json, exit, envelope, report, cache = null) {
     }
     process.stdout.write(out + "\n");
   } else {
-    process.stdout.write(humanize(envelope, report, cache));
+    process.stdout.write(humanize(envelope, ledger, cache));
   }
   return exit;
 }
 
-function humanize(envelope, report, cache = null) {
+function humanize(envelope, ledger = [], cache = null) {
   const lines = [`keeldocs check - ${envelope.code}`, envelope.summary, ""];
   for (const f of envelope.data.top ?? []) {
     lines.push(`  ${f.state.toUpperCase().padEnd(9)} ${f.doc}:${f.line}  ${f.id}${f.missing ? `  (missing: ${f.missing.join(", ")})` : ""}`);
     if (f.candidates?.length) lines.push(`            candidates: ${f.candidates.join(", ")}`);
   }
-  for (const u of envelope.data.unscanned ?? []) {
-    lines.push(`  UNSCANNED ${u.doc}  (${u.anchors} anchor(s), ${u.regions} region(s) - outside every [docs] dirs scan root)`);
-  }
-  for (const u of envelope.data.unverified ?? []) {
-    lines.push(`  UNVERIFIED ${u.doc}:${u.line}  ${u.id}  (${u.reason})`);
-  }
-  for (const m of envelope.data.journalMalformed ?? []) {
-    lines.push(`  UNREADABLE .keeldocs/decisions.jsonl:${m.line}  (${m.reason} - a line the reader drops reinstates whatever it revoked)`);
-  }
-  for (const u of envelope.data.excludedDocs ?? []) {
-    lines.push(`  EXCLUDED  ${u.doc}  (${u.anchors} anchor(s), ${u.regions} region(s) - matched [providers] exclude-paths, so it is not checked)`);
-  }
-  if (envelope.data.skipped?.length) {
-    lines.push(`  NOT READ  ${envelope.data.skipped.join(", ")}  (neither scanned nor swept - name one in [docs] dirs to read it)`);
-  }
-  if (report?.quarantined?.length) lines.push(`  note: ${report.quarantined.length} malformed marker(s) quarantined`);
+  // One rendering per channel, off the same ledger the verdict came from, so a
+  // human reading the terminal and a machine reading the envelope are told about
+  // the same set of things. Six of these lines used to be written by hand here,
+  // which is why three channels reached the envelope before they reached a
+  // reader, and one never reached either.
+  for (const e of ledger) lines.push(...(e.human?.(e.items.slice(0, CAP), e.total) ?? []));
   // Stated, not silent: a reader must be able to tell that work was skipped,
   // and must be told how to stop skipping it. Human channel only - the JSON
   // envelope stays a pure function of the repository.

@@ -21,10 +21,10 @@ inputs:
 
 outputs:
   code:
-    description: "Envelope code: CLEAN | DRIFT_FOUND | TOOL_ERROR | CONFIG"
+    description: "Envelope code: CLEAN | DRIFT_FOUND | UNREADABLE | TOOL_ERROR | CONFIG"
     value: ${{ steps.check.outputs.code }}
   exit:
-    description: "keeldocs exit code (0 clean, 1 drift, 2 tool/config error)"
+    description: "keeldocs exit code (0 clean, 1 drift or UNREADABLE, 2 tool/config error)"
     value: ${{ steps.check.outputs.exit }}
 
 runs:
@@ -113,7 +113,16 @@ runs:
             "",
             selfNote,
             "",
-            rows ? "| state | id | where | cause |\n|---|---|---|---|\n" + rows : "_No drift. Docs match the code._",
+            // "No drift" is a claim about a run that finished looking. On an
+            // UNREADABLE run there are no drift ROWS precisely because the
+            // engine declined to headline a drift count over a tree it could
+            // not fully read - and this line then told the pull request that
+            // the docs match the code. That is the same defect the whole 0.4.x
+            // campaign was fixing, printed on the surface the distribution bet
+            // runs through, so the reassurance is now spoken only by CLEAN.
+            rows ? "| state | id | where | cause |\n|---|---|---|---|\n" + rows
+              : env.code === "CLEAN" ? "_No drift. Docs match the code._"
+              : "_No drift verdict for this run - see the summary above._",
             "",
             env.code === "DRIFT_FOUND" ? "Run `keeldocs sync` locally to review section-level proposals." : "",
           ].join("\n");

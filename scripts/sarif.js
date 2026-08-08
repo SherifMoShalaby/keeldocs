@@ -10,6 +10,7 @@
 // the CLI exit code, not via findings).
 
 import { readFileSync } from "node:fs";
+import { CHANNELS, ledgerOf } from "../src/disclosure.js";
 
 const LEVELS = { stale: "warning", dead: "warning", tampered: "error", unresolvable: "note" };
 
@@ -18,7 +19,32 @@ const RULES = [
   { id: "keeldocs/dead", desc: "Doc section is bound to a fact that no longer exists (no tombstone recorded)." },
   { id: "keeldocs/tampered", desc: "Machine-generated region was edited by hand; regenerate or approve via sync." },
   { id: "keeldocs/unresolvable", desc: "Extractor failed - tooling health, never treated as drift (fail closed)." },
+  // Every disclosure channel gets a rule, generated from the ledger rather than
+  // typed out here. This emitter used to know four states and nothing else: a
+  // grep for `refused`, `unscanned`, `journalMalformed`, `skipped`,
+  // `excludedDocs` and `extractionGaps` in this file returned zero for all six.
+  // Measured on a purpose-built repository, `check` exited 1 UNREADABLE naming a
+  // section it could not verify while this file exited 0 emitting ZERO results -
+  // so GitHub code scanning displayed "no problems found" for a run that failed.
+  // A Security tab that is clean when the run was not is the project's own
+  // defect wearing someone else's UI, and it was written DURING the campaign
+  // that fixed twelve instances of it. Joining the ledger is what stops the next
+  // channel needing anyone to remember this file exists.
+  ...CHANNELS.map((c) => ({ id: `keeldocs/${c.channel}`, desc: `${c.what} - ${c.why}.` })),
 ];
+
+// A disposition points at a place: the document, the file an extractor gave up
+// on, the directory nobody walked, or the one file a channel names for itself
+// (`at`). Deriving it beats a per-channel mapping that the next channel would
+// not be added to.
+function locate(entry, item) {
+  const uri = typeof item === "string" ? item : (item.doc ?? item.file ?? entry.at);
+  if (!uri) return [];
+  return [{ physicalLocation: {
+    artifactLocation: { uri, uriBaseId: "SRCROOT" },
+    region: { startLine: item.line || 1 },
+  } }];
+}
 
 export function toSarif(report) {
   const results = [];
@@ -38,6 +64,22 @@ export function toSarif(report) {
         region: { startLine: f.line || 1 },
       } }],
     });
+  }
+  // The disclosures, in ledger order, after the findings. A `verdict` channel
+  // means the run has no drift verdict at all, so it is a warning; a `named` one
+  // is a blind spot the user chose or a standing rule about dependency trees, so
+  // it is a note and gates nobody - the same split the exit code makes, read off
+  // the same enumeration rather than restated here.
+  for (const entry of ledgerOf(report)) {
+    for (const item of entry.items) {
+      const detail = typeof item === "string" ? "" : (item.reason ?? item.kind ?? item.id ?? "");
+      results.push({
+        ruleId: `keeldocs/${entry.channel}`,
+        level: entry.disclosure === "verdict" ? "warning" : "note",
+        message: { text: [entry.what, detail, entry.why].filter(Boolean).join(" - ").slice(0, 1000) },
+        locations: locate(entry, item),
+      });
+    }
   }
   return {
     $schema: "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",

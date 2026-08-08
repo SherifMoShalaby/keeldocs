@@ -1,5 +1,84 @@
 # Changelog
 
+## Unreleased
+
+**The twenty-four were never twenty-four bugs. They were one missing
+abstraction, and this release builds it.** Across `0.4.0` through `0.4.3` the
+project fixed six, then three, then three, then twelve distinct shapes in which
+`check` reported `CLEAN` — or 100% coverage — over something it had not looked
+at. Each fix added another channel for "the engine declined to look at this":
+`quarantined`, `unverified`, `unscanned`, `skipped`, `excludedDocs`,
+`journalMalformed`, `extractionGaps`, `meta.scopedOut`. Eight of them, six added
+by six different releases, each after a defect proved the previous seven were
+not enough. Nothing enumerated them. The verdict was a hand-maintained sum over
+four of the eight names, and every new channel had to be hand-wired into that
+sum, the report, the envelope and the terminal — four places, from memory. A
+ninth that joined three of the four would have been invisible in exactly the way
+the previous eight were.
+
+The proof that it was structural rather than a run of bad luck is that the
+FIXES reintroduced the shape. Every post-fix signature made silence the
+default — `repoFiles(..., {skipDir, skipped = null, denied = null})`,
+`docPathsOf(root, dirs, skipped = null)` — so omitting a collector silently
+restored the defect being fixed. And two more instances were written *during*
+the campaign that fixed the twelve:
+
+*Measured, `scripts/sarif.js`.* On a purpose-built repository, `check` exits **1
+/ UNREADABLE** naming one section it cannot verify, and `node scripts/sarif.js
+<full-report>` exited **0 emitting zero results** — so GitHub code scanning
+displayed "no problems found" for a run that failed. The emitter's `LEVELS` map
+knew four drift states; a grep for `refused`, `unscanned`, `journalMalformed`,
+`skipped`, `excludedDocs` and `extractionGaps` in that file returned 0 for every
+one, and `grep -ci sarif scripts/harness.py` returned 0 — no harness coverage at
+all. Same repository, after: **1 result**, `keeldocs/unverified`, level
+`warning`, anchored at `docs/x.md`.
+
+*Measured, the sticky pull-request comment in `action.yml`.* It printed
+"_No drift. Docs match the code._" whenever the findings table was empty — which
+is precisely what an UNREADABLE run produces, because the engine declines to
+headline a drift count over a tree it could not fully read. The reassurance is
+now spoken only by `CLEAN`.
+
+*And the agent surface.* `UNREADABLE` — the code the campaign invented to stop
+silent non-checking — appeared **0 times** in `skills/`, `AGENTS.md`,
+`adapters/` and `action.yml`, whose `outputs.code` still advertised
+`CLEAN | DRIFT_FOUND | TOOL_ERROR | CONFIG`. It is now documented on all of
+them, along with the two disclosures that never move an exit code.
+
+**What replaces the sum.** One module, `src/disclosure.js`, holds one enumerated
+list of channels; each declares `disclosure: "verdict"` (the engine could not
+read something, so the run has no drift verdict and exits 1 UNREADABLE) or
+`"named"` (a blind spot the user wrote or a standing rule about dependency
+trees — named, never counted, because a gate that fires on every repository that
+has ever run `npm install` is the one people switch off). The verdict, the
+300-character summary, the envelope projection and the terminal rendering all
+iterate that list. `check.js` outside `buildReport` now names no channel at all.
+Nothing is added to the serialized report: existing report and envelope keys,
+and their item shapes, are unchanged, so every consumer keeps working.
+
+Two things force the next decline site to join, neither of them a convention
+anyone has to remember. `assertClassified` runs inside `buildReport` on every
+run of every repository and throws — TOOL_ERROR, exit 2, fail closed — if any
+top-level report key is neither a channel nor declared not to be one; it is a
+pure key-set comparison, so `check` remains a pure function of the tree. And a
+harness gate holds `check.js` to naming no channel outside the producer, holds
+every channel to declaring a disposition and a what/why, holds every disclosed
+item to reaching SARIF as exactly one result, and requires a probe per channel —
+so a channel added without a test fails the build rather than going unmeasured.
+
+The gate's controls are the load-bearing half, and each was proved by mutation:
+neutering `assertClassified` to return instead of throw, making `unreadableOf`
+skip one verdict channel, and reintroducing a hand-assembled channel in the
+consumer half each turn it red on the targeted assertion; adding an unregistered
+key to the report turns `check` itself red with `unclassified check-report
+key(s): …`. This is the `isHostileFact` idiom applied a second time — one choke
+point instead of a rule re-applied per site — which has produced no recurring
+injection family in four releases of this file.
+
+201 unit tests, 40 extractor goldens, 99 harness checks. `check` is CLEAN on this
+repository at 12/12 surfaces, and the envelope is byte-identical to `0.4.3`'s for
+an unchanged tree.
+
 ## 0.4.3 — 2026-08-07
 
 **Twelve more of the same class, in five batches, every one of them sitting in

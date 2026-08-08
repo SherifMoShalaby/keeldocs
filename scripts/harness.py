@@ -3688,6 +3688,136 @@ def main():
     except Exception as e:
         failures.append(f"tarball skills smoke: {why(e)}")
 
+    # ---- the disclosure ledger: one disposition per decline-to-look site ----
+    # 0.4.0 found six shapes in which `check` reported CLEAN over something it
+    # had not checked, 0.4.1 three more, 0.4.2 three, 0.4.3 twelve - and each fix
+    # added another hand-assembled channel wired by hand into a summing
+    # expression, the envelope, the report and the terminal. Nothing enumerated
+    # them, so the next decline site that forgot to join was invisible in exactly
+    # the way the previous ones had been. This gate holds the enumeration to
+    # being the only route: the verdict is derived from it, every consumer reads
+    # it, and a report key that joins neither side of it is a hard error.
+    try:
+        # One probe per channel, and the two sets have to match exactly - a new
+        # channel with no probe fails here rather than going untested, which is
+        # the same forcing property the ledger itself has.
+        probes = {
+            "unscanned": {"unscanned": [{"doc": "handbook/api.md", "anchors": 1, "regions": 1}]},
+            "journalMalformed": {"journalMalformed": [{"line": 2, "reason": "bad-json"}]},
+            "quarantined": {"quarantined": [{"doc": "docs/x.md", "line": 3, "reason": "unknown-key"}]},
+            "unverified": {"findings": [{"id": "x.root.t", "kind": "gen", "state": "unverified",
+                                         "doc": "docs/x.md", "line": 5, "reason": "no-recorded-hash"}]},
+            "skipped": {"skipped": ["node_modules"]},
+            "excludedDocs": {"excludedDocs": [{"doc": "vendor/notes.md", "anchors": 1, "regions": 0}]},
+            "extractionGaps": {"extractionGaps": [{"kind": "schema-ignored", "file": "b/schema.prisma"}]},
+            "scopedOut": {"meta": {"scopedOut": 3}},
+        }
+        probe = subprocess.run(["node", "--input-type=module", "-e", (
+            'import {CHANNELS, NOT_DISPOSITIONS, ledgerOf, unreadableOf, assertClassified} from "%s/src/disclosure.js";'
+            'import {toSarif} from "%s/scripts/sarif.js";'
+            'const probes = JSON.parse(process.argv[1]);'
+            'const out = {channels: [], notDispositions: [...NOT_DISPOSITIONS], per: {}, guard: {}};'
+            'for (const c of CHANNELS) out.channels.push({channel: c.channel, key: c.key ?? null,'
+            '  envelope: c.envelope ?? null, disclosure: c.disclosure, what: c.what ?? null, why: c.why ?? null});'
+            'for (const [name, frag] of Object.entries(probes)) {'
+            '  const rep = {v: 1, meta: {}, counts: {}, findings: [], ...frag};'
+            '  const led = ledgerOf(rep);'
+            '  const hit = led.find((e) => e.channel === name);'
+            '  const res = toSarif(rep).runs[0].results;'
+            '  out.per[name] = {unreadable: unreadableOf(led), total: hit ? hit.total : -1,'
+            '    items: hit ? hit.items.length : -1, all: res.length,'
+            '    mine: res.filter((r) => r.ruleId === "keeldocs/" + name).length};'
+            '}'
+            'const t = (f) => { try { f(); return null; } catch (e) { return String(e.message); } };'
+            'out.guard.stray = t(() => assertClassified({v: 1, meta: {}, wombat: []}));'
+            'out.guard.clean = t(() => assertClassified({v: 1, meta: {}, counts: {}, findings: [], quarantined: []}));'
+            'console.log(JSON.stringify(out));') % (ROOT_URL, ROOT_URL), json.dumps(probes)],
+            capture_output=True, text=True, timeout=120)
+        led = node_json(probe, "disclosure ledger probe")
+        names = [c["channel"] for c in led["channels"]]
+
+        # The floor. "The ledger enumerates the channels" is a claim about an
+        # empty list unless the eight the campaign produced are all in it, and a
+        # gate that would pass vacuously is not a gate.
+        floor = {"quarantined", "unverified", "unscanned", "journalMalformed",
+                 "skipped", "excludedDocs", "extractionGaps", "scopedOut"}
+        assert floor <= set(names), f"channels missing from the ledger: {sorted(floor - set(names))}"
+        assert set(probes) == set(names), (
+            "every channel needs a probe and every probe a channel: "
+            f"unprobed={sorted(set(names) - set(probes))} stale={sorted(set(probes) - set(names))}")
+        for c in led["channels"]:
+            assert c["disclosure"] in ("verdict", "named"), \
+                f"{c['channel']}: disclosure {c['disclosure']!r} is neither verdict nor named"
+            assert c["what"] and c["why"], \
+                f"{c['channel']}: a disposition that says neither what nor why discloses nothing"
+
+        # The verdict is DERIVED, and each channel decides its own half of it.
+        # Both directions are asserted: a `verdict` channel alone must produce a
+        # verdict, and a `named` one alone must produce none - because a gate
+        # that only checked the first would pass an engine that had quietly made
+        # `npm install` a build failure.
+        for c in led["channels"]:
+            per, ch = led["per"][c["channel"]], c["channel"]
+            assert per["total"] >= 1, f"{ch}: its own probe never reached the ledger (total={per['total']})"
+            if c["disclosure"] == "verdict":
+                assert per["unreadable"] >= 1, \
+                    f"{ch} declares `verdict` but moves no verdict - it is a channel `check` reports CLEAN over"
+            else:
+                assert per["unreadable"] == 0, \
+                    f"{ch} declares `named` but moved the verdict: a disclosure became a finding"
+            # Every disclosed item reaches the Security tab, one result each.
+            # `scripts/sarif.js` knew four drift states and nothing else: a run
+            # that exited 1 UNREADABLE emitted ZERO results, so GitHub code
+            # scanning displayed "no problems found" for a failing run.
+            assert per["mine"] == per["items"], \
+                f"{ch}: {per['items']} disclosed item(s) became {per['mine']} SARIF result(s)"
+        assert led["per"]["unverified"]["all"] >= 1, \
+            "a report whose only content is an unverifiable section produced an EMPTY SARIF run - " \
+            "a clean Security tab for a run that exits 1 UNREADABLE"
+
+        # The forcing function itself. This is what a fixture-based partition
+        # check cannot do: channels are absent-when-empty, so a fixture only
+        # notices the unjoined channels it happens to trigger.
+        assert led["guard"]["stray"] and "wombat" in led["guard"]["stray"], (
+            "assertClassified passed an unclassified report key - a site that declines to look at "
+            f"something and joins neither CHANNELS nor NOT_DISPOSITIONS is invisible: {led['guard']['stray']!r}")
+        assert led["guard"]["clean"] is None, \
+            f"the guard rejected a fully classified report: {led['guard']['clean']}"
+
+        src = open(os.path.join(ROOT, "src", "check.js"), encoding="utf-8").read()
+        i, j = src.index("function buildReport("), src.index("function emit(")
+        producer, consumers = src[i:j], src[:i] + src[j:]
+
+        def _decomment(s):
+            s = re.sub(r"/\*.*?\*/", "", s, flags=re.S)
+            return re.sub(r"(?m)//.*$", "", s)
+
+        cons = _decomment(consumers)
+        assert "unreadableOf(" in cons and "ledgerOf(" in cons, \
+            "comment stripping ate the source: this check is reading nothing"
+        assert "assertClassified(" in _decomment(producer), (
+            "buildReport no longer calls assertClassified - the forcing function is unwired and a new "
+            "report key is free to be invisible again")
+        # `buildReport` is the producer and must name its channels; nothing that
+        # CONSUMES the report may. Verdict, summary, envelope projection and
+        # terminal rendering all read the ledger, so a channel spelled out here
+        # is one the next channel will not be added to.
+        spelled = sorted({n for n in names + [c["envelope"] for c in led["channels"] if c["envelope"]]
+                          if re.search(rf"\b{re.escape(n)}\b", cons)})
+        assert not spelled, (
+            f"src/check.js hand-assembles disclosure channel(s) {', '.join(spelled)} outside buildReport - "
+            "the hand-maintained sum is exactly the defect 0.4.0 through 0.4.3 each shipped a fix for")
+        sar = open(os.path.join(ROOT, "scripts", "sarif.js"), encoding="utf-8").read()
+        assert "ledgerOf" in sar and "CHANNELS" in sar, (
+            "scripts/sarif.js does not consume the ledger - it emitted zero results for a run that "
+            "exited 1 UNREADABLE, so code scanning showed no problems for a failing run")
+        print(f"  PASS  disclosure ledger: {len(names)} channel(s) enumerated, verdict derived from "
+              f"{sum(1 for c in led['channels'] if c['disclosure'] == 'verdict')} of them and moved by no "
+              f"other, every disclosed item reaches SARIF, an unclassified report key is refused, and "
+              f"check.js names no channel outside buildReport")
+    except Exception as e:
+        failures.append(f"disclosure ledger: {why(e)}")
+
     # Last, so every PASS above is counted. +1 is this gate's own line, which is
     # printed after the count is taken.
     try:
