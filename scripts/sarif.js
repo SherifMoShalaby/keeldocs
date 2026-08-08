@@ -27,6 +27,8 @@
 // be rediscovered.
 
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { CHANNELS, disclosuresOf } from "../src/disclosure.js";
 
 const LEVELS = { stale: "warning", dead: "warning", tampered: "error", unresolvable: "note" };
@@ -128,7 +130,21 @@ export function toSarif(report) {
   };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Am I the entry point? This used to compare `import.meta.url` against
+// `` `file://${process.argv[1]}` ``, which is true on Linux and macOS and FALSE
+// on every Windows machine there has ever been: argv[1] is `C:\...\sarif.js`
+// while the module URL is `file:///C:/.../sarif.js`, so the drive letter, the
+// separators and the third slash all disagree. The block never ran, the process
+// wrote nothing and exited 0 - so on a Windows runner this emitter has always
+// produced an EMPTY SARIF for a run with findings, and GitHub code scanning
+// showed "no problems found". That is this repository's own defect family, in
+// the file whose whole job is to carry findings to a human, shipped in every
+// release since rc.1. Compare resolved filesystem paths instead: `argv[1]` is
+// absent when the module is imported rather than executed, which is what the
+// unit test does.
+const invokedDirectly = process.argv[1] &&
+  resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1]);
+if (invokedDirectly) {
   const report = JSON.parse(readFileSync(process.argv[2], "utf8"));
   process.stdout.write(JSON.stringify(toSarif(report), null, 1) + "\n");
 }
