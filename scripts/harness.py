@@ -400,6 +400,42 @@ def canonical_lines(text):
     return [canonical(l) for l in text.splitlines() if l.strip()]
 
 
+def tracking_docs():
+    """The documents whose counts are claims about the CURRENT tree, as
+    (name, body) with `counts:ignore` lines already dropped.
+
+    CHANGELOG.md is here for its `## Unreleased` section only, and it is here
+    because it was the one tracking document no count gate read. CLAUDE.md names
+    it as the file to update when the measured before-and-after changes, and it
+    stated `104 harness checks` against a tree with 106 - written by the commit
+    that added the harness-count gate, and invisible to that gate, which reads
+    four files and not this one. A count nobody checks is the shape of every
+    defect this project has spent four releases on.
+
+    Only the Unreleased slice: a RELEASED section is history, and `0.4.3` saying
+    `98 harness checks` is true of `0.4.3`. Scanning the whole file would make
+    the gate demand that the past be rewritten, which is the one thing a
+    changelog must never do - so the slice ends at the next `## ` heading.
+    """
+    for rel in ("README.md", "ROADMAP.md", "CLAUDE.md", "AGENTS.md", "CHANGELOG.md"):
+        path = os.path.join(ROOT, rel)
+        if not os.path.isfile(path):
+            continue
+        text = open(path, encoding="utf-8").read()
+        if rel == "CHANGELOG.md":
+            m = re.search(r"(?m)^## Unreleased\b(.*?)(?=^## |\Z)", text, re.S)
+            # No Unreleased section is not a hole: between releases there is
+            # nothing claiming to describe this tree. An empty one is, so it
+            # yields and the caller's own "stated somewhere" assertions apply.
+            if not m:
+                continue
+            text, rel = m.group(1), "CHANGELOG.md (Unreleased)"
+        # A historical quote and a scoped count are not claims about the current
+        # tree. They opt out explicitly, per line, rather than the patterns being
+        # loosened until they catch nothing.
+        yield rel, "\n".join(l for l in text.split("\n") if "counts:ignore" not in l)
+
+
 def run(cmd, env=None):
     # `env` supplies the declared cross-capability reads (provider contract 9)
     # that the engine would otherwise hand the provider - a golden case for a
@@ -2536,16 +2572,13 @@ def main():
         # a statement about the pattern, and it was equally true of the gate.
         seen = {k: 0 for k in PHRASE}
         seen["unit tests"] = 0
-        for rel in ("README.md", "ROADMAP.md", "CLAUDE.md", "AGENTS.md"):
-            path = os.path.join(ROOT, rel)
-            if not os.path.isfile(path):
-                continue
-            # A historical quote (D4's "12 providers re-run") and a scoped count
-            # ("8 unit tests against Mermaid's ceilings") are not claims about the
-            # current tree. They opt out explicitly, rather than the pattern being
-            # loosened until it catches nothing.
-            body = "\n".join(l for l in open(path, encoding="utf-8").read().split("\n")
-                             if "counts:ignore" not in l)
+        # A historical quote (D4's "12 providers re-run") and a scoped count
+        # ("8 unit tests against Mermaid's ceilings") are not claims about the
+        # current tree; they opt out per line inside `tracking_docs`, rather than
+        # the patterns being loosened until they catch nothing. CHANGELOG's
+        # Unreleased section arrives from there too - it is a claim about this
+        # tree and was read by neither count gate.
+        for rel, body in tracking_docs():
             # Line-wrapped prose hid claims from every pattern here: ROADMAP §8
             # wraps between "6" and "agent skills", so the count was unchecked
             # for no reason but where the line broke. Collapse AFTER the per-line
@@ -3739,10 +3772,11 @@ def main():
             "scopedOut": {"meta": {"scopedOut": 3}},
         }
         probe = subprocess.run(["node", "--input-type=module", "-e", (
-            'import {CHANNELS, NOT_DISPOSITIONS, ledgerOf, unreadableOf, assertClassified, disclosuresOf} from "%s/src/disclosure.js";'
+            'import {CHANNELS, NOT_DISPOSITIONS, CONTAINERS, ledgerOf, unreadableOf, assertClassified, disclosuresOf} from "%s/src/disclosure.js";'
             'import {toSarif} from "%s/scripts/sarif.js";'
             'const probes = JSON.parse(process.argv[1]);'
-            'const out = {channels: [], notDispositions: [...NOT_DISPOSITIONS], per: {}, guard: {}};'
+            'const out = {channels: [], notDispositions: [...NOT_DISPOSITIONS], per: {}, guard: {},'
+            '  containers: Object.fromEntries(Object.entries(CONTAINERS).map(([k, v]) => [k, [...v]]))};'
             'for (const c of CHANNELS) out.channels.push({channel: c.channel, key: c.key ?? null,'
             '  envelope: c.envelope ?? null, disclosure: c.disclosure, what: c.what ?? null, why: c.why ?? null,'
             '  locate: typeof c.locate === "function", describe: typeof c.describe === "function"});'
@@ -3759,7 +3793,19 @@ def main():
             '}'
             'const t = (f) => { try { f(); return null; } catch (e) { return String(e.message); } };'
             'out.guard.stray = t(() => assertClassified({v: 1, meta: {}, wombat: []}));'
-            'out.guard.clean = t(() => assertClassified({v: 1, meta: {}, counts: {}, findings: [], quarantined: []}));'
+            # The two nested probes. `meta.scopedOut` and the `counts` tally for
+            # `unverified` are channels the ledger already has, so these probes
+            # are the shape of an existing disposition, not an invented one.
+            'out.guard.nestedMeta = t(() => assertClassified({v: 1, meta: {unreviewed: 7}, counts: {}, findings: []}));'
+            'out.guard.nestedCounts = t(() => assertClassified({v: 1, meta: {}, counts: {unswept: 3}, findings: []}));'
+            # The clean control carries every key both containers can hold, so a
+            # container list too NARROW is caught here rather than by a
+            # TOOL_ERROR on somebody's repository.
+            'out.guard.clean = t(() => assertClassified({v: 1, quarantined: [], findings: [],'
+            '  meta: {engine: "keeldocs@0", head: "h", providerSetHash: "p", docsScanned: 1,'
+            '         mode: "local", scopedOut: 0, excludePaths: [], since: {ref: "x"}},'
+            '  counts: {clean: 1, stale: 0, dead: 0, tampered: 0, unverified: 0, unresolvable: 0,'
+            '           snoozed: 0, held: 0, intentionally_removed: 0, driftTotal: 0, selfCaused: 0}}));'
             'console.log(JSON.stringify(out));') % (ROOT_URL, ROOT_URL), json.dumps(probes)],
             capture_output=True, text=True, timeout=120)
         led = node_json(probe, "disclosure ledger probe")
@@ -3832,6 +3878,39 @@ def main():
         assert led["guard"]["clean"] is None, \
             f"the guard rejected a fully classified report: {led['guard']['clean']}"
 
+        # The same forcing function one level down, and the reason it exists.
+        # `assertClassified` compared top-level keys only, and two of the eight
+        # channels are not top-level keys: `scopedOut` is disclosed inside
+        # `meta`, `unverified` is tallied into `counts`, and both containers are
+        # in NOT_DISPOSITIONS - so the guard could not see the shape two of its
+        # OWN channels have. Measured before the fix, on this tree: a ninth
+        # decline site written the way `meta.scopedOut` is written produced an
+        # envelope BYTE-IDENTICAL to the clean one, exit 0, CLEAN, while the
+        # top-level control exited 2. Both directions are asserted, because a
+        # container list too narrow would TOOL_ERROR on a real repository and a
+        # list too wide would let the next one through.
+        for probe_name, key in (("nestedMeta", "meta.unreviewed"), ("nestedCounts", "counts.unswept")):
+            msg = led["guard"][probe_name]
+            assert msg and key in msg, (
+                f"assertClassified passed {key} - a disposition nested where `meta.scopedOut` and the "
+                f"`counts` tally for `unverified` already live is invisible to the verdict: {msg!r}")
+        # Inward, the direction the exit-3 defect survived for four releases: a
+        # declared key the engine cannot produce is a list drifting away from the
+        # thing it describes. `meta` is built in one object literal in check.js
+        # and `counts` is one key per finding state, so every declared name has
+        # to appear in one of the two files that write them.
+        writers = "\n".join(open(os.path.join(ROOT, "src", f), encoding="utf-8").read()
+                            for f in ("check.js", "drift.js"))
+        assert led["containers"] and set(led["containers"]) == {"meta", "counts"}, (
+            f"CONTAINERS no longer walks meta and counts: {sorted(led['containers'])} - the two "
+            "containers a disposition has ever been disclosed in are the two this gate is about")
+        for cname, keys in led["containers"].items():
+            assert keys, f"CONTAINERS.{cname} is empty, so the walk over it compares nothing"
+            absent = sorted(k for k in keys if not re.search(rf"\b{re.escape(k)}\b", writers))
+            assert not absent, (
+                f"CONTAINERS.{cname} declares key(s) src/check.js and src/drift.js never write: "
+                f"{absent} - a permission list that has outlived what it permits")
+
         src = open(os.path.join(ROOT, "src", "check.js"), encoding="utf-8").read()
         i, j = src.index("function buildReport("), src.index("function emit(")
         producer, consumers = src[i:j], src[:i] + src[j:]
@@ -3874,8 +3953,8 @@ def main():
             "that special-cases a channel is one the next channel will not be added to")
         print(f"  PASS  disclosure ledger: {len(names)} channel(s) enumerated, verdict derived from "
               f"{sum(1 for c in led['channels'] if c['disclosure'] == 'verdict')} of them and moved by no "
-              f"other, every disclosure unit reaches SARIF located, an unclassified report key is refused, "
-              f"and neither check.js nor sarif.js names a channel")
+              f"other, every disclosure unit reaches SARIF located, an unclassified key is refused at the "
+              f"top level and inside meta and counts, and neither check.js nor sarif.js names a channel")
     except Exception as e:
         failures.append(f"disclosure ledger: {why(e)}")
 
@@ -4140,6 +4219,7 @@ def main():
     # it comes back with must be exactly what the enumeration says - which also
     # covers `doctor`, whose code depends on the host, because the assertion is
     # about the PAIR and not about which code appears.
+    tmp = None  # bound before the try, so the `finally` below cannot NameError
     try:
         assert envelope_enum, "the enumeration did not load; nothing to hold the runs to"
         exits = {}
@@ -4147,8 +4227,17 @@ def main():
             for cmd, e in c["commands"].items():
                 exits[(cmd, c["code"])] = e if isinstance(e, list) else [e]
 
-        tmp = os.path.join(ROOT, ".keeldocs-tmp-envelope")
-        rmtree(tmp)
+        # Staged OUTSIDE the working tree, like every other gate here. This one
+        # used a fixed path inside ROOT and cleaned it up only on the success
+        # path, and both halves cost real evidence: two harness runs on one
+        # checkout deleted each other's fixture mid-probe and reported
+        # TOOL_ERROR failures that were nothing but the collision, and a failing
+        # run left `.keeldocs-tmp-envelope/` behind in `git status` - untracked,
+        # unignored, and indistinguishable from the run having dirtied the tree.
+        # A gate whose result depends on who else is running is not a
+        # measurement, so it gets a private directory and a `finally`.
+        import tempfile as _tf50
+        tmp = _tf50.mkdtemp(prefix="keeldocs-envelope-")
         for sub in ("clean/docs", "bad", "refused/docs"):
             os.makedirs(os.path.join(tmp, *sub.split("/")), exist_ok=True)
         W(os.path.join(tmp, "clean", "docs", "a.md"), "# Docs\n")
@@ -4189,12 +4278,16 @@ def main():
             seen.add((cmd, code, r.returncode))
         # A gate that observed one pair would pass while proving nothing.
         assert len(seen) >= 6, f"only {len(seen)} distinct (command, code, exit) triple(s) observed"
-        rmtree(tmp)
         print(f"  PASS  enumerated exit codes vs real runs: {len(probes)} probe(s) across "
               f"check/init/sync/doctor, {len(seen)} distinct (command, code, exit) triple(s), "
               f"every pair exactly as src/envelope.js claims")
     except Exception as e:
         failures.append(f"enumerated exit codes vs real runs: {why(e)}")
+    finally:
+        # On the failure path too: a gate that leaves debris behind on the way
+        # out makes the NEXT run's tree-cleanliness check a lie about this one.
+        if tmp:
+            rmtree(tmp)
 
     # ---------------------------------------------------------------------- #
     # The rollup action's push decision.                                      #
@@ -4369,13 +4462,14 @@ def main():
                           f"failed, so the {n} counted here is a floor, not the count")
             raise _SkipCount()
         stale, stated = [], 0
-        for rel in ("README.md", "ROADMAP.md", "CLAUDE.md", "AGENTS.md"):
-            path = os.path.join(ROOT, rel)
-            if not os.path.isfile(path):
-                continue
-            body = re.sub(r"\s+", " ", "\n".join(
-                l for l in open(path, encoding="utf-8").read().split("\n")
-                if "counts:ignore" not in l))
+        # Five documents now, not four. CHANGELOG's Unreleased section said
+        # `104 harness checks` over a tree with 106 - written by the commit that
+        # added this gate, in the one file CLAUDE.md names as the place the
+        # measured before-and-after lives, and the gate could not see it because
+        # it read four files and that was not one of them. Released sections stay
+        # out: `0.4.3` really did have 98.
+        for rel, body in tracking_docs():
+            body = re.sub(r"\s+", " ", body)
             for m in re.finditer(r"\b(\d+) (?:[a-z][a-z-]* )*harness checks", body):
                 stated += 1
                 if int(m.group(1)) != n:

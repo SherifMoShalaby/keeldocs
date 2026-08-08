@@ -17,8 +17,13 @@ a registry login, people). §5 is refusals with written evidence thresholds, not
 backlog. §6 is closed and is a record, not a queue.
 
 Current: `keeldocs@0.4.3` on npm (`latest`), 205 unit tests, 40 extractor goldens,
-106 harness checks, 3-OS CI green (Windows non-blocking; it was silently red for
-twelve runs until 2026-08-03 — see ROADMAP §4 item 6 before trusting that lane).
+106 harness checks. **Linux and macOS green; Windows is RED and has been since
+`386aa03`** — `FAIL sarif emitter vs a real check run: Expecting value: line 1
+column 1 (char 0)`, one gate, the newest one, measured from the run logs of
+`386aa03`, `3075435` and `04b54cd`. The lane is `continue-on-error`, so all
+three runs report `success` at the top level and the red is only visible inside
+the job. That is the same masking that hid twelve runs until 2026-08-03 (ROADMAP
+§4 item 6): do not read "CI green" off the run list.
 
 `0.4.0` was the first release that changes what `check` returns for an unchanged
 repository: six shapes `0.3.0` called `CLEAN` while checking nothing now report.

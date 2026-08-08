@@ -58,13 +58,42 @@ and their item shapes, are unchanged, so every consumer keeps working.
 
 Two things force the next decline site to join, neither of them a convention
 anyone has to remember. `assertClassified` runs inside `buildReport` on every
-run of every repository and throws — TOOL_ERROR, exit 2, fail closed — if any
-top-level report key is neither a channel nor declared not to be one; it is a
-pure key-set comparison, so `check` remains a pure function of the tree. And a
-harness gate holds `check.js` to naming no channel outside the producer, holds
-every channel to declaring a disposition and a what/why, holds every disclosure
-unit to reaching SARIF as exactly one result, and requires a probe per channel —
-so a channel added without a test fails the build rather than going unmeasured.
+run of every repository and throws — TOOL_ERROR, exit 2, fail closed — if a
+report key is neither a channel nor declared not to be one; it is a pure key-set
+comparison, so `check` remains a pure function of the tree. And a harness gate
+holds `check.js` to naming no channel outside the producer, holds every channel
+to declaring a disposition and a what/why, holds every disclosure unit to
+reaching SARIF as exactly one result, and requires a probe per channel — so a
+channel added without a test fails the build rather than going unmeasured.
+
+**The guard's own blind spot, found by walking into it and measured before it
+was closed.** `assertClassified` compared *top-level* keys only — and two of the
+eight channels it enumerates are not top-level keys. `scopedOut` is disclosed
+inside `meta`; `unverified` is derived from `findings` and tallied into
+`counts`; both containers sit in `NOT_DISPOSITIONS`, so the guard could not see
+inside the two places a disposition has ever actually been disclosed. *Measured
+on this tree:* a ninth decline site written exactly the way `meta.scopedOut` is
+written — `report.meta.unreviewed = 7` — produced an envelope **byte-identical**
+to the clean one, **exit 0, CLEAN**, named in no summary, no envelope key and no
+terminal line, while the top-level control (`wombat`) exited **2 / TOOL_ERROR**
+from the same tree. That is this family's exact signature, reproduced against
+the abstraction built to end it, using a shape one of its own channels already
+has. `CONTAINERS` now declares the permitted keys of `meta` and `counts` and the
+guard walks both: after, the same nested site exits **2 / TOOL_ERROR** naming
+`meta.unreviewed`, and the clean envelope is unchanged byte for byte. The
+`counts` half earns its keep beyond the one defect — a new finding state is a
+new way a section can end up not compared, and it arrives as a new key.
+
+The claim is stated at exactly the width of the mechanism, because over-claiming
+here is the defect under repair: **top-level keys, plus every key of `meta` and
+`counts`.** A key nested inside `coverage` or `noise` is still outside the
+guard. Walking every container would mean enumerating every nested key of the
+whole report, which is a larger hand-maintained list than the one this module
+exists to replace. The container names need no protection of their own — they
+are top-level keys, so renaming `meta` fails the half above. Both directions are
+gated: a list too narrow would `TOOL_ERROR` on a real repository, and a declared
+key `src/check.js` and `src/drift.js` never write fails the build, which is the
+direction the exit-3 defect survived four releases in.
 
 **And then the consumer half, because wiring the emitter to the ledger was not
 enough.** The ledger made the engine's disclosures derivable; the emitter still
@@ -84,13 +113,29 @@ The same field is not even always a path. Across the shipped fixtures
 `extractionGaps.file` carries `moddatetime` (a Postgres extension),
 `public.rebuild_stats` (a procedure), `items` (a table) and `services/api` (a
 directory), so a consumer treating it as a repo path invents file locations that
-do not exist. Deciding that is now the channel's job and not the consumer's:
+do not exist. *Deciding* that is now the channel's job and not the consumer's:
 each declares `locate` and `describe` for its own item shape, and
 `disclosuresOf(report)` returns the flat list of units every consumer maps —
 one per disclosed thing, exactly one for a count-only channel, and a `path` that
-is never null (the item's own place, else the file the channel is about, else
-`keeldocs.toml`, the file a human edits to change the disposition). A consumer
-maps units; it no longer interprets channels.
+is never null. A consumer maps units; it no longer interprets channels.
+
+Be precise about what that last clause bought, because it is less than it
+sounds: the *invention moved*, from the emitter to the ledger, and it was not
+eliminated. A unit's `path` is the item's own place, else the file the channel
+is about, else `keeldocs.toml` — and `keeldocs.toml` is absent from **31 of the
+32 shipped fixtures**, because `src/config.js` returns defaults when there is no
+config and a repo with none is the first thing anyone runs this on.
+`extractionGaps` still offers `file` as a location, so on
+`fixtures/replay-scenario` all four emitted results name a path that is in no
+tree: `moddatetime`, `pg_cron`, `postgis`, `keeldocs.toml`. What changed is that
+every unit now has *a* place instead of `locations: []`, which GitHub documents
+as not displayed at all; what did not change is that the place can be a name
+rather than a file. How code scanning renders a result whose `uri` names no file
+in the analyzed tree is **unestablished** — the cited evidence covers only the
+empty case — and the honest statement is that one silence was replaced by a
+weaker one, not that the anchoring question is closed. It is open, settling it
+needs a real code-scanning upload, and it is written down here rather than
+claimed shut.
 
 *Measured on one repository that trips all eight channels at once:* `check`
 exits **1 / UNREADABLE**; `node scripts/sarif.js <report>` exits 0 with **8
@@ -177,9 +222,28 @@ The adapter manifests are deliberately not in `CONTRACTS`: they describe install
 locations — `skills_dir`, `strip_fields`, `agents_md_block` — and say nothing
 about outcomes, so there is no claim in them to keep true.
 
-205 unit tests, 40 extractor goldens, 104 harness checks. `check` is CLEAN on this
-repository at 12/12 surfaces, and the envelope is byte-identical to `0.4.3`'s for
-an unchanged tree.
+**And this file was the tracking document no count gate read.** The line above
+said `104 harness checks` <!-- counts:ignore --> against a tree with **106** — written by the commit
+that added the harness-count gate, in the one file `CLAUDE.md` names as the
+place the measured before-and-after lives, and invisible to that gate because it
+read four documents and this was not one of them. Both count gates now read a
+fifth: `CHANGELOG.md`, sliced to `## Unreleased` and stopping at the next
+heading, because a released section is history and `0.4.3` really did have 98.
+
+**One gate in here is red on Windows and this release does not fix it.** The new
+`sarif emitter vs a real check run` gate fails on `windows-latest` with
+`Expecting value: line 1 column 1 (char 0)` — a node subprocess returning no
+JSON — and it has done so on every run since it landed. Linux and macOS are
+green. The lane is `continue-on-error`, so all three runs report `success` at the
+top level and the failure is visible only inside the job, which is precisely the
+masking that hid a red Windows lane for twelve runs until 2026-08-03. It is
+named here rather than left for the run list to imply otherwise; diagnosing it
+needs a Windows machine.
+
+205 unit tests, 40 extractor goldens, 106 harness checks, on Linux and macOS.
+`check` is CLEAN on this repository at 12/12 surfaces, and the envelope is
+byte-identical to `0.4.3`'s for an unchanged tree — including after the guard was
+widened, which is the property that makes this report shape and nothing else.
 
 ## 0.4.3 — 2026-08-07
 

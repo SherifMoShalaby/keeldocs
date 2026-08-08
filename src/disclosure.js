@@ -256,6 +256,50 @@ const CLASSIFIED = new Set([
   ...CHANNELS.map((c) => c.key).filter(Boolean),
 ]);
 
+// The same rule, one level down.
+//
+// `assertClassified` compared TOP-LEVEL keys only, and two of the eight channels
+// above are not top-level keys: `scopedOut` is disclosed inside `meta`, and
+// `unverified` is derived from `findings` and tallied into `counts`. Both
+// containers sit in `NOT_DISPOSITIONS`, so the guard could not see inside the
+// two places a disposition has ever actually been disclosed. It was blind to
+// the shape two of its own channels already have.
+//
+// Measured on this tree before this list existed: a ninth decline site written
+// the way `meta.scopedOut` is written - `report.meta.unreviewed = 7` - produced
+// an envelope BYTE-IDENTICAL to the clean one, exit 0, CLEAN, named in no
+// summary, no envelope key and no terminal line, while the top-level control
+// (`wombat`) exited 2 TOOL_ERROR from the same tree. That is this family's exact
+// signature reproduced against the abstraction built to end it, which is why it
+// is repaired rather than filed.
+//
+// Two containers, not every container, and the claim is stated at exactly that
+// width: a key nested inside `coverage` or `noise` is still outside the guard.
+// These two are walked because these two are where a disposition has ever been
+// disclosed; walking everything would mean enumerating every nested key of the
+// whole report, which is a larger hand-maintained list than the one this module
+// exists to replace, and over-claiming here would be the defect under repair.
+// The container NAMES need no protection of their own - they are top-level keys,
+// so renaming `meta` fails the half above.
+export const CONTAINERS = {
+  // Built in one object literal in `src/check.js`. `scopedOut` and
+  // `excludePaths` appear only when the user configured a path scope, `since`
+  // only under `--since`; a key that is sometimes absent is exactly the kind a
+  // fixture-based check misses, which is why this is a declared list and not a
+  // sample.
+  meta: new Set(["engine", "head", "providerSetHash", "docsScanned", "mode",
+                 "scopedOut", "excludePaths", "since"]),
+  // One key per finding state (`src/drift.js`), plus the two `check.js` derives.
+  // This is the half that earns its keep beyond the one defect it was written
+  // for: a new finding state is a new way a section can end up not compared, and
+  // it arrives here as a new key - so inventing one without deciding whether it
+  // is a disposition fails the run instead of being tallied into a number
+  // nobody reads.
+  counts: new Set(["clean", "stale", "dead", "tampered", "unverified",
+                   "unresolvable", "snoozed", "held", "intentionally_removed",
+                   "driftTotal", "selfCaused"]),
+};
+
 // The forcing function. Called from `buildReport` before it returns, so it runs
 // on every repository on every run rather than only where a fixture happens to
 // trip a channel - the channels are absent-when-empty, so a fixture-only check
@@ -265,12 +309,21 @@ const CLASSIFIED = new Set([
 // project must never report CLEAN over.
 export function assertClassified(report) {
   const stray = Object.keys(report).filter((k) => !CLASSIFIED.has(k));
+  for (const [name, allowed] of Object.entries(CONTAINERS)) {
+    const inner = report[name];
+    // An absent container is not a hole: it has no key to classify. A container
+    // RENAMED rather than removed fails the top-level pass above, which is where
+    // its name lives, so there is no way to escape by moving the walk's target.
+    if (!inner || typeof inner !== "object") continue;
+    for (const k of Object.keys(inner)) if (!allowed.has(k)) stray.push(`${name}.${k}`);
+  }
   if (stray.length) {
     throw new Error(
       `unclassified check-report key(s): ${stray.join(", ")} - every top-level key must be a ` +
-      `disclosure channel in src/disclosure.js CHANNELS or listed in NOT_DISPOSITIONS. A site ` +
-      `that declines to look at something and joins neither is invisible to the verdict, which ` +
-      `is the defect 0.4.0 through 0.4.3 each shipped a fix for`);
+      `disclosure channel in src/disclosure.js CHANNELS or listed in NOT_DISPOSITIONS, and every ` +
+      `key of meta and counts must be listed in CONTAINERS. A site that declines to look at ` +
+      `something and joins none of them is invisible to the verdict, which is the defect 0.4.0 ` +
+      `through 0.4.3 each shipped a fix for`);
   }
 }
 
