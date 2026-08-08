@@ -8,11 +8,51 @@
 // where the annotation belongs. Tooling health (unresolvable) surfaces as
 // "note": it is not drift and must not gate anyone (fail-closed happens via
 // the CLI exit code, not via findings).
+//
+// Everything the engine DECLINED to look at reaches here too, one result per
+// disclosed unit, off `disclosuresOf` - see src/disclosure.js. It did not use
+// to, and this file is the reason that abstraction has a consumer half at all:
+// measured end to end on a purpose-built repository, `check` exited 1 UNREADABLE
+// naming one unverifiable section while this emitter exited 0 having written
+// ZERO results, so GitHub code scanning displayed "no problems found" for a run
+// that failed. The Security tab is a report consumer like any other, and a
+// consumer that accounts for four of twelve states is the same defect the whole
+// 0.4.x line was spent on, wearing someone else's UI.
+//
+// Not emitted: `partialFingerprints`. GitHub's SARIF table lists it as required
+// and `upload-sarif` computes one when it is absent; the fingerprints this file
+// could compute would be line-based, which is precisely the input that moves
+// when nothing has changed. Deferring to the uploader is the honest option, and
+// it is stated here because "we left out a required property" should not have to
+// be rediscovered.
 
 import { readFileSync } from "node:fs";
-import { CHANNELS, ledgerOf } from "../src/disclosure.js";
+import { CHANNELS, disclosuresOf } from "../src/disclosure.js";
 
 const LEVELS = { stale: "warning", dead: "warning", tampered: "error", unresolvable: "note" };
+
+// Levels for the disclosures. These are NOT drift and the file must not let
+// them read as drift, so the reasoning is here rather than in a commit message.
+//
+//   verdict -> warning. The run produced no drift verdict at all, which is worse
+//     than a drift finding and must not be quiet. It is deliberately not `error`
+//     twice over: `error` here means a defect proved to be in the tree - the one
+//     that holds it is `tampered`, where a human edited generated content - and
+//     a disclosure is the ABSENCE of a verdict, not the presence of drift.
+//     Raising it would also make code scanning gate a merge on it, and the gate
+//     that fires where the tool cannot see is the one people switch off; the
+//     failing is already carried, fail-closed, by `check` exiting 1 UNREADABLE.
+//   named   -> note. The engine did not look because the user's own config said
+//     not to, or because of a standing rule about dependency trees. It gates
+//     nobody by design and moves no exit code. What it must never be is absent.
+//
+// The two must never blur into the drift states, and level alone cannot carry
+// that: `stale` is a warning too. What separates them is that every disclosure
+// gets its own `ruleId` and its own rule description, and its message opens with
+// what the engine did rather than with what the docs did - "section the engine
+// cannot verify", never "is stale". A reader who sees only the annotation still
+// learns that nothing was compared.
+const DISCLOSURE_LEVELS = { verdict: "warning", named: "note" };
 
 const RULES = [
   { id: "keeldocs/stale", desc: "Documented facts changed: the bound fact-hash no longer matches the recorded one." },
@@ -33,16 +73,10 @@ const RULES = [
   ...CHANNELS.map((c) => ({ id: `keeldocs/${c.channel}`, desc: `${c.what} - ${c.why}.` })),
 ];
 
-// A disposition points at a place: the document, the file an extractor gave up
-// on, the directory nobody walked, or the one file a channel names for itself
-// (`at`). Deriving it beats a per-channel mapping that the next channel would
-// not be added to.
-function locate(entry, item) {
-  const uri = typeof item === "string" ? item : (item.doc ?? item.file ?? entry.at);
-  if (!uri) return [];
+function at(uri, line) {
   return [{ physicalLocation: {
     artifactLocation: { uri, uriBaseId: "SRCROOT" },
-    region: { startLine: item.line || 1 },
+    region: { startLine: line || 1 },
   } }];
 }
 
@@ -59,27 +93,24 @@ export function toSarif(report) {
       ruleId: `keeldocs/${f.state}`,
       level,
       message: { text: bits.join(" - ").slice(0, 1000) },
-      locations: [{ physicalLocation: {
-        artifactLocation: { uri: f.doc, uriBaseId: "SRCROOT" },
-        region: { startLine: f.line || 1 },
-      } }],
+      locations: at(f.doc, f.line),
     });
   }
-  // The disclosures, in ledger order, after the findings. A `verdict` channel
-  // means the run has no drift verdict at all, so it is a warning; a `named` one
-  // is a blind spot the user chose or a standing rule about dependency trees, so
-  // it is a note and gates nobody - the same split the exit code makes, read off
-  // the same enumeration rather than restated here.
-  for (const entry of ledgerOf(report)) {
-    for (const item of entry.items) {
-      const detail = typeof item === "string" ? "" : (item.reason ?? item.kind ?? item.id ?? "");
-      results.push({
-        ruleId: `keeldocs/${entry.channel}`,
-        level: entry.disclosure === "verdict" ? "warning" : "note",
-        message: { text: [entry.what, detail, entry.why].filter(Boolean).join(" - ").slice(0, 1000) },
-        locations: locate(entry, item),
-      });
-    }
+  // The disclosures, in ledger order, after the findings, one result per unit.
+  // This file no longer decides what a channel amounts to - it used to, and it
+  // lost two channels doing it: a count-only channel produced no result because
+  // there was nothing to iterate, and an item that named no path produced a
+  // result with an empty `locations`, which GitHub documents as not displayed.
+  // `disclosuresOf` answers both questions once, for every consumer, and a unit
+  // always has a place - so there is nothing left here for a new channel to be
+  // forgotten by.
+  for (const u of disclosuresOf(report)) {
+    results.push({
+      ruleId: `keeldocs/${u.channel}`,
+      level: DISCLOSURE_LEVELS[u.disclosure],
+      message: { text: [u.what, u.detail, u.why].filter(Boolean).join(" - ").slice(0, 1000) },
+      locations: at(u.path, u.line),
+    });
   }
   return {
     $schema: "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",

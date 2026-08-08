@@ -54,6 +54,29 @@
 // happening one more time.
 export const CAP = 20;
 
+// The place a disclosure that names no place of its own points at. It is the
+// file a human edits to change the disposition - `[docs] dirs` and `[providers]
+// exclude-paths` both live here - which is the same rule `journalMalformed`
+// already followed by anchoring at `.keeldocs/decisions.jsonl`.
+//
+// It exists because a disclosure with no location is a disclosure that is not
+// displayed. GitHub's SARIF documentation states the rule outright - "At least
+// one location is required for code scanning to display a result" - so a result
+// carrying `locations: []` is emitted, accepted, counted by the emitter's own
+// tests, and shown to nobody. That is this project's defect family expressed in
+// someone else's UI, and it was live at HEAD: `extractionGaps` items are
+// `{kind, file}` and `file` is `null` for `not-a-git-root`, a gap every one of
+// the 32 shipped fixtures produces.
+//
+// Anchoring is deliberately the LEDGER's job and not the emitter's. Only the
+// channel knows whether its item names a path at all: `extractionGaps.file`
+// carries `moddatetime` (a Postgres extension), `public.rebuild_stats` (a
+// procedure), `items` (a table) and `services/api` (a directory) in the shipped
+// fixtures, so a consumer that treats the field as a repo path invents file
+// locations that do not exist. A channel says where its own items are, once,
+// and every consumer reads that instead of guessing.
+export const RUN_ANCHOR = "keeldocs.toml";
+
 // `disclosure` is the only thing that decides whether a channel moves the exit
 // code, and it has exactly two values:
 //
@@ -77,6 +100,8 @@ export const CHANNELS = [
     what: "anchored document outside every scan root",
     why: "no [docs] dirs scan root covers it, so it was never read",
     read: (r) => r.unscanned ?? [],
+    locate: (u) => ({ path: u.doc, line: 1 }),
+    describe: (u) => `${u.anchors} anchor(s), ${u.regions} region(s)`,
     summary: (items, total) =>
       `${total} anchored doc(s) outside every scan root, unchecked (${items.slice(0, 3).map((u) => u.doc).join(", ")}${total > 3 ? ", ..." : ""}; add to [docs] dirs)`,
     human: (items) => items.map((u) =>
@@ -91,6 +116,9 @@ export const CHANNELS = [
     what: "unreadable decisions-journal line",
     why: "the reader could not parse it, and a dropped line reinstates whatever it revoked",
     read: (r) => r.journalMalformed ?? [],
+    // The item names a line, never a file: the file is the channel's `at`.
+    locate: (m) => ({ path: null, line: m.line }),
+    describe: (m) => `line ${m.line}: ${m.reason}`,
     summary: (items, total) =>
       `${total} unreadable decisions-journal line(s) (.keeldocs/decisions.jsonl ${items.slice(0, 3).map((m) => `line ${m.line}: ${m.reason}`).join(", ")}${total > 3 ? ", ..." : ""}; a dropped line reinstates the decision it revoked)`,
     human: (items) => items.map((m) =>
@@ -107,6 +135,8 @@ export const CHANNELS = [
     what: "unparseable marker",
     why: "refused byte for byte and contributing no bindings, per spec §12",
     read: (r) => r.quarantined ?? [],
+    locate: (q) => ({ path: q.doc, line: q.line }),
+    describe: (q) => q.reason,
     summary: (items, total) => `${total} unparseable marker(s)`,
     human: (items, total) => total ? [`  note: ${total} malformed marker(s) quarantined`] : [],
   },
@@ -123,6 +153,8 @@ export const CHANNELS = [
     why: "a gen region carrying neither hash nor content, or a hash naming an algorithm this engine cannot compare",
     read: (r) => (r.findings ?? []).filter((f) => f.state === "unverified")
       .map((f) => ({ id: f.id, doc: f.doc, line: f.line, reason: f.reason })),
+    locate: (u) => ({ path: u.doc, line: u.line }),
+    describe: (u) => `${u.id}: ${u.reason}`,
     summary: (items, total) => `${total} section(s) the engine cannot verify`,
     human: (items) => items.map((u) => `  UNVERIFIED ${u.doc}:${u.line}  ${u.id}  (${u.reason})`),
   },
@@ -134,6 +166,12 @@ export const CHANNELS = [
     what: "directory neither scanned nor swept",
     why: "a standing skip rule; name it in [docs] dirs to read it",
     read: (r) => r.skipped ?? [],
+    // A directory, not a file. Code scanning annotates files, so pointing at
+    // `node_modules/` would be a location nothing can be shown against; the
+    // place to change this disposition is the `[docs] dirs` line, so the item
+    // travels in the text and the anchor is the config.
+    locate: () => ({ path: null, line: 1 }),
+    describe: (d) => d,
     summary: null,
     human: (items) => items.length
       ? [`  NOT READ  ${items.join(", ")}  (neither scanned nor swept - name one in [docs] dirs to read it)`]
@@ -147,6 +185,8 @@ export const CHANNELS = [
     what: "anchored document the user's own path scope suppressed",
     why: "it matched [providers] exclude-paths, so honouring it is the point of having written it",
     read: (r) => r.excludedDocs ?? [],
+    locate: (u) => ({ path: u.doc, line: 1 }),
+    describe: (u) => `${u.anchors} anchor(s), ${u.regions} region(s)`,
     summary: null,
     human: (items) => items.map((u) =>
       `  EXCLUDED  ${u.doc}  (${u.anchors} anchor(s), ${u.regions} region(s) - matched [providers] exclude-paths, so it is not checked)`),
@@ -165,6 +205,15 @@ export const CHANNELS = [
     what: "surface an extractor declined to read",
     why: "the extractor reported it as a gap rather than failing the run",
     read: (r) => r.extractionGaps ?? [],
+    // `file` is whatever the provider called the thing it declined to read, and
+    // it is a repo path only sometimes: the shipped fixtures put `moddatetime`,
+    // `public.rebuild_stats`, `items` and `services/api` in it, and it is `null`
+    // for `not-a-git-root`, which every fixture produces. It is offered as a
+    // location because when it IS a path that is the right annotation, and it is
+    // repeated in the text unconditionally so that a subject which is not a path
+    // is still legible when nothing can be annotated.
+    locate: (g) => ({ path: g.file ?? null, line: 1 }),
+    describe: (g) => (g.file ? `${g.kind} (${g.file})` : g.kind),
     summary: null,
     note: (items, total) => total ? `; ${total} extraction gap(s) - see the full report` : "",
     human: () => [],
@@ -182,6 +231,12 @@ export const CHANNELS = [
     what: "fact pruned by the user's path scope",
     why: "it matched [providers] exclude-paths before extraction",
     read: (r) => r.meta?.scopedOut ?? 0,
+    // Count-only: `disclosuresOf` hands these two the total, not an item. The
+    // anchor is the config, which is exactly right here - a fact is only ever
+    // scoped out because of an `[providers] exclude-paths` line somebody wrote,
+    // so the file the disclosure points at is the file that caused it.
+    locate: () => ({ path: null, line: 1 }),
+    describe: (n) => `${n} fact(s)`,
     summary: null,
     human: () => [],
   },
@@ -229,6 +284,58 @@ export function ledgerOf(report) {
     return { ...c, items: Array.isArray(raw) ? raw : [],
              total: Array.isArray(raw) ? raw.length : (raw ?? 0) };
   });
+}
+
+// What a report discloses, flattened into the units a CONSUMER has to account
+// for - one per disclosed thing, in ledger order, every channel, uncapped.
+//
+// The ledger made the ENGINE's disclosures derivable. This makes the consumers'
+// derivable too, and it exists because the first consumer to be wired to the
+// ledger still lost two channels, in two different ways that a per-channel item
+// loop could not see:
+//
+//   * `scopedOut` discloses a count and no items, so iterating `entry.items`
+//     produced ZERO results for a live channel - and the gate that was supposed
+//     to catch that asserted `results == items.length`, which for this channel
+//     is `0 == 0`. A gate that passes vacuously is not a gate.
+//   * `extractionGaps` items name a place only sometimes, so the rest emitted
+//     `locations: []`, which GitHub documents as not displayed at all.
+//
+// Both are the same mistake as the hand-maintained sum: a consumer deciding for
+// itself what a channel amounts to. A unit is the answer instead - it always has
+// a place, its `path` is never null, and a count-only channel is one unit rather
+// than none. A consumer maps units; it does not interpret channels.
+//
+// Derived in memory from the report, like the rest of the ledger: nothing here
+// is serialized, no report or envelope key is added, and no hashed payload is
+// touched.
+export function disclosuresOf(report) {
+  const units = [];
+  for (const e of ledgerOf(report)) {
+    if (!e.total) continue;
+    // A channel that discloses a count with no item list gets exactly one unit,
+    // and it is handed the total where the others are handed an item. Zero is
+    // not a unit: `scopedOut: 0` beside a scope the user wrote is worth saying
+    // in a terminal, where the scope is on screen next to it, and is noise in a
+    // list of problems.
+    const subjects = e.items.length ? e.items : [e.total];
+    for (const subject of subjects) {
+      const at = e.locate?.(subject) ?? { path: null, line: 1 };
+      units.push({
+        channel: e.channel,
+        disclosure: e.disclosure,
+        what: e.what,
+        why: e.why,
+        detail: e.describe?.(subject) ?? "",
+        // Never null, by construction: the item's own path, else the file this
+        // channel is about, else the file that configures the run. A unit with
+        // no place is a unit code scanning does not show.
+        path: at.path ?? e.at ?? RUN_ANCHOR,
+        line: at.line || 1,
+      });
+    }
+  }
+  return units;
 }
 
 // The verdict, derived. This is the line that used to be a hand-maintained sum

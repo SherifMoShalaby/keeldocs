@@ -3709,16 +3709,24 @@ def main():
                                          "doc": "docs/x.md", "line": 5, "reason": "no-recorded-hash"}]},
             "skipped": {"skipped": ["node_modules"]},
             "excludedDocs": {"excludedDocs": [{"doc": "vendor/notes.md", "anchors": 1, "regions": 0}]},
-            "extractionGaps": {"extractionGaps": [{"kind": "schema-ignored", "file": "b/schema.prisma"}]},
+            # `file: null`, because that is what the engine emits. This probe used
+            # to say `"b/schema.prisma"`, a shape no provider produces, and the
+            # difference is the whole reason the gate below runs a real `check`:
+            # the most common gap of all is `{"kind": "not-a-git-root", "file":
+            # null}`, which every one of the 32 shipped fixtures produces, and
+            # against the invented shape the emitter looked correct while
+            # emitting `locations: []` for the real one.
+            "extractionGaps": {"extractionGaps": [{"kind": "schema-ignored", "file": None}]},
             "scopedOut": {"meta": {"scopedOut": 3}},
         }
         probe = subprocess.run(["node", "--input-type=module", "-e", (
-            'import {CHANNELS, NOT_DISPOSITIONS, ledgerOf, unreadableOf, assertClassified} from "%s/src/disclosure.js";'
+            'import {CHANNELS, NOT_DISPOSITIONS, ledgerOf, unreadableOf, assertClassified, disclosuresOf} from "%s/src/disclosure.js";'
             'import {toSarif} from "%s/scripts/sarif.js";'
             'const probes = JSON.parse(process.argv[1]);'
             'const out = {channels: [], notDispositions: [...NOT_DISPOSITIONS], per: {}, guard: {}};'
             'for (const c of CHANNELS) out.channels.push({channel: c.channel, key: c.key ?? null,'
-            '  envelope: c.envelope ?? null, disclosure: c.disclosure, what: c.what ?? null, why: c.why ?? null});'
+            '  envelope: c.envelope ?? null, disclosure: c.disclosure, what: c.what ?? null, why: c.why ?? null,'
+            '  locate: typeof c.locate === "function", describe: typeof c.describe === "function"});'
             'for (const [name, frag] of Object.entries(probes)) {'
             '  const rep = {v: 1, meta: {}, counts: {}, findings: [], ...frag};'
             '  const led = ledgerOf(rep);'
@@ -3726,6 +3734,8 @@ def main():
             '  const res = toSarif(rep).runs[0].results;'
             '  out.per[name] = {unreadable: unreadableOf(led), total: hit ? hit.total : -1,'
             '    items: hit ? hit.items.length : -1, all: res.length,'
+            '    units: disclosuresOf(rep).filter((u) => u.channel === name).length,'
+            '    placeless: disclosuresOf(rep).filter((u) => !u.path).length,'
             '    mine: res.filter((r) => r.ruleId === "keeldocs/" + name).length};'
             '}'
             'const t = (f) => { try { f(); return null; } catch (e) { return String(e.message); } };'
@@ -3750,6 +3760,14 @@ def main():
                 f"{c['channel']}: disclosure {c['disclosure']!r} is neither verdict nor named"
             assert c["what"] and c["why"], \
                 f"{c['channel']}: a disposition that says neither what nor why discloses nothing"
+            # A channel that does not say where its items are gets the fallback
+            # anchor for all of them, which is a silent default - and a silent
+            # default in a signature is exactly what made every post-fix
+            # `skipped = null` re-arm the defect it was fixing. Declaring both is
+            # cheap; inheriting them by omission is how this family propagates.
+            assert c["locate"] and c["describe"], (
+                f"{c['channel']}: declares no {'locate' if not c['locate'] else 'describe'} - a channel "
+                "that does not say where its items are or what they say leaves both to a consumer's guess")
 
         # The verdict is DERIVED, and each channel decides its own half of it.
         # Both directions are asserted: a `verdict` channel alone must produce a
@@ -3765,12 +3783,23 @@ def main():
             else:
                 assert per["unreadable"] == 0, \
                     f"{ch} declares `named` but moved the verdict: a disclosure became a finding"
-            # Every disclosed item reaches the Security tab, one result each.
-            # `scripts/sarif.js` knew four drift states and nothing else: a run
-            # that exited 1 UNREADABLE emitted ZERO results, so GitHub code
-            # scanning displayed "no problems found" for a failing run.
-            assert per["mine"] == per["items"], \
-                f"{ch}: {per['items']} disclosed item(s) became {per['mine']} SARIF result(s)"
+            # Every channel that discloses anything reaches the Security tab, one
+            # result per UNIT. Comparing against `items.length` instead is how
+            # this assertion passed over `scopedOut`, which discloses a count and
+            # no items: the check read `0 == 0` and a live channel emitted
+            # nothing at all. A gate that passes vacuously is not a gate, so the
+            # expectation comes off `disclosuresOf` - the same enumeration the
+            # emitter maps - and is asserted to be non-zero first.
+            assert per["units"] >= 1, \
+                f"{ch}: its own probe disclosed nothing to any consumer (units=0)"
+            assert per["mine"] == per["units"], \
+                f"{ch}: {per['units']} disclosure unit(s) became {per['mine']} SARIF result(s)"
+            # A result with no location is a result GitHub does not display:
+            # "At least one location is required for code scanning to display a
+            # result." `extractionGaps` items name a path only sometimes, so the
+            # rest were emitted, accepted, counted, and shown to nobody.
+            assert per["placeless"] == 0, \
+                f"{ch}: {per['placeless']} disclosure unit(s) name no place, so code scanning shows them to nobody"
         assert led["per"]["unverified"]["all"] >= 1, \
             "a report whose only content is an unverifiable section produced an EMPTY SARIF run - " \
             "a clean Security tab for a run that exits 1 UNREADABLE"
@@ -3808,15 +3837,170 @@ def main():
             f"src/check.js hand-assembles disclosure channel(s) {', '.join(spelled)} outside buildReport - "
             "the hand-maintained sum is exactly the defect 0.4.0 through 0.4.3 each shipped a fix for")
         sar = open(os.path.join(ROOT, "scripts", "sarif.js"), encoding="utf-8").read()
-        assert "ledgerOf" in sar and "CHANNELS" in sar, (
+        assert "disclosuresOf" in sar and "CHANNELS" in sar, (
             "scripts/sarif.js does not consume the ledger - it emitted zero results for a run that "
             "exited 1 UNREADABLE, so code scanning showed no problems for a failing run")
+        # The consumer half of the rule `check.js` is already held to. The
+        # emitter is not allowed to name a channel either: a special case for one
+        # channel is a place the next channel will not be added to, and that is
+        # how this file came to know four states out of twelve. Comments name
+        # channels constantly - they are the record of which defect was where -
+        # so this reads the code, through the same stripper.
+        sar_code = _decomment(sar)
+        assert "disclosuresOf(" in sar_code, "comment stripping ate scripts/sarif.js"
+        sar_spelled = sorted({n for n in names + [c["envelope"] for c in led["channels"] if c["envelope"]]
+                              if re.search(rf"\b{re.escape(n)}\b", sar_code)})
+        assert not sar_spelled, (
+            f"scripts/sarif.js hand-assembles disclosure channel(s) {', '.join(sar_spelled)} - a consumer "
+            "that special-cases a channel is one the next channel will not be added to")
         print(f"  PASS  disclosure ledger: {len(names)} channel(s) enumerated, verdict derived from "
               f"{sum(1 for c in led['channels'] if c['disclosure'] == 'verdict')} of them and moved by no "
-              f"other, every disclosed item reaches SARIF, an unclassified report key is refused, and "
-              f"check.js names no channel outside buildReport")
+              f"other, every disclosure unit reaches SARIF located, an unclassified report key is refused, "
+              f"and neither check.js nor sarif.js names a channel")
     except Exception as e:
         failures.append(f"disclosure ledger: {why(e)}")
+
+    # ---- the SARIF emitter, against a REAL report from a REAL check run ----
+    # `scripts/sarif.js` ships in package.json files[] and action.yml uploads its
+    # output to GitHub code scanning, and until now its entire coverage was one
+    # unit test over a hand-written fixture - `grep -ci sarif scripts/harness.py`
+    # returned 0. A hand-authored fixture is exactly how this file drifted from
+    # the engine: it agreed with itself while the engine emitted shapes it had
+    # never seen. The probes above are still worth having (they can trip a
+    # channel a real repository cannot), but they cannot catch that, because the
+    # person writing the probe and the person writing the emitter make the same
+    # wrong assumption on the same day. So this builds one repository that trips
+    # every channel at once, runs `check` for real, and runs the emitter as the
+    # ARGV entry point action.yml calls - which had no coverage of any kind.
+    try:
+        import tempfile as _tf49
+        tmp = _tf49.mkdtemp(prefix="keeldocs-sarif-")
+        repo = os.path.join(tmp, "repo")
+        for d in ("docs", "handbook", "vendor", "node_modules/left-pad", ".keeldocs"):
+            os.makedirs(os.path.join(repo, *d.split("/")), exist_ok=True)
+        # Each file below exists to trip exactly one channel, and the comment
+        # says which, so a channel that stops firing is a legible failure rather
+        # than a count that quietly drops by one.
+        W(os.path.join(repo, "keeldocs.toml"),
+          '[docs]\ndirs = ["docs"]\n[providers]\nexclude-paths = ["vendor/**"]\n')
+        W(os.path.join(repo, "package.json"),
+          '{ "name": "sarif-allchannels", "private": true,\n'
+          '  "dependencies": { "express": "^4.19.0" } }\n')
+        W(os.path.join(repo, "app.js"),
+          "const express = require('express');\nconst app = express();\n"
+          "app.get('/health', (req, res) => res.json({ ok: true }));\n"
+          "app.post('/orders', (req, res) => res.json({ ok: true }));\n"
+          "module.exports = app;\n")
+        # scopedOut: a real endpoint the user's own exclude-paths prunes.
+        W(os.path.join(repo, "vendor", "extra.js"),
+          "const express = require('express');\nconst app = express();\n"
+          "app.get('/vendored', (req, res) => res.json({ ok: true }));\n"
+          "module.exports = app;\n")
+        # unverified: a gen region carrying neither hash nor content (spec §12).
+        # quarantined: a marker with a key the vocabulary does not have.
+        W(os.path.join(repo, "docs", "x.md"),
+          "# API\n\n"
+          "<!-- keeldocs:gen id=x.health binds=fact:http-endpoints/GET /health -->\n"
+          "| method | path |\n|---|---|\n| GET | /health |\n"
+          "<!-- /keeldocs:gen -->\n\n"
+          "<!-- keeldocs: id=x.bad wombat=1 binds=fact:http-endpoints/POST /orders -->\n")
+        # unscanned: anchored, and outside every [docs] dirs scan root.
+        W(os.path.join(repo, "handbook", "y.md"),
+          "# Handbook\n<!-- keeldocs: id=y.orders binds=fact:http-endpoints/POST /orders hash-kind=fact -->\n")
+        # excludedDocs: anchored, and suppressed by the user's own path scope.
+        W(os.path.join(repo, "vendor", "notes.md"),
+          "# Vendored\n<!-- keeldocs: id=v.notes binds=fact:http-endpoints/GET /vendored hash-kind=fact -->\n")
+        W(os.path.join(repo, "node_modules", "left-pad", "package.json"), '{"name":"left-pad"}\n')
+        # journalMalformed: a line the journal reader cannot parse.
+        W(os.path.join(repo, ".keeldocs", "decisions.jsonl"), "{ not json at all\n")
+        # extractionGaps needs nothing: a temp dir is not a git root, which is
+        # the gap every fixture in this harness produces.
+
+        rc = subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js"), "check", "--json"],
+                            cwd=repo, capture_output=True, text=True, timeout=300)
+        env49 = node_json(rc, "check on the all-channels repo")
+        # The control. Every assertion below is about what a FAILING run shows,
+        # so a repository that stopped failing would make all of them vacuous.
+        assert rc.returncode == 1 and env49["code"] == "UNREADABLE", (
+            f"control: the all-channels repo must exit 1 UNREADABLE, got rc={rc.returncode} "
+            f"code={env49.get('code')} - every assertion below is about a failing run")
+        spill = os.path.join(repo, *env49["full"].split("/"))
+        report = json.load(open(spill, encoding="utf-8"))
+
+        # Every channel must actually be tripped by this repository. Without this
+        # the per-channel comparison below is a loop over whatever happened to
+        # fire, which is the shape of gate that let eight channels ship unnoticed.
+        led49 = node_json(subprocess.run(["node", "--input-type=module", "-e", (
+            'import {CHANNELS, ledgerOf, disclosuresOf} from "%s/src/disclosure.js";'
+            'import {readFileSync} from "node:fs";'
+            'const rep = JSON.parse(readFileSync(process.argv[1], "utf8"));'
+            'const units = disclosuresOf(rep);'
+            'const per = {};'
+            'for (const c of CHANNELS) per[c.channel] = units.filter((u) => u.channel === c.channel).length;'
+            'console.log(JSON.stringify({per, total: units.length,'
+            '  placeless: units.filter((u) => !u.path).length,'
+            '  live: ledgerOf(rep).filter((e) => e.total).map((e) => e.channel)}));') % ROOT_URL, spill],
+            capture_output=True, text=True, timeout=120), "disclosuresOf on the real report")
+        silent = [c for c, n in led49["per"].items() if n == 0]
+        assert not silent, (
+            f"the all-channels repo tripped nothing on channel(s) {', '.join(silent)} - grow the "
+            "fixture until it does, or this gate checks the emitter against a report that never "
+            "exercises it")
+
+        # The emitter as action.yml runs it: argv, stdout, exit code. The module
+        # export had a unit test; this entry point had nothing.
+        sar = subprocess.run(["node", os.path.join(ROOT, "scripts", "sarif.js"), spill],
+                             capture_output=True, text=True, timeout=120)
+        assert sar.returncode == 0, \
+            f"scripts/sarif.js rc={sar.returncode} on a real report: {(sar.stderr or '')[-300:]}"
+        doc = json.loads(sar.stdout)
+        run49 = doc["runs"][0]
+        results = run49["results"]
+
+        # This is the measurement the whole item exists for. Before: `check`
+        # exited 1 UNREADABLE and this file exited 0 having emitted ZERO results,
+        # so GitHub code scanning displayed "no problems found" for a failing run.
+        assert results, (
+            "a run that exited 1 UNREADABLE produced a SARIF with zero results - code scanning "
+            "displays 'no problems found' for a failing run, which is this project's own defect "
+            "wearing someone else's UI")
+        by_rule = {}
+        for r49 in results:
+            by_rule[r49["ruleId"]] = by_rule.get(r49["ruleId"], 0) + 1
+        for ch49, n49 in led49["per"].items():
+            got = by_rule.get(f"keeldocs/{ch49}", 0)
+            assert got == n49, (
+                f"{ch49}: the report disclosed {n49} unit(s) and SARIF carried {got} - a consumer "
+                "that accounts for some channels and not others is the defect 0.4.0 through 0.4.3 "
+                "each shipped a fix for")
+        # "At least one location is required for code scanning to display a
+        # result" (GitHub SARIF support). A result with an empty `locations` is
+        # emitted, accepted, counted by the emitter's own tests, and shown to
+        # nobody - so it is a silence with a receipt, which is worse.
+        blind = [r49["ruleId"] for r49 in results
+                 if not (r49.get("locations") or [{}])[0]
+                 .get("physicalLocation", {}).get("artifactLocation", {}).get("uri")]
+        assert not blind, (
+            f"SARIF result(s) with no location: {sorted(set(blind))} - code scanning does not "
+            "display a result that names no place, so the disclosure reaches the file and not the user")
+        declared = {r49["id"] for r49 in run49["tool"]["driver"]["rules"]}
+        undeclared = sorted({r49["ruleId"] for r49 in results} - declared)
+        assert not undeclared, f"SARIF results cite undeclared rule(s): {undeclared}"
+        assert run49["tool"]["driver"]["version"] == \
+            json.load(open(os.path.join(ROOT, "package.json")))["version"], \
+            "the SARIF driver version is not this engine's version"
+        # Determinism, on the consumer side too: the emitter reads only the
+        # report, so two runs of it must be byte-identical or something in it is
+        # reading the world.
+        sar2 = subprocess.run(["node", os.path.join(ROOT, "scripts", "sarif.js"), spill],
+                              capture_output=True, text=True, timeout=120)
+        assert sar2.stdout == sar.stdout, "NONDETERMINISTIC SARIF (two runs of the emitter differ)"
+        print(f"  PASS  sarif emitter vs a real check run: {len(led49['live'])} channel(s) tripped by one "
+              f"repository, check exit 1 UNREADABLE, emitter exit 0 with {len(results)} result(s) - "
+              f"every disclosure unit carried, every result located, every rule declared")
+        rmtree(tmp)
+    except Exception as e:
+        failures.append(f"sarif emitter vs a real check run: {why(e)}")
 
     # Last, so every PASS above is counted. +1 is this gate's own line, which is
     # printed after the count is taken.

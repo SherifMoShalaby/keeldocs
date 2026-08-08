@@ -62,9 +62,55 @@ run of every repository and throws — TOOL_ERROR, exit 2, fail closed — if an
 top-level report key is neither a channel nor declared not to be one; it is a
 pure key-set comparison, so `check` remains a pure function of the tree. And a
 harness gate holds `check.js` to naming no channel outside the producer, holds
-every channel to declaring a disposition and a what/why, holds every disclosed
-item to reaching SARIF as exactly one result, and requires a probe per channel —
+every channel to declaring a disposition and a what/why, holds every disclosure
+unit to reaching SARIF as exactly one result, and requires a probe per channel —
 so a channel added without a test fails the build rather than going unmeasured.
+
+**And then the consumer half, because wiring the emitter to the ledger was not
+enough.** The ledger made the engine's disclosures derivable; the emitter still
+decided for itself what a channel amounted to, and lost two of eight doing it.
+`meta.scopedOut` discloses a *count* and no items, so a loop over each channel's
+items emitted **zero** results for a live channel — and the gate written to
+catch exactly that compared results against `items.length`, which for this
+channel reads `0 == 0`. A gate that passes vacuously is not a gate. Separately,
+`extractionGaps` items are `{kind, file}` and `file` is `null` for
+`not-a-git-root` — a gap **every one of the 32 shipped fixtures produces** — so
+those results carried `locations: []`. GitHub's SARIF documentation states the
+consequence outright: *"At least one location is required for code scanning to
+display a result."* The result was emitted, accepted, counted by the emitter's
+own tests, and displayed to nobody, which is a silence with a receipt.
+
+The same field is not even always a path. Across the shipped fixtures
+`extractionGaps.file` carries `moddatetime` (a Postgres extension),
+`public.rebuild_stats` (a procedure), `items` (a table) and `services/api` (a
+directory), so a consumer treating it as a repo path invents file locations that
+do not exist. Deciding that is now the channel's job and not the consumer's:
+each declares `locate` and `describe` for its own item shape, and
+`disclosuresOf(report)` returns the flat list of units every consumer maps —
+one per disclosed thing, exactly one for a count-only channel, and a `path` that
+is never null (the item's own place, else the file the channel is about, else
+`keeldocs.toml`, the file a human edits to change the disposition). A consumer
+maps units; it no longer interprets channels.
+
+*Measured on one repository that trips all eight channels at once:* `check`
+exits **1 / UNREADABLE**; `node scripts/sarif.js <report>` exits 0 with **8
+results**, one per channel, every one carrying a location. The same report
+through the previous commit's emitter produced **7** — `scopedOut` missing
+entirely, and `extractionGaps` present with `locations: []`, which code scanning
+would not have displayed — so six of eight channels reached a human.
+
+The coverage moved with it. `scripts/sarif.js` ships in `files[]` and
+`action.yml` uploads it, and its entire test suite was one hand-written fixture —
+which is how it drifted from the engine in the first place, since a probe and an
+emitter written on the same day share the same wrong assumption. The gate now
+builds a real repository, runs `check` for real, and invokes the emitter as the
+**argv entry point `action.yml` actually calls**, which had no coverage of any
+kind; it then asserts per-channel that SARIF result counts equal the report's own
+disclosure-unit counts, that no result names no place, and that the repository
+tripped every channel — because a loop over whatever happened to fire is the
+shape of gate that let eight channels ship unnoticed. The stale probe that hid
+this said `file: "b/schema.prisma"`, a shape no provider emits; it now says
+`null`.
 
 The gate's controls are the load-bearing half, and each was proved by mutation:
 neutering `assertClassified` to return instead of throw, making `unreadableOf`
@@ -75,7 +121,7 @@ key(s): …`. This is the `isHostileFact` idiom applied a second time — one ch
 point instead of a rule re-applied per site — which has produced no recurring
 injection family in four releases of this file.
 
-201 unit tests, 40 extractor goldens, 99 harness checks. `check` is CLEAN on this
+205 unit tests, 40 extractor goldens, 100 harness checks. `check` is CLEAN on this
 repository at 12/12 surfaces, and the envelope is byte-identical to `0.4.3`'s for
 an unchanged tree.
 
