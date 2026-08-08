@@ -16,8 +16,8 @@ everything in it needs a physical machine (real agent binaries, stable hardware,
 a registry login, people). §5 is refusals with written evidence thresholds, not
 backlog. §6 is closed and is a record, not a queue.
 
-Current: `keeldocs@0.4.3` on npm (`latest`), 205 unit tests, 40 extractor goldens,
-106 harness checks, 3-OS CI green at `74ade57` — checked per job, not off the run
+Current: `keeldocs@0.5.0` on npm (`latest`), 205 unit tests, 40 extractor goldens,
+106 harness checks, 3-OS CI green at `39182de` — checked per job, not off the run
 list.
 
 **Read the Windows job's own conclusion, never the run's.** The lane is
@@ -26,19 +26,22 @@ level. It was red for three consecutive runs (`386aa03`, `3075435`, `04b54cd`)
 while all three showed green, because the newest gate caught a real defect:
 `scripts/sarif.js` guarded its entry point with
 ``import.meta.url === `file://${process.argv[1]}` ``, which is false on Windows,
-so the emitter wrote
-nothing and exited 0 — an empty SARIF, and a code-scanning tab reading "no
+so the emitter wrote nothing and exited 0 — an empty SARIF, and a
+code-scanning tab reading "no
 problems found", shipped in every release since rc.1. Fixed in `74ade57`. This is
 the second time this masking has hidden a real failure (ROADMAP §4 item 6 is the
 first, twelve runs).
 
 `0.4.0` was the first release that changes what `check` returns for an unchanged
 repository: six shapes `0.3.0` called `CLEAN` while checking nothing now report.
-`0.4.1` added three more of that class, `0.4.2` three, and `0.4.3` twelve —
-every one found in the tree its predecessor shipped from, and every one found by
-walking into it rather than by reading any list. **The count is not converging.**
-Three releases have opened with that sentence now; assume the next batch exists
-and has not been found yet, and treat any claim that the set is closed as the
+`0.4.1` added three more of that class, `0.4.2` three, and `0.4.3` twelve.
+`0.5.0` stops counting them and builds the abstraction they were all instances
+of: one enumerated ledger of everything the engine declined to look at, and a
+guard that makes an unclassified report key a `TOOL_ERROR` rather than a
+silence. **That is a narrower claim than "the class is closed."** The guard
+covers top-level keys plus every key of `meta` and `counts`; a key nested in
+`coverage` or `noise` is still outside it, and `CHANGELOG.md` says so. Assume an
+unfound instance exists, and treat any claim that the set is closed as the
 mistake.
 `CHANGELOG.md` opens with the measured before-and-after and is the file to update
 when that set changes — not this line.
