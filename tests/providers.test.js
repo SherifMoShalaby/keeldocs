@@ -177,7 +177,7 @@ test("http-endpoints declares a db-schema read, and the catalog runs first", () 
 // was no shipped way to install them. The README said to copy
 // node_modules/keeldocs/skills, which does not exist after `npx`, nests if the
 // target already exists, and ships frontmatter Codex and Cursor reject.
-import { installSkills, listAgents } from "../src/skillscmd.js";
+import { installSkills, listAgents, listingCap } from "../src/skillscmd.js";
 import { mkdtempSync as _mkdtemp, rmSync as _rm, existsSync as _exists, readFileSync as _read, readdirSync as _readdir } from "node:fs";
 import { tmpdir as _tmpdir } from "node:os";
 import { join as _join } from "node:path";
@@ -211,6 +211,35 @@ test("skills install: per-agent path, frontmatter strip, AGENTS.md, and no nesti
       assert.equal(_readdir(_join(root, want.dir)).length, 6);
     } finally { _rm(root, { recursive: true, force: true }); }
   }
+});
+
+// The listing cap was a constant in src/skillscmd.js until the R7
+// breaking-change drill (experiments/r7-break-drill/) ran: of the four ways an
+// agent can break this surface unilaterally, "it lowered its listing cap" was
+// the only one that could not be fixed by editing a manifest, because the
+// number was code. These cover the resolver's edges; the drill and the harness
+// check that wraps it cover the wiring end to end, which is a different claim.
+test("skills install: the listing cap comes from the agent's manifest", () => {
+  assert.equal(listingCap({}), 8000, "a manifest stating nothing keeps the 8000 default");
+  assert.equal(listingCap({ listing_cap: "1200" }), 1200, "a lowered cap is honoured");
+  assert.equal(listingCap({ listing_cap: "12000" }), 12000, "a raised cap is honoured");
+  // Unusable values refuse rather than defaulting: silently falling back to
+  // 8000 on a typo would print a budget no agent ever published.
+  for (const bad of ["", "0", "-5", "8_000", "8000 ", "eight", true, ["8000"]]) {
+    assert.equal(listingCap({ listing_cap: bad }), null, `listing_cap=${JSON.stringify(bad)}`);
+  }
+
+  // and the number the envelope reports is the one the manifest states - the
+  // two were allowed to disagree for the whole 0.5.0 line
+  const declared = _read(new URL("../adapters/codex/manifest.yaml", import.meta.url), "utf8")
+    .split("\n").map((l) => l.split("#")[0].trim())
+    .find((l) => l.startsWith("listing_cap:"));
+  assert.ok(declared, "adapters/codex/manifest.yaml no longer states its listing_cap");
+  const root = _mkdtemp(_join(_tmpdir(), "kd-skills-cap-"));
+  try {
+    assert.equal(installSkills({ agent: "codex", root }).data.cap,
+      Number(declared.split(":")[1].trim()));
+  } finally { _rm(root, { recursive: true, force: true }); }
 });
 
 test("skills install: an unknown agent refuses and names the ones that exist", () => {

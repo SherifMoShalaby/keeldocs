@@ -18,7 +18,20 @@ import { join, dirname } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = join(HERE, "..");
-const LISTING_CAP = 8000; // Codex caps the whole skills listing (ADR-010)
+// The ceiling on the whole skills listing an agent loads. 8000 is Codex's
+// published number (ADR-010) and applies when a manifest states nothing, which
+// is not the same as knowing the agent's cap: no cap has ever been measured for
+// Claude Code or Cursor, and dropping the enforcement for them on that basis
+// would be its own over-claim. An agent that publishes a different number says
+// so with `listing_cap:` in its own manifest.
+//
+// It lived here as a constant until 2026-08-08, when the R7 breaking-change
+// drill (experiments/r7-break-drill/) found it was the one thing about an agent
+// that the adapter layer could not express - so "an agent lowered its cap" was
+// the one break class in four that required editing this file. That is the
+// disagreement the header of this file already warns about: a manifest that
+// cannot carry a value is documentation, not configuration.
+const DEFAULT_LISTING_CAP = 8000;
 
 /** Flat `key: value` YAML with # comments and [a, b] lists. Nothing else is
  *  allowed in these manifests, so nothing else is parsed. */
@@ -36,6 +49,17 @@ function loadManifest(path) {
     else out[k] = v;
   }
   return out;
+}
+
+/** The agent's listing cap, or `null` if its manifest states an unusable one.
+ *  A cap that cannot be read is refused rather than silently defaulted: falling
+ *  back to 8000 on a typo would report a budget no agent published. */
+export function listingCap(m) {
+  if (!("listing_cap" in m)) return DEFAULT_LISTING_CAP;
+  const raw = m.listing_cap;
+  if (typeof raw !== "string" || !/^[0-9]+$/.test(raw)) return null;
+  const n = Number(raw);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 
 function splitFrontmatter(text, where) {
@@ -65,10 +89,20 @@ export function installSkills({ agent, root, dryRun = false }) {
   }
   const m = loadManifest(join(PKG_ROOT, "adapters", agent, "manifest.yaml"));
   const drop = new Set(m.strip_fields || []);
+  const cap = listingCap(m);
+  if (cap === null) {
+    return { ok: false, code: "TOOL_ERROR", data: { agent, listing_cap: m.listing_cap },
+      summary: `adapters/${agent}/manifest.yaml: listing_cap must be a positive integer` };
+  }
   const srcRoot = join(PKG_ROOT, "skills");
   const destRoot = join(root, m.skills_dir);
 
-  const written = [];
+  // Two passes on purpose. The cap is decided before anything is written, so a
+  // listing the agent will truncate leaves nothing on disk - the single pass
+  // this replaced wrote every skill and THEN returned TOOL_ERROR, which is a
+  // refusal in the envelope and an install on the filesystem saying different
+  // things about the same run.
+  const planned = [];
   let listing = 0;
   for (const name of readdirSync(srcRoot).sort()) {
     const src = join(srcRoot, name, "SKILL.md");
@@ -79,6 +113,16 @@ export function installSkills({ agent, root, dryRun = false }) {
       const k = l.split(":")[0].trim();
       if (k === "name" || k === "description") listing += l.length;
     }
+    planned.push({ name, kept, body });
+  }
+
+  if (listing > cap) {
+    return { ok: false, code: "TOOL_ERROR", data: { listing, cap },
+      summary: `skills listing ${listing} chars exceeds the ${cap} cap for ${agent}` };
+  }
+
+  const written = [];
+  for (const { name, kept, body } of planned) {
     // The skill's own directory, never a nested copy of skills/ - `cp -r` into an
     // existing target produced .claude/skills/skills/check/SKILL.md, which an
     // agent never sees and which fails silently.
@@ -95,11 +139,6 @@ export function installSkills({ agent, root, dryRun = false }) {
     written.push(`${m.skills_dir}/${name}/SKILL.md`);
   }
 
-  if (listing > LISTING_CAP) {
-    return { ok: false, code: "TOOL_ERROR", data: { listing, cap: LISTING_CAP },
-      summary: `skills listing ${listing} chars exceeds the ${LISTING_CAP} cap for ${agent}` };
-  }
-
   let agentsMd = null;
   if (m.agents_md_block) {
     const block = readFileSync(join(PKG_ROOT, "AGENTS.md"), "utf8").trim();
@@ -114,7 +153,7 @@ export function installSkills({ agent, root, dryRun = false }) {
 
   return { ok: true, code: dryRun ? "DRY_RUN" : "INSTALLED",
     summary: `${written.length} skill(s) ${dryRun ? "would be written" : "written"} to ${m.skills_dir}`
-      + (agentsMd ? `; AGENTS.md ${agentsMd}` : "") + `; listing ${listing}/${LISTING_CAP}`,
-    data: { agent, skills_dir: m.skills_dir, written, listing, cap: LISTING_CAP,
+      + (agentsMd ? `; AGENTS.md ${agentsMd}` : "") + `; listing ${listing}/${cap}`,
+    data: { agent, skills_dir: m.skills_dir, written, listing, cap,
       stripped: [...drop], agents_md: agentsMd } };
 }

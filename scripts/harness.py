@@ -1887,8 +1887,37 @@ def main():
             assert len(desc) <= 1536, f"{sd}: description {len(desc)} chars > 1536 (Claude truncation cap)"
             total_listing += len(fields["name"]) + len(desc)
             assert len(text) <= 20000, f"{sd}: SKILL.md {len(text)} chars - keep well under compaction budgets"
-        assert total_listing <= 8000, f"skills listing {total_listing} chars > 8000 (Codex listing cap)"
-        print(f"  PASS  skill lint: {len(skill_dirs)} skills within ADR-010 budgets (listing {total_listing}/8000)")
+        # The cap is read from the adapters, never restated here. It was a
+        # literal 8000 in this file AND a constant in src/skillscmd.js until
+        # 2026-08-08, so the number an agent owns lived in two places that could
+        # disagree and in neither place the agent's own manifest - which is the
+        # defect the R7 drill found and the reason it now lives in the manifest.
+        # The binding constraint is the smallest cap any supported agent states.
+        #
+        # Note the two measurements of "the listing" do not agree and are left
+        # that way on purpose. This lint sums the name and description VALUES
+        # (1431 chars today); `src/skillscmd.js` sums the whole frontmatter LINES
+        # including the `name: ` and `description: ` prefixes (1539). Which one
+        # ADR-010's 8000 refers to is not established - nobody has measured what
+        # an agent actually loads - so picking one and calling it right would
+        # trade a visible disagreement for an invisible guess. Both sit under
+        # 8000 with room to spare; if that stops being true, measure first.
+        caps = []
+        adapters_dir = os.path.join(ROOT, "adapters")
+        for agent in sorted(os.listdir(adapters_dir)):
+            mf = os.path.join(adapters_dir, agent, "manifest.yaml")
+            if not os.path.isfile(mf):
+                continue
+            for line in open(mf, encoding="utf-8").read().split("\n"):
+                head = line.split("#")[0].strip()
+                if head.startswith("listing_cap:"):
+                    caps.append((agent, int(head.split(":", 1)[1].strip())))
+        cap = min([c for _, c in caps], default=8000)
+        assert total_listing <= cap, (
+            f"skills listing {total_listing} chars > {cap} "
+            f"(the smallest cap any adapter states: {caps or 'none, engine default 8000'})")
+        print(f"  PASS  skill lint: {len(skill_dirs)} skills within ADR-010 budgets "
+              f"(listing {total_listing}/{cap}, cap from {len(caps)} adapter manifest(s))")
     except Exception as e:
         failures.append(f"skill lint: {why(e)}")
 
@@ -3739,6 +3768,46 @@ def main():
         rmtree(tmp)
     except Exception as e:
         failures.append(f"tarball skills smoke: {why(e)}")
+
+    # ---- R7: the deliberate breaking-agent-API drill, as a standing gate ----
+    # The v1.0 gate used to read "Survived one breaking agent-API change" and
+    # wait for the ecosystem. R7 already specified the active form, so the drill
+    # in experiments/r7-break-drill/ breaks the surface on purpose - four things
+    # an agent can change without asking anyone - and measures whether editing
+    # ONE manifest restores conformance. Its first run found the answer was no
+    # for one class in four: the listing cap was a constant in src/skillscmd.js,
+    # so R7's "path-maps only" mitigation was partly false and nothing could see
+    # it. It runs here because absorbability is a property that regresses
+    # quietly - one hardcoded agent assumption and the adapter layer is a lie
+    # again. No --record: a harness run must not write to the tree.
+    try:
+        drill = os.path.join(ROOT, "experiments", "r7-break-drill", "drill.py")
+        assert os.path.isfile(drill), \
+            "experiments/r7-break-drill/drill.py is gone - the v1.0 gate has nothing behind it"
+        r = subprocess.run([sys.executable, drill, "--json"], cwd=ROOT,
+                           capture_output=True, text=True, timeout=900)
+        assert r.stdout.strip().startswith("{"), \
+            f"drill emitted no JSON (rc={r.returncode}): {r.stderr[-300:]}"
+        out = json.loads(r.stdout)
+        assert out["verdict"] != "CONTROL_FAILED", (
+            "the drill's control failed, so it measured nothing: "
+            + json.dumps(out["control"]))
+        assert out["classes"], "the drill ran zero break classes"
+        for c in out["classes"]:
+            # VACUOUS is its own failure: a break the shipped tree already
+            # satisfies proves the adapter layer nothing.
+            assert c["verdict"] == "ABSORBED", (
+                f"{c['id']} ({c['agent']}): {c['verdict']} - "
+                + "; ".join(c["still_broken_after_fix"] or
+                            ["the unfixed tree already conformed, so this class tests nothing"]))
+            assert len(c["files_changed_by_fix"]) == 1 and \
+                c["files_changed_by_fix"][0].startswith("adapters/"), \
+                f"{c['id']}: fix touched {c['files_changed_by_fix']}, not one adapter manifest"
+        assert r.returncode == 0, f"drill exit {r.returncode} with every class absorbed"
+        print(f"  PASS  R7 break drill: {len(out['classes'])} break class(es) absorbed by an "
+              f"adapter manifest alone, control green on {len(out['control'])} agents")
+    except Exception as e:
+        failures.append(f"R7 break drill: {why(e)}")
 
     # ---- the disclosure ledger: one disposition per decline-to-look site ----
     # 0.4.0 found six shapes in which `check` reported CLEAN over something it

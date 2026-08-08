@@ -3,3 +3,5 @@ skills_dir: .cursor/skills
 agents_md_block: true
 strip_fields: [disable-model-invocation, user-invocable]
 smoke_test: headless run detects seeded drift in fixtures/express-mounts
+# no listing_cap: this agent publishes no listing ceiling, so the engine's
+# 8000 default applies. Not a measurement - state a number here if one is.

@@ -3,3 +3,5 @@ skills_dir: .claude/skills          # or install as plugin via .claude-plugin/
 agents_md_block: false               # skills are native; AGENTS.md not required
 strip_fields: []                     # supports disable-model-invocation, user-invocable
 smoke_test: headless run detects seeded drift in fixtures/express-mounts
+# no listing_cap: this agent publishes no listing ceiling, so the engine's
+# 8000 default applies. Not a measurement - state a number here if one is.

@@ -1,5 +1,52 @@
 # Changelog
 
+## Unreleased
+
+**A gate that waits for the ecosystem to break something is not a gate.** The
+v1.0 line "survived one breaking agent-API change, adapters-only fix ≤1 week"
+could neither pass nor fail until an agent vendor acted, so it protected nothing
+in the meantime. R7 had already written down the active form, and
+`experiments/r7-break-drill/` now runs it: four things an agent can change
+unilaterally, broken on purpose against the real installer, each required to
+fail before the fix and conform after an edit to one manifest — with
+"adapters-only" computed by hashing both package trees rather than asserted by
+how the drill was written.
+
+*Measured, first run.* Three classes absorbed, one did not. `skills install`
+carried `const LISTING_CAP = 8000` in `src/skillscmd.js`, and
+`scripts/harness.py` restated the literal `8000` in its skill lint, so the one
+number that is wholly the agent's to choose lived in two places that could
+disagree and in neither place the agent's own manifest. Had Codex halved its
+listing cap, the adapter layer could not have expressed it: every skill written,
+`INSTALLED` returned, and `listing 1539/8000` printed — a receipt naming a
+budget that agent no longer had, over a listing it would silently truncate.
+R7's "adapters ≤300 LOC, path-maps only" mitigation was **partly false from the
+day the installer shipped**, and the header of `src/skillscmd.js` had already
+written the rule it broke: *if the manifest and an installer could disagree, the
+manifest would be documentation rather than configuration.*
+
+Now a `listing_cap:` manifest key. An unusable value refuses rather than
+defaulting a typo back to 8000; a manifest stating nothing keeps 8000, because
+Codex is the only one of the three agents that publishes a number and dropping
+enforcement for the other two would be a different unmeasured claim, not a
+smaller one. The harness reads the smallest cap any adapter states. The
+installer now decides the cap **before** it writes anything — it previously
+wrote all six skills and the `AGENTS.md` block and then returned `TOOL_ERROR`,
+which is a refusal in the envelope and a complete install on disk answering the
+same question two ways. The drill runs on every harness invocation, and never
+with `--record`: a gate that writes to the tree it checks would put `check` into
+drift against itself.
+
+**What this does not claim.** Nothing in the ecosystem has broken. The drill
+models an agent as four fields, and E7 found real agents differ in ways such a
+model does not think to differ — Codex has no skill-invocation primitive, and
+its login shell discards a `PATH` set at launch. The ≤1 week window is
+unmeasured, since the drill's fix time is minutes by construction. Two known
+classes sit outside it and are not absorbable today: a frontmatter *format*
+change, and a rename of `SKILL.md`. The ROADMAP gate is therefore **half met**,
+and says which half. `experiments/r7-break-drill/RESULTS.md` carries the limits;
+they belong wherever the result is quoted.
+
 ## 0.5.0 — 2026-08-08
 
 **The twenty-four were never twenty-four bugs. They were one missing

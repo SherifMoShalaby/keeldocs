@@ -16,8 +16,8 @@ everything in it needs a physical machine (real agent binaries, stable hardware,
 a registry login, people). §5 is refusals with written evidence thresholds, not
 backlog. §6 is closed and is a record, not a queue.
 
-Current: `keeldocs@0.5.0` on npm (`latest`), 205 unit tests, 40 extractor goldens,
-106 harness checks, 3-OS CI green at `39182de` — checked per job, not off the run
+Current: `keeldocs@0.5.0` on npm (`latest`), 206 unit tests, 40 extractor goldens,
+107 harness checks, 3-OS CI green at `39182de` — checked per job, not off the run
 list.
 
 **Read the Windows job's own conclusion, never the run's.** The lane is

@@ -13,7 +13,7 @@ are each named, with a clean single-package manifest still silent on both.
 Linux and macOS green including
 `action-smoke`; the non-blocking Windows lane is **red again** — one gate, `sarif
 emitter vs a real check run`, since `386aa03`, masked by `continue-on-error` in
-exactly the way §4 item 6 records · 205 unit tests · 40 extractor goldens · 106 harness checks ·
+exactly the way §4 item 6 records · 206 unit tests · 40 extractor goldens · 107 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
@@ -157,7 +157,7 @@ The core loop the whole design stands on — extract facts deterministically →
 anchor docs to those facts → detect drift by fact-hash → propose section-level
 patches → apply without destroying human writing — is **built, tested and
 proven on a real production repo**. 34 providers across 10
-capabilities feed 8 document recipes. The engine has 205 unit tests, 40
+capabilities feed 8 document recipes. The engine has 206 unit tests, 40
 byte-compared extractor goldens and roughly two dozen end-to-end integration
 blocks that run on Linux, macOS and Windows every push. It has been run against
 a real 30-table Supabase/Next.js application end to end: 482 concrete surfaces,
@@ -477,7 +477,7 @@ remaining v1.0 gate is about people, publication or elapsed time.
 | Anchor spec frozen at 1.0, published standalone with a migration policy | **Done 2026-08-05** — §11 is the migration policy, §12 enumerates the frozen surface, §8 declares the freeze, and a harness gate probes all twelve frozen behaviours against the shipped parser so the prose and the code cannot drift apart. Publishing it standalone is a repository decision, not an engineering one |
 | ≥500 public repos with committed anchors | **Blocked, and the instrument reports BLIND — one of three verdicts now, where there used to be one.** `scripts/dev/adoption.py` separates `FLOOR` (control passes, N found), `ZERO` (control passes, none found — a real finding, and until 2026-08-08 indistinguishable from blindness) and `BLIND` (its own control failed; `floor` is null, never 0). As of 2026-08-08 it returns `BLIND (self_not_indexed)`: a completed global search returns 28,480 hits for a generated-region marker of the same shape written by another tool, so the query shape works, and that same completed search does not return this repository — which the GitHub *contents* API, not the index, confirms carries the marker on its public default branch. The 2026-08-04 note here asserted *code search does not index this repository* as fact. That conclusion happens to hold, but it was not evidence: the control it came from was `repo:`-scoped, and a `repo:`-scoped query returns `total_count: 0` with `incomplete_results: true` for `facebook/react` too, so it could never have passed for anyone. Every run appends to `scripts/dev/adoption-log.jsonl` — read that for when the instrument last worked |
 | ≥2 non-founder maintainers with merge rights | **Blocked (you)** — hard gate, no v1.0 at bus factor 1 |
-| Survived one breaking agent-API change, adapters-only fix ≤1 week | **Not yet exercised** |
+| Breaking agent-API change absorbed by the adapter layer alone: R7's drill green on every class, then one real ecosystem break fixed adapters-only ≤1 week | **Half met, and the half that is met is the smaller one.** The gate used to read "survived one breaking agent-API change" and wait for the ecosystem, so until something broke it could neither pass nor fail. R7 already specified the active form and `experiments/r7-break-drill/` now runs it: four things an agent can change unilaterally — moves its skills directory, starts rejecting a frontmatter key, lowers its listing cap, drops native discovery for `AGENTS.md` — each broken on purpose against the real installer, each required to fail before the fix and conform after it, with "adapters-only" computed by hashing both package trees rather than asserted. **Its first run on 2026-08-08 found one class in four was not absorbable**: the listing cap was `const LISTING_CAP = 8000` in `src/skillscmd.js` and the literal `8000` again in `scripts/harness.py`, so the one number an agent wholly owns lived in two places that could disagree and in neither place the agent's manifest. Had Codex halved it, `skills install` would have written every skill, reported `INSTALLED`, and printed a receipt naming a budget that agent no longer had. Fixed to a `listing_cap:` manifest key; the harness now runs the drill on every invocation so absorbability cannot regress quietly. **What is still not met is the ecosystem half.** Nothing has broken. A contract file is a model of an agent written by the author of the adapter, and E7 found real agents differ in ways such a file does not think to differ — Codex has no skill-invocation primitive, and its login shell discards a `PATH` set at launch. The drill also cannot measure the ≤1 week window, since its fix time is minutes by construction, and two known classes sit outside it: a frontmatter *format* change and a rename of `SKILL.md` both need `src/skillscmd.js` and are not absorbable today. `experiments/r7-break-drill/RESULTS.md` states the limits in full; quote them with the result |
 | Noise SLO holding in the wild (accept-rate ≥30% sustained) | **Blocked (evidence)** |
 
 ---
@@ -954,7 +954,7 @@ re-measure the same missing cache on a lumpier tree.
 34 shipped providers across 10 capabilities (workspace-layout, module-graph,
 http-endpoints, db-schema, db-policies, config-surface, services-topology,
 decision-history, client-routes, async-messaging) · 8 document recipes · 6
-agent skills · 205 unit tests · 40 byte-compared extractor goldens · ~25
+agent skills · 206 unit tests · 40 byte-compared extractor goldens · ~25
 end-to-end integration blocks · 13 ADRs · 16 experiments.
 
 Field deployment: one real production application (Next.js App Router +
