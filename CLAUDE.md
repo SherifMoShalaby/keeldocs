@@ -24,8 +24,9 @@ list.
 `continue-on-error`, so a red Windows job still reports `success` at the top
 level. It was red for three consecutive runs (`386aa03`, `3075435`, `04b54cd`)
 while all three showed green, because the newest gate caught a real defect:
-`scripts/sarif.js` guarded its entry point with `import.meta.url ===
-`file://${process.argv[1]}``, which is false on Windows, so the emitter wrote
+`scripts/sarif.js` guarded its entry point with
+``import.meta.url === `file://${process.argv[1]}` ``, which is false on Windows,
+so the emitter wrote
 nothing and exited 0 — an empty SARIF, and a code-scanning tab reading "no
 problems found", shipped in every release since rc.1. Fixed in `74ade57`. This is
 the second time this masking has hidden a real failure (ROADMAP §4 item 6 is the

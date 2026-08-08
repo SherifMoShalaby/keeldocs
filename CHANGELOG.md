@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-08-08
 
 **The twenty-four were never twenty-four bugs. They were one missing
 abstraction, and this release builds it.** Across `0.4.0` through `0.4.3` the
@@ -230,20 +230,34 @@ read four documents and this was not one of them. Both count gates now read a
 fifth: `CHANGELOG.md`, sliced to `## Unreleased` and stopping at the next
 heading, because a released section is history and `0.4.3` really did have 98.
 
-**One gate in here is red on Windows and this release does not fix it.** The new
-`sarif emitter vs a real check run` gate fails on `windows-latest` with
-`Expecting value: line 1 column 1 (char 0)` — a node subprocess returning no
-JSON — and it has done so on every run since it landed. Linux and macOS are
-green. The lane is `continue-on-error`, so all three runs report `success` at the
-top level and the failure is visible only inside the job, which is precisely the
-masking that hid a red Windows lane for twelve runs until 2026-08-03. It is
-named here rather than left for the run list to imply otherwise; diagnosing it
-needs a Windows machine.
+**The new gate went red on Windows immediately, and what it caught had shipped in
+every release since rc.1.** `sarif emitter vs a real check run` failed on
+`windows-latest` with `Expecting value: line 1 column 1 (char 0)` — a node
+subprocess returning no JSON — while Linux and macOS were green. The cause was
+not the gate. `scripts/sarif.js` guarded its entry point with
+``import.meta.url === `file://${process.argv[1]}` ``, which is true on Linux and
+macOS and false on every Windows machine there has ever been: `argv[1]` is
+`C:\...\sarif.js` while the module URL is `file:///C:/.../sarif.js`. The block
+never ran, the process wrote nothing, and it exited 0 — so **on a Windows runner
+this emitter has always produced an empty SARIF for a run with findings, and
+GitHub code scanning showed "no problems found"**. That is this project's own
+defect family, in the file whose entire job is carrying findings to a human.
 
-205 unit tests, 40 extractor goldens, 106 harness checks, on Linux and macOS.
-`check` is CLEAN on this repository at 12/12 surfaces, and the envelope is
-byte-identical to `0.4.3`'s for an unchanged tree — including after the guard was
-widened, which is the property that makes this report shape and nothing else.
+It is fixed here, by resolving both sides to filesystem paths as the six other
+files in this tree already do. Two things about it are worth more than the fix.
+The gate that found it is the one this release added — the emitter run against a
+real `check` report instead of a hand-authored fixture, which is exactly the
+coupling that had let the emitter drift away from the engine. And the lane is
+`continue-on-error`, so three consecutive runs reported `success` at the top
+level over a red job: the same masking that hid a red Windows lane for twelve
+runs until 2026-08-03, now the second time it has concealed a real failure. Read
+the Windows job's own conclusion, never the run's.
+
+205 unit tests, 40 extractor goldens, 106 harness checks, green on Linux, macOS
+and Windows. `check` is CLEAN on this repository at 12/12 surfaces, and the
+envelope is byte-identical to `0.4.3`'s for an unchanged tree — including after
+the guard was widened, which is the property that makes this report shape and
+nothing else.
 
 ## 0.4.3 — 2026-08-07
 
