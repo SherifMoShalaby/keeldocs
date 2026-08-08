@@ -17,13 +17,19 @@ a registry login, people). §5 is refusals with written evidence thresholds, not
 backlog. §6 is closed and is a record, not a queue.
 
 Current: `keeldocs@0.4.3` on npm (`latest`), 205 unit tests, 40 extractor goldens,
-106 harness checks. **Linux and macOS green; Windows is RED and has been since
-`386aa03`** — `FAIL sarif emitter vs a real check run: Expecting value: line 1
-column 1 (char 0)`, one gate, the newest one, measured from the run logs of
-`386aa03`, `3075435` and `04b54cd`. The lane is `continue-on-error`, so all
-three runs report `success` at the top level and the red is only visible inside
-the job. That is the same masking that hid twelve runs until 2026-08-03 (ROADMAP
-§4 item 6): do not read "CI green" off the run list.
+106 harness checks, 3-OS CI green at `74ade57` — checked per job, not off the run
+list.
+
+**Read the Windows job's own conclusion, never the run's.** The lane is
+`continue-on-error`, so a red Windows job still reports `success` at the top
+level. It was red for three consecutive runs (`386aa03`, `3075435`, `04b54cd`)
+while all three showed green, because the newest gate caught a real defect:
+`scripts/sarif.js` guarded its entry point with `import.meta.url ===
+`file://${process.argv[1]}``, which is false on Windows, so the emitter wrote
+nothing and exited 0 — an empty SARIF, and a code-scanning tab reading "no
+problems found", shipped in every release since rc.1. Fixed in `74ade57`. This is
+the second time this masking has hidden a real failure (ROADMAP §4 item 6 is the
+first, twelve runs).
 
 `0.4.0` was the first release that changes what `check` returns for an unchanged
 repository: six shapes `0.3.0` called `CLEAN` while checking nothing now report.
