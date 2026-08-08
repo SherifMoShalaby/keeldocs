@@ -15,6 +15,14 @@ disable-model-invocation: true
    Rebind proposals name their evidence signals (S1 file-rename, S2 signature exact/near, S1b unique same-name). `--apply-all` auto-applies a rebind ONLY when marked auto-qualified (one candidate, S1+S2-exact - a file move); everything else is the human's call via `--apply <id> [--to <fact-id>]`.
 4. After applying, run `keeldocs check` to confirm the loop closed clean. Journal writes are disabled in CI by design; decisions happen locally.
 
+## Envelope codes
+
+`sync` emits nine codes and no others. In its default mode: `APPLIED` (exit 0 - patches went in, now run `check`), `PROPOSALS` (proposals are outstanding and none was applied - exit 1 when at least one of them is appliable, exit 0 when every remaining one needs a human decision the CLI cannot take), and `NOTHING_TO_SYNC` (exit 0 - no drift to propose against). Under `--upgrade`: `UPGRADED` (exit 0), `UPGRADES_AVAILABLE` (exit 1 - sections to insert, none inserted) and `NOTHING_TO_UPGRADE` (exit 0). Any mode can return `DECISION_RECORDED` (exit 0) when the invocation was a rejection or a snooze rather than an apply.
+
+Both failures are exit 2 and neither is a statement about the documentation: `CONFIG` means keeldocs.toml could not be read, and `TOOL_ERROR` means the extractors could not run. Never report either as "docs are fine" - nothing was measured. See the core skill.
+
+Exit 1 from `PROPOSALS` or `UPGRADES_AVAILABLE` is work waiting for a decision, not a broken run.
+
 ## Recipe migration (`--upgrade`)
 
 When `check` reports `data.upgrades`, a generated doc predates a section the

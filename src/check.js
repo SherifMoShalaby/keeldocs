@@ -2,7 +2,12 @@
 // no LLM, no network, no wall clock in fact/drift computation. Policy state
 // (snooze expiry) uses wall clock locally and the HEAD COMMIT TIME in --ci,
 // so CI output is a pure function of (SHA, committed journal) - spec §6.
-// Exit codes: 0 clean | 1 findings | 2 tool/config error | 3 budget-degraded.
+// Codes: CLEAN 0 | DRIFT_FOUND 1 | UNREADABLE 1 | TOOL_ERROR 2 | CONFIG 2, and
+// nothing else - enumerated in src/envelope.js, which the harness holds both this
+// file and every agent-facing contract to. This line used to end "| 3
+// budget-degraded", which `check` has never returned: a comment describing an
+// unreachable state, in the file whose job is to refuse exactly that (see the
+// same story at the top of bin/keeldocs.js).
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";

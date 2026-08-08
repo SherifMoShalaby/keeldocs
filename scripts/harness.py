@@ -4002,6 +4002,181 @@ def main():
     except Exception as e:
         failures.append(f"sarif emitter vs a real check run: {why(e)}")
 
+    # ---------------------------------------------------------------------- #
+    # The envelope-code enumeration, held to the engine and to the contracts.  #
+    #                                                                          #
+    # `src/envelope.js` claims to list every code the CLI can emit. A claim    #
+    # like that is worth exactly what checks it, and this family has already   #
+    # produced the failure in both directions: `UNREADABLE` was invented by    #
+    # the 0.4.x campaign and named in no agent-facing file at all, while exit  #
+    # 3 was documented as `check`'s in three of them and returned by nothing.  #
+    # So the enumeration is checked against the source both ways, and the      #
+    # contracts are checked against the enumeration.                           #
+    # ---------------------------------------------------------------------- #
+    envelope_enum, envelope_claimed, envelope_bodies = None, None, None
+    try:
+        envelope_enum = node_json(subprocess.run(["node", "--input-type=module", "-e", (
+            'import {CODES, SOURCES, NOT_CODES, CONTRACTS, requiredCodes, envelopeSources}'
+            ' from "%s/src/envelope.js";'
+            'console.log(JSON.stringify({'
+            '  codes: CODES.map((c) => ({code: c.code, commands: c.commands})),'
+            '  sources: SOURCES, notCodes: [...NOT_CODES], files: envelopeSources(),'
+            '  contracts: CONTRACTS.map((c) => ({path: c.path, covers: c.covers,'
+            '    required: requiredCodes(c).map((x) => x.code)}))}));') % ROOT_URL],
+            capture_output=True, text=True, timeout=120), "src/envelope.js enumeration")
+
+        # code -> the files it may legitimately appear in, derived from the
+        # commands that claim it. Nothing here is hand-listed twice.
+        claimed = {}
+        for c in envelope_enum["codes"]:
+            for cmd in c["commands"]:
+                assert cmd in envelope_enum["sources"], \
+                    f'{c["code"]} names command `{cmd}`, which has no entry in SOURCES'
+                claimed.setdefault(c["code"], set()).update(envelope_enum["sources"][cmd])
+
+        bodies = {f: open(os.path.join(ROOT, f), encoding="utf-8").read()
+                  for f in envelope_enum["files"]}
+        not_codes = set(envelope_enum["notCodes"])
+        envelope_claimed, envelope_bodies = claimed, bodies
+
+        # Not vacuous by construction: if the scan ever reads zero files or the
+        # enumeration empties out, the loops in both directions pass over
+        # nothing at all and say so.
+        assert len(claimed) >= 30 and len(bodies) >= 10, (
+            f"the scan covered {len(claimed)} code(s) across {len(bodies)} file(s) - too few to "
+            f"be reading the CLI; the file list or the enumeration has been emptied")
+
+        # Outward: a literal the engine emits that the enumeration does not
+        # carry. This is the direction `UNREADABLE` escaped through, and it is
+        # the reason the scan reads the source rather than trusting the list.
+        stray = []
+        for f, body in bodies.items():
+            for m in re.finditer(r'"([A-Z][A-Z0-9_]*)"', body):
+                lit = m.group(1)
+                if lit in not_codes:
+                    continue
+                if lit not in claimed:
+                    stray.append(f'{f}: "{lit}" is emitted but is not in CODES, and is not '
+                                 f'declared a non-code in NOT_CODES')
+                elif f not in claimed[lit]:
+                    stray.append(f'{f}: "{lit}" is enumerated, but no command claiming it '
+                                 f'names {f} in SOURCES')
+        assert not stray, ("the engine emits codes the enumeration does not carry:\n    "
+                           + "\n    ".join(stray))
+        print(f"  PASS  envelope codes the engine emits are all enumerated: {len(bodies)} "
+              f"envelope-building file(s) scanned, every uppercase literal either one of "
+              f"{len(claimed)} enumerated codes or one of {len(not_codes)} declared non-codes")
+    except Exception as e:
+        failures.append(f"envelope codes the engine emits are all enumerated: {why(e)}")
+
+    # The other direction, in its own block so that neither failure can mask the
+    # other. This is the half a one-directional gate misses, and the half that
+    # let exit 3 be documented in three agent-facing files while `src/` returned
+    # it from nowhere.
+    try:
+        assert envelope_claimed and envelope_bodies, "the enumeration did not load"
+        phantom = [f'"{code}" is enumerated but appears in none of {", ".join(sorted(files))}'
+                   for code, files in envelope_claimed.items()
+                   if not any(f'"{code}"' in envelope_bodies[f] for f in files)]
+        assert not phantom, (
+            "the enumeration carries codes the engine cannot emit:\n    "
+            + "\n    ".join(phantom)
+            + "\n    A code documented but unreachable is the exit-3 defect: three agent-facing "
+              "files described a state nothing in src/ ever returned.")
+        print(f"  PASS  enumerated codes are all really emitted: {len(envelope_claimed)} code(s), "
+              f"each found in the source of a command that claims it")
+    except Exception as e:
+        failures.append(f"enumerated codes are all really emitted: {why(e)}")
+
+    try:
+        assert envelope_enum, "the enumeration did not load; nothing to hold the contracts to"
+        # The item this gate exists for. A contract that instructs an agent on a
+        # command owes every code that command can emit, and `covers` is what
+        # makes the requirement derived: adding a code to `sync` makes
+        # skills/sync/SKILL.md owe it with nothing in the harness edited.
+        missing, checked = [], 0
+        for c in envelope_enum["contracts"]:
+            body = open(os.path.join(ROOT, c["path"]), encoding="utf-8").read()
+            assert c["required"], (
+                f'{c["path"]} covers {c["covers"]} and that requires no codes at all - a '
+                f'contract with nothing to state is a gate that cannot fail')
+            for code in c["required"]:
+                checked += 1
+                if not re.search(rf"\b{re.escape(code)}\b", body):
+                    missing.append(f'{c["path"]}: never names `{code}`, which '
+                                   f'{" or ".join(c["covers"])} can emit')
+        assert not missing, (
+            "consumer-facing contracts omit codes the engine emits:\n    "
+            + "\n    ".join(missing)
+            + "\n    An agent that has never been told a code exists cannot act on it, and this "
+              "project's distribution bet is that agents read these files.")
+        print(f"  PASS  agent- and action-facing contracts vs the enumeration: "
+              f"{len(envelope_enum['contracts'])} contract(s), {checked} required code "
+              f"mention(s), none missing")
+    except Exception as e:
+        failures.append(f"agent- and action-facing contracts vs the enumeration: {why(e)}")
+
+    # The exit column is a claim too, so it is measured rather than asserted in
+    # prose. Every probe below runs a real CLI command and the (code, exit) pair
+    # it comes back with must be exactly what the enumeration says - which also
+    # covers `doctor`, whose code depends on the host, because the assertion is
+    # about the PAIR and not about which code appears.
+    try:
+        assert envelope_enum, "the enumeration did not load; nothing to hold the runs to"
+        exits = {}
+        for c in envelope_enum["codes"]:
+            for cmd, e in c["commands"].items():
+                exits[(cmd, c["code"])] = e if isinstance(e, list) else [e]
+
+        tmp = os.path.join(ROOT, ".keeldocs-tmp-envelope")
+        rmtree(tmp)
+        for sub in ("clean/docs", "bad", "refused/docs"):
+            os.makedirs(os.path.join(tmp, *sub.split("/")), exist_ok=True)
+        W(os.path.join(tmp, "clean", "docs", "a.md"), "# Docs\n")
+        W(os.path.join(tmp, "bad", "keeldocs.toml"), "this is not toml = = =\n")
+        W(os.path.join(tmp, "refused", "docs", "a.md"),
+          "# A\n<!-- keeldocs: id=a.b wombat=1 -->\n")
+
+        probes = [
+            ("check", ["check", "--json"], "clean", "CLEAN"),
+            ("check", ["check", "--json"], "refused", "UNREADABLE"),
+            ("check", ["check", "--json"], "bad", "CONFIG"),
+            ("init", ["init", "--json"], "clean", "DRY_RUN"),
+            ("sync", ["sync", "--json"], "clean", "NOTHING_TO_SYNC"),
+            ("sync", ["sync", "--upgrade", "--json"], "clean", "NOTHING_TO_UPGRADE"),
+            ("sync", ["sync", "--json"], "bad", "CONFIG"),
+            # doctor's code is the host's answer, not the tree's, so the probe
+            # pins the pair and deliberately not the code.
+            ("doctor", ["doctor", "--json"], "clean", None),
+        ]
+        seen = set()
+        for cmd, argv, where, expect in probes:
+            r = subprocess.run(["node", os.path.join(ROOT, "bin", "keeldocs.js")] + argv,
+                               cwd=os.path.join(tmp, where), capture_output=True,
+                               text=True, timeout=300)
+            env = node_json(r, f"{' '.join(argv)} in {where}")
+            code = env["code"]
+            assert (cmd, code) in exits, (
+                f"`keeldocs {' '.join(argv)}` in {where} returned code {code}, which "
+                f"src/envelope.js does not enumerate for `{cmd}` - a code no contract can "
+                f"name because nothing knows it exists")
+            assert r.returncode in exits[(cmd, code)], (
+                f"`keeldocs {' '.join(argv)}` returned {code} with exit {r.returncode}; "
+                f"src/envelope.js claims exit {exits[(cmd, code)]} for that pair")
+            if expect is not None:
+                assert code == expect, (
+                    f"probe drift: `{' '.join(argv)}` in {where} was built to reach {expect} "
+                    f"and returned {code} - the probe no longer tests what it names")
+            seen.add((cmd, code, r.returncode))
+        # A gate that observed one pair would pass while proving nothing.
+        assert len(seen) >= 6, f"only {len(seen)} distinct (command, code, exit) triple(s) observed"
+        rmtree(tmp)
+        print(f"  PASS  enumerated exit codes vs real runs: {len(probes)} probe(s) across "
+              f"check/init/sync/doctor, {len(seen)} distinct (command, code, exit) triple(s), "
+              f"every pair exactly as src/envelope.js claims")
+    except Exception as e:
+        failures.append(f"enumerated exit codes vs real runs: {why(e)}")
+
     # Last, so every PASS above is counted. +1 is this gate's own line, which is
     # printed after the count is taken.
     try:

@@ -12,7 +12,7 @@ the file, and three npm/yarn workspace manifests `0.4.1` passes over in silence
 are each named, with a clean single-package manifest still silent on both.
 3-OS CI green including
 `action-smoke` as of `9edc841` — including the non-blocking Windows lane, red for at least twelve
-runs before it and fixed the same day (§4 item 6) · 205 unit tests · 40 extractor goldens · 100 harness checks ·
+runs before it and fixed the same day (§4 item 6) · 205 unit tests · 40 extractor goldens · 104 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to

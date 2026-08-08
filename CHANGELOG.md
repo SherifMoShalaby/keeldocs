@@ -121,7 +121,63 @@ key(s): …`. This is the `isHostileFact` idiom applied a second time — one ch
 point instead of a rule re-applied per site — which has produced no recurring
 injection family in four releases of this file.
 
-205 unit tests, 40 extractor goldens, 100 harness checks. `check` is CLEAN on this
+**And the same shape one more layer out: the `code` field itself.** The ledger
+enumerated what the engine declines to look at, and the emitter was wired to it.
+Neither touched the other half of the envelope. `check` emits five codes, `init`
+four, `sync` nine and `doctor` four; across the whole CLI there are **37**, and
+they existed as bare string literals in ten files with no list anywhere. The
+consumer-facing contracts then described whichever subset their author
+remembered, and the gap ran in both directions.
+
+*Outward, measured.* The six consumer-facing contracts owe **35** code mentions
+between them, and **21 were missing**, covering **15 distinct codes**. All nine
+`sync` can return were absent from `skills/sync/SKILL.md`; all four `init` can
+return were absent from `skills/init/SKILL.md`; and `doctor`'s `READY`,
+`BLOCKED` and `DEGRADED` were absent from both files that instruct an agent to
+run it. `DRIFT_FOUND`, `CONFIG` and `TOOL_ERROR` were not missing everywhere —
+`action.yml` and the check skill already stated them — but were missing from
+other contracts that owe them, which is the same gap with a smaller blast
+radius. An agent that has never been told a code exists cannot act on it, and
+this project's distribution bet is that agents read these files.
+
+*Inward, recorded at the top of `bin/keeldocs.js`.* Exit 3 was documented there,
+in `AGENTS.md` and in the core skill as `check`'s "budget-degraded" from v0.1,
+and nothing in `src/` ever returned it — three agent-facing files describing an
+unreachable state, which is this project's own defect pointed the other way.
+`src/check.js`'s own header still carried that claim and now does not; `doctor`
+is the only command that returns 3, and the enumeration says so.
+
+**What replaces the remembering.** `src/envelope.js` holds one list: every code,
+every command that emits it, and the exit that command leaves with — a map per
+code rather than a single number, because the same code does not always mean the
+same exit (`EXISTS` is success from `new` and a refusal from `provider`, and
+flattening the two would have made the file the kind of nearly-true
+documentation this project exists to detect). `CONTRACTS` states which file
+instructs an agent on which command, and the required set is **derived** from
+that, so adding a code to `sync` makes `skills/sync/SKILL.md` owe it with
+nothing else edited. The module is deliberately inert — nothing in `src/`
+imports it, so no new import enters the `check` path, and wiring the emit sites
+to constants would not have closed the hole anyway, since a new site can always
+hand-write a literal.
+
+Four harness gates, each mutation-proved. Two hold the enumeration to the engine,
+in opposite directions and in separate blocks so that neither failure can mask
+the other: a scan of the ten envelope-building files requires every uppercase
+literal to be an enumerated code or one of four declared non-codes (`HEAD`,
+`ENOENT`, `OK`, `MISSING`), and the reverse requires every enumerated code to
+really appear in the source of a command that claims it — the direction a
+one-way gate misses, and the one exit 3 survived. The third gate is the item
+itself: every contract must name every code its covered commands can emit. The
+fourth stops the exit column being prose — eight probes run real `check`, `init`,
+`sync` and `doctor` commands and assert the observed `(command, code, exit)`
+triple is exactly what the enumeration claims, pinning `doctor` by its pair
+rather than its code because that one is the host's answer and not the tree's.
+
+The adapter manifests are deliberately not in `CONTRACTS`: they describe install
+locations — `skills_dir`, `strip_fields`, `agents_md_block` — and say nothing
+about outcomes, so there is no claim in them to keep true.
+
+205 unit tests, 40 extractor goldens, 104 harness checks. `check` is CLEAN on this
 repository at 12/12 surfaces, and the envelope is byte-identical to `0.4.3`'s for
 an unchanged tree.
 
