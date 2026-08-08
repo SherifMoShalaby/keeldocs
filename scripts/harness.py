@@ -2526,6 +2526,16 @@ def main():
                   "adrs": rf"{N}ADRs",
                   "finding_classes": rf"{N}{ADJ}finding classes"}
         bad = []
+        # How many times each claim was actually FOUND. Without this the loops
+        # below fail only on a mismatched match: a phrase that stops matching at
+        # all is compared to nothing, and the gate prints PASS over a claim it
+        # has stopped reading. `finding classes` appears once in the whole
+        # corpus, so rewording that one line - "the five finding classes" - would
+        # have retired it silently. The comment above says a pattern that misses
+        # the string it was built for is decoration rather than a gate; that was
+        # a statement about the pattern, and it was equally true of the gate.
+        seen = {k: 0 for k in PHRASE}
+        seen["unit tests"] = 0
         for rel in ("README.md", "ROADMAP.md", "CLAUDE.md", "AGENTS.md"):
             path = os.path.join(ROOT, rel)
             if not os.path.isfile(path):
@@ -2543,14 +2553,23 @@ def main():
             body = re.sub(r"\s+", " ", body)
             for key, pat in PHRASE.items():
                 for m in re.finditer(pat, body):
+                    seen[key] += 1
                     if int(m.group(1)) != truth[key]:
                         bad.append(f"{rel}: '{m.group(0)}' but the tree has {truth[key]}")
             for m in re.finditer(r"(\d+) unit tests", body):
+                seen["unit tests"] += 1
                 if int(m.group(1)) != units:
                     bad.append(f"{rel}: '{m.group(0)}' but the suite has {units}")
+        unstated = sorted(k for k, n in seen.items() if not n)
+        if unstated:
+            bad.append("no tracking document states a count for " + ", ".join(unstated)
+                       + " - the phrase moved or was reworded out from under the pattern, so the "
+                         "claim went UNCHECKED rather than correct and this gate printed PASS "
+                         "over it. Restate it or delete the pattern deliberately")
         assert not bad, "stale counts in the tracking documents:\n    " + "\n    ".join(bad)
         print(f"  PASS  tracking-document counts: {units} unit tests, {truth['providers']} providers, "
-              f"{truth['goldens']} goldens agree with the tree")
+              f"{truth['goldens']} goldens agree with the tree ({sum(seen.values())} claim(s) found "
+              f"across {len(seen)} phrase(s), every phrase stated somewhere)")
     except Exception as e:  # noqa: BLE001
         failures.append(f"tracking-document counts: {why(e)}")
 
@@ -4177,6 +4196,164 @@ def main():
     except Exception as e:
         failures.append(f"enumerated exit codes vs real runs: {why(e)}")
 
+    # ---------------------------------------------------------------------- #
+    # The rollup action's push decision.                                      #
+    #                                                                         #
+    # `ci.yml` runs `./rollup` with `dry-run: true` against THIS repository,   #
+    # which is clean, and then asserted `code == NOTHING_TO_SYNC -a applied    #
+    # == 0`. The second half could not fail: on a clean tree `sync` applies    #
+    # nothing under EITHER branch of the action - the dry-run branch has no    #
+    # `--apply-all`, and `--apply-all` with nothing to do applies nothing      #
+    # either - so it read `0 == 0`, fifteen lines below a comment saying that  #
+    # a verdict which is the only reachable one is not a gate.                 #
+    #                                                                         #
+    # What that left unguarded is the weekly PR itself. The push step runs     #
+    # `if applied != '0'`, and `applied` comes out of `data.applied` in the    #
+    # sync envelope. Rename that key, or change the shape of what `--apply-all`#
+    # reports, and the expression returns 0 forever: the rollup stops opening  #
+    # its PR, keeldocs' own regenerations stop landing, and CI stays green     #
+    # because the only tree it ever measured had nothing to apply.             #
+    #                                                                         #
+    # So the expressions are READ OUT of `rollup/action.yml` and run against a #
+    # real envelope from a repository that does have something to apply, on    #
+    # both branches, with CI=true because that is the only environment the     #
+    # rollup ever runs in. Retyping the expression here would build a gate on  #
+    # the copy, which is the shape of mistake this whole family is made of.    #
+    # ---------------------------------------------------------------------- #
+    try:
+        import shutil as _shrl, tempfile as _tfrl
+        ry = open(os.path.join(ROOT, "rollup", "action.yml"), encoding="utf-8").read()
+        expr = {}
+        for _name in ("code", "applied"):
+            m = re.search(rf"^\s*{_name}=\$\(node -e '([^']+)'\)\s*$", ry, re.M)
+            assert m, (f"rollup/action.yml no longer derives `{_name}` from a `node -e` expression - "
+                       "this gate runs the action's own expression and has none to run")
+            expr[_name] = m.group(1)
+        # The output is worth measuring only because the push step keys off it.
+        for needle in ("steps.sync.outputs.applied != '0'", "inputs.dry-run != 'true'",
+                       "git push -f origin"):
+            assert needle in ry, (f"rollup/action.yml no longer contains {needle!r} - the push "
+                                  "decision this gate measures has moved, so it proves nothing")
+
+        tmp = _tfrl.mkdtemp(prefix="keeldocs-rollup-")
+        dst = os.path.join(tmp, "repo")
+        _shrl.copytree(os.path.join(ROOT, "fixtures", "init-scenario"), dst,
+                       ignore=_shrl.ignore_patterns("golden", ".keeldocs"))
+        # Its own CLI path and its own runner: `kd` from the sync integration is
+        # REBOUND further down this function (line ~2400) to a helper with a
+        # different signature, so a block appended here that calls it silently
+        # gets the wrong one. That cost a full run to find.
+        KDR = os.path.join(ROOT, "bin", "keeldocs.js")
+        ini = subprocess.run(["node", KDR, "init", "--yes", "--json"], cwd=dst,
+                             capture_output=True, text=True, timeout=300)
+        assert ini.returncode == 0, (
+            f"rollup fixture failed to init: rc={ini.returncode} "
+            f"stdout={ini.stdout[:200]!r} stderr={(ini.stderr or '')[-200:]!r}")
+        # Drift the tree, so the two branches have DIFFERENT answers. On a clean
+        # tree they do not, and that is precisely why ci.yml's assertion held no
+        # matter what the action did.
+        app = os.path.join(dst, "app.js")
+        W(app, open(app, encoding="utf-8").read().replace(
+            "app.post('/items', (req, res) => res.status(201).end());",
+            "app.post('/items', (req, res) => res.status(201).end());\n"
+            "app.get('/archive', (req, res) => res.json([]));"))
+        sch = os.path.join(dst, "prisma", "schema.prisma")
+        W(sch, open(sch, encoding="utf-8").read().replace(
+            "  status Status @default(ACTIVE)",
+            "  status Status @default(ACTIVE)\n  createdAt DateTime @default(now())"))
+
+        def docs_bytes():
+            out = {}
+            for root_, _dirs, files in os.walk(os.path.join(dst, "docs")):
+                for f in files:
+                    p = os.path.join(root_, f)
+                    out[os.path.relpath(p, dst)] = open(p, "rb").read()
+            return out
+
+        def branch(*argv):
+            """One branch of the action's `if`, then the action's own output
+            expressions, evaluated in the directory the action evaluates them in."""
+            r = subprocess.run(["node", KDR, *argv], cwd=dst, capture_output=True, text=True,
+                               timeout=300, env={**os.environ, "CI": "true"})
+            # the action itself only aborts at 2 - PROPOSALS legitimately exits 1
+            assert r.returncode < 2, \
+                f"`keeldocs {' '.join(argv)}` rc={r.returncode}: {(r.stderr or '')[-300:]}"
+            W(os.path.join(dst, "kd-sync.json"), r.stdout)
+            got = {}
+            for _n, _e in expr.items():
+                o = subprocess.run(["node", "-e", _e], cwd=dst, capture_output=True,
+                                   text=True, timeout=60)
+                assert o.returncode == 0, \
+                    f"the action's own `{_n}` expression failed: {(o.stderr or '')[-200:]}"
+                got[_n] = o.stdout.strip()
+            return got
+
+        before = docs_bytes()
+        dry = branch("sync", "--json")
+        # The control: if the fixture stops drifting, both branches answer the
+        # same and everything below is 0 == 0 again.
+        assert dry["code"] == "PROPOSALS", (
+            f"the dry-run branch over a drifted tree reported {dry['code']} - the fixture no longer "
+            "drifts, so both branches now have the same answer and this gate is comparing 0 with 0")
+        assert docs_bytes() == before, \
+            "the dry-run branch REWROTE documents it was only asked to preview"
+        assert dry["applied"] == "0", (
+            f"the dry-run branch reported applied={dry['applied']!r}, so the push step would commit "
+            "and force-push a tree the preview never wrote")
+        wet = branch("sync", "--apply-all", "--json")
+        assert wet["code"] == "APPLIED", \
+            f"the apply branch over a drifted tree reported {wet['code']}, not APPLIED"
+        assert wet["applied"].isdigit() and int(wet["applied"]) >= 1, (
+            f"the action's own expression read applied={wet['applied']!r} out of an envelope that "
+            "DID apply regenerations - the push step is gated on `applied != '0'`, so the weekly "
+            "rollup PR would silently stop being opened, and ci.yml's clean-tree dry run, where 0 "
+            "is the right answer under either branch, could never notice")
+        assert docs_bytes() != before, \
+            "the apply branch changed no document, so `applied` is counting something unwritten"
+        rmtree(tmp)
+        print(f"  PASS  rollup push decision: the action's own code/applied expressions read "
+              f"{wet['applied']} applied ({wet['code']}) from a real --apply-all envelope and 0 "
+              f"({dry['code']}) from the dry-run branch, which wrote nothing")
+    except Exception as e:
+        failures.append(f"rollup push decision: {why(e)}")
+
+    # `npm run smoke` was `node bin/keeldocs.js sync --json; test $? -eq 2` - an
+    # assertion that `sync` is NOT IMPLEMENTED, left from the stub era and never
+    # updated when it was. No workflow and no document invoked it, so nothing
+    # ever ran it; measured on this tree it exits 1, which means it had been
+    # failing for as long as `sync` has worked, silently, because a gate nothing
+    # invokes cannot go red. package.json ships in the tarball, so it was also
+    # advice to users. A script that asserts something and is run by nothing is
+    # the same defect as a check reporting CLEAN over what it declined to look
+    # at, so the next one has to join a workflow or be deleted deliberately.
+    try:
+        pkg_scripts = json.load(open(os.path.join(ROOT, "package.json"),
+                                     encoding="utf-8")).get("scripts", {})
+        assert pkg_scripts, "package.json declares no scripts at all - this gate has nothing to hold"
+        # every workflow, not a hand-listed two: a script wired into a workflow
+        # this gate had not heard of would be reported as an orphan, and a gate
+        # that cries wolf is one someone eventually deletes.
+        wfs = sorted(glob.glob(os.path.join(ROOT, ".github", "workflows", "*.yml"))
+                     + glob.glob(os.path.join(ROOT, ".github", "workflows", "*.yaml")))
+        assert wfs, ".github/workflows holds no workflow - nothing here runs anything"
+        blob = "".join(open(w, encoding="utf-8").read() for w in wfs)
+        orphan = []
+        for _name, _body in sorted(pkg_scripts.items()):
+            alt = [rf"npm (?:run|run-script) {re.escape(_name)}\b"]
+            if _name in ("test", "start", "stop", "restart"):
+                alt.append(rf"npm {re.escape(_name)}\b")   # npm's own shorthands
+            if not any(re.search(a, blob) for a in alt):
+                orphan.append(f"{_name!r} ({_body!r})")
+        assert not orphan, (
+            "package.json declares script(s) no workflow runs: " + "; ".join(orphan)
+            + " - a script that asserts something and is invoked by nothing cannot go red. `smoke` "
+              "asserted that `sync` exits 2 and had been failing since `sync` shipped, unnoticed "
+              "for exactly that reason. Wire it into a workflow or delete it")
+        print(f"  PASS  no orphan npm script: all {len(pkg_scripts)} package.json script(s) are "
+              f"invoked by one of {len(wfs)} workflow(s), so each one can go red")
+    except Exception as e:
+        failures.append(f"no orphan npm script: {why(e)}")
+
     # Last, so every PASS above is counted. +1 is this gate's own line, which is
     # printed after the count is taken.
     try:
@@ -4191,7 +4368,7 @@ def main():
             _stdlib_print(f"  ----  harness check count: not asserted - {len(failures)} gate(s) "
                           f"failed, so the {n} counted here is a floor, not the count")
             raise _SkipCount()
-        stale = []
+        stale, stated = [], 0
         for rel in ("README.md", "ROADMAP.md", "CLAUDE.md", "AGENTS.md"):
             path = os.path.join(ROOT, rel)
             if not os.path.isfile(path):
@@ -4200,10 +4377,21 @@ def main():
                 l for l in open(path, encoding="utf-8").read().split("\n")
                 if "counts:ignore" not in l))
             for m in re.finditer(r"\b(\d+) (?:[a-z][a-z-]* )*harness checks", body):
+                stated += 1
                 if int(m.group(1)) != n:
                     stale.append(f"{rel}: '{m.group(0)}' but this run made {n}")
+        # The same silence as the tracking-count gate above, and the PASS line
+        # made it worse by claiming EVERY tracking document says n - AGENTS.md
+        # states no count at all, so the sentence was already untrue of a
+        # document it named, and had the other three been reworded the gate
+        # would have compared nothing and said so anyway.
+        assert stated, (
+            "no tracking document states a harness check count - the phrase this gate matches on is "
+            f"gone, so {n} is unchecked rather than right and this line has been printing PASS over "
+            "zero comparisons")
         assert not stale, "stale harness-check counts:\n    " + "\n    ".join(stale)
-        print(f"  PASS  harness check count: {n} portable checks, and every tracking document says {n}"
+        print(f"  PASS  harness check count: {n} portable checks, stated in {stated} place(s) across "
+              f"the tracking documents and stale in none"
               + (f" (+{len(_TIER_PASSES)} kernel-tier check(s) on this host)" if _TIER_PASSES else ""))
     except _SkipCount:
         pass

@@ -99,9 +99,29 @@ jobs:
           assert documented > 0, f"CLEAN with 0/{total} documented: nothing is anchored, so CLEAN is vacuous"
           print(f"dogfood is real: {documented}/{total} surfaces documented")
           PY
-      - name: Rollup dry-run smoke (clean repo -> nothing to sync, nothing pushed)
+      - name: Rollup dry-run smoke (clean repo -> nothing to sync, nothing written)
         id: rollup
         uses: ./rollup
         with: { dry-run: "true" }
-      - name: Assert rollup no-op
-        run: test "${{ steps.rollup.outputs.code }}" = "NOTHING_TO_SYNC" -a "${{ steps.rollup.outputs.applied }}" = "0"
+      # `applied = 0` was the other half of this assertion and could not fail,
+      # fifteen lines below the comment above. On a clean tree `sync` applies
+      # nothing under EITHER branch of the rollup - the dry-run branch has no
+      # `--apply-all`, and `--apply-all` with nothing to do applies nothing
+      # either - so it compared 0 with 0 no matter what the action did. What it
+      # was standing in for, that the push step's `applied != '0'` guard sees
+      # the regenerations the engine applied, needs a tree with something to
+      # apply; that gate is in scripts/harness.py ("rollup push decision"),
+      # which runs both branches over real drift with the action's own
+      # expressions. What CI can still prove is here, and it is not entailed by
+      # the CLEAN above: a preview wrote nothing to a file under version
+      # control. Today only the untracked kd-sync.json appears; a `sync` that
+      # started writing during a dry run would turn this red.
+      - name: Assert the rollup preview reported, and wrote, nothing
+        run: |
+          set -euo pipefail
+          test "${{ steps.rollup.outputs.code }}" = "NOTHING_TO_SYNC"
+          git diff --quiet HEAD || {
+            echo "the rollup PREVIEW modified tracked file(s):"
+            git diff --name-only HEAD
+            exit 1
+          }
