@@ -2689,6 +2689,110 @@ def main():
         assert not floating, f"R9: actions pinned to a mutable tag: {floating}"
         print("  PASS  R9 action pinning: every third-party `uses:` is a 40-char commit SHA")
 
+        # release.yml ended at `npm publish`, so a release's only evidence was the
+        # log line saying the artifact was made - the exact thing this project's
+        # rule forbids relying on - while SECURITY.md told consumers the provenance
+        # attestation is what to trust and nothing checked one existed. The `verify`
+        # job closes that. This gate exists because deleting it would restore the
+        # silence with no other symptom: the release would still go green.
+        #
+        # Parsed by indentation rather than with yaml. pyyaml IS hash-pinned in
+        # providers/requirements.txt, but the harness is stdlib-only on purpose,
+        # and a gate that raises ImportError where pip has not run is a gate that
+        # reports the wrong failure. Start after `jobs:` - `on:`/`push:` sits at
+        # the same indent as a job name and would otherwise parse as one.
+        # SECURITY.md names workflow paths in prose, and its promise IS about a
+        # path - "no provenance attestation naming `.github/workflows/release.yml`".
+        # Renaming the file turns that sentence false with no other symptom. First,
+        # because if the file is gone the reads below raise FileNotFoundError and
+        # the build reports a missing file instead of a broken promise.
+        sec = open(os.path.join(ROOT, ".github", "SECURITY.md"), encoding="utf-8").read()
+        named = sorted(set(_re.findall(r"\.github/workflows/[\w.-]+\.yml", sec)))
+        assert named, "SECURITY.md names no workflow file - the provenance promise has lost its subject"
+        missing = [p for p in named if not os.path.isfile(os.path.join(ROOT, *p.split("/")))]
+        assert not missing, f"SECURITY.md names workflow files that do not exist: {missing}"
+
+        body = open(os.path.join(ROOT, ".github", "workflows", "release.yml"), encoding="utf-8").read()
+        rel_lines = body.splitlines()
+        jobs, cur = {}, None
+        for line in rel_lines[next(i for i, l in enumerate(rel_lines) if l.rstrip() == "jobs:") + 1:]:
+            head = _re.match(r"^  ([A-Za-z_][\w-]*):\s*$", line)
+            if head:
+                cur = head.group(1)
+                jobs[cur] = []
+            elif cur:
+                jobs[cur].append(line)
+        jobs = {k: "\n".join(v) for k, v in jobs.items()}
+        assert {"publish", "verify"} <= set(jobs), \
+            f"release.yml no longer has both a publish and a verify job: {sorted(jobs)}"
+
+        def _perms(job):
+            """The job's permissions mapping alone, comments stripped.
+
+            Scoped, because the first version of this gate searched the whole job
+            for `id-token` and went red on the comment that explains why the verify
+            job does not have one. A gate that fires on the prose describing it is
+            not measuring the property."""
+            out, on = [], False
+            for line in jobs[job].splitlines():
+                if _re.match(r"^    permissions:\s*(#.*)?$", line):
+                    on = True
+                elif on and _re.match(r"^      \S", line):
+                    out.append(_re.sub(r"#.*$", "", line))
+                elif on and line.strip():
+                    break
+            return "\n".join(out)
+
+        assert _re.search(r"^\s*needs:\s*publish\s*$", jobs["verify"], _re.M), \
+            "the verify job must run after the publish it verifies"
+        # The constraint the item was written under, gated so it cannot erode:
+        # verification must never become something the publish waits on.
+        assert not _re.search(r"^\s*needs:", jobs["publish"], _re.M), \
+            "publish has grown a `needs:` - the publish must not be conditional on verification"
+        assert not _re.search(r"id-token", _perms("verify")), \
+            "the verify job must hold no OIDC token: it verifies releases, it must never be able to make one"
+        assert _re.search(r"id-token:\s*write", _perms("publish")), \
+            "publish needs id-token: write or there is no provenance attestation to verify"
+
+        # Scoped to the code that ACTS, and every exclusion below was found by
+        # mutation rather than by reasoning - the first three drafts of this gate
+        # each stayed green through a mutation that removed the thing being
+        # asserted:
+        #   the `if: failure()` step prints a by-hand reproduction recipe carrying
+        #     the same command and the same flags, so deleting the whole
+        #     verification step left the needles satisfied by the error message;
+        #   the comments explaining each flag quote the flag, so deleting
+        #     `--cert-identity` and `--digest-alg sha512` from the command left
+        #     them satisfied by the prose describing them;
+        #   the step NAME is "npm audit signatures, the command SECURITY.md gives
+        #     consumers", so deleting that command left it satisfied by its own
+        #     heading.
+        # A gate that reads a description of the check instead of the check is the
+        # exact defect this job exists to end, so it may not be one itself.
+        assert "if: failure()" in jobs["verify"], \
+            "the verify job no longer says what a red verification means"
+        acting = "\n".join(
+            _re.sub(r"\s#.*$", "", line)
+            for line in jobs["verify"].split("if: failure()")[0].splitlines()
+            if not line.lstrip().startswith("#") and not line.lstrip().startswith("- name:"))
+        # `npm audit signatures` is NOT sufficient on its own, and that is measured
+        # rather than argued: on 2026-08-08 it exited 0 for a tree holding
+        # lodash@4.17.21, which carries a valid registry signature and no
+        # attestation at all. The attestation claim rests entirely on the
+        # `gh attestation verify` flags, so those are what this gate holds - one
+        # per thing SECURITY.md promises a consumer.
+        for needle, why_ in (("gh attestation verify", "nothing verifies the provenance attestation"),
+                             ("--digest-alg sha512", "npm's subject digest is sha512, and the default sha256 fails rather than verifies"),
+                             ("--cert-identity", "the signer identity is unasserted, so any repository's attestation would pass"),
+                             ("--source-digest", "the attestation is not bound to this commit"),
+                             ("--deny-self-hosted-runners", "a self-hosted runner could have produced it"),
+                             (".github/workflows/release.yml@$GITHUB_REF", "the asserted identity no longer names this workflow at this tag"),
+                             ("npm audit signatures", "the command SECURITY.md hands consumers is not run on the published artifact")):
+            assert needle in acting, f"release.yml verify job dropped `{needle}`: {why_}"
+        print("  PASS  release verification: verify job runs after publish, holds no id-token, "
+              "and asserts tag, repository and workflow path against the published artifact")
+        print(f"  PASS  SECURITY.md workflow paths: all {len(named)} named file(s) exist")
+
         req = os.path.join(ROOT, "providers", "requirements.txt")
         lines = [l.strip() for l in open(req, encoding="utf-8") if l.strip() and not l.lstrip().startswith("#")]
         pinned = [l for l in lines if "==" in l]

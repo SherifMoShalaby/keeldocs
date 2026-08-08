@@ -248,7 +248,7 @@ Secrets are structurally excluded: env **values** never enter a fact, and every 
 
 `0.5.0`, Apache-2.0. **Upgrading from any earlier `0.x`?** `check` can now fail on repositories it used to pass — every such case is one where it was reporting clean while checking nothing. [`CHANGELOG.md`](https://github.com/SherifMoShalaby/keeldocs/blob/main/CHANGELOG.md) has the measured before-and-after table.
 
-`0.5.0`, Apache-2.0. Covered by 206 unit tests, 40 byte-compared extractor goldens and 107 end-to-end harness checks, with double-run determinism gates on Linux and macOS. Windows runs the same matrix and reports rather than gates.
+`0.5.0`, Apache-2.0. Covered by 206 unit tests, 40 byte-compared extractor goldens and 109 end-to-end harness checks, with double-run determinism gates on Linux and macOS. Windows runs the same matrix and reports rather than gates.
 
 Verified at scale: a synthetic 200-package, 1M-line repository extracts and checks end to end inside a 2 GB memory budget. Warm and cold runs produce byte-identical facts, gated on every fixture in the harness. **No speed figure is claimed** — that measurement is not yet trustworthy.
 

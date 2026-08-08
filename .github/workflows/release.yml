@@ -61,3 +61,291 @@ jobs:
           esac
           echo "publishing $v with dist-tag $tag"
           npm publish --provenance --access public --tag "$tag"
+
+  # Post-publish verification. This workflow used to end at `npm publish`, which
+  # means the release's only evidence was a log line saying the artifact was made
+  # - the exact thing this project's own rule forbids relying on. Meanwhile
+  # `.github/SECURITY.md` tells consumers that the provenance attestation is what
+  # to trust, and names the failure it protects against: "If a published keeldocs
+  # version carries no provenance attestation naming `.github/workflows/release.yml`,
+  # do not install it." Nothing checked that. A release that silently lost its
+  # attestation - a mis-set `id-token` permission, an npm that quietly dropped
+  # `--provenance`, a registry that accepted the tarball and not the bundle -
+  # would have shipped green, and the sentence in SECURITY.md would have become
+  # false without a single red job.
+  #
+  # `npm audit signatures` alone does NOT close that gap, and the difference is
+  # measurable rather than theoretical: on 2026-08-08, `npm audit signatures`
+  # exited 0 for a tree containing lodash@4.17.21, which carries a valid registry
+  # signature and no provenance attestation at all. It answers "did npm sign
+  # this", not "did this workflow build it". The `gh attestation verify` step is
+  # what carries the attestation claim; the audit step is here because it is the
+  # command SECURITY.md hands to consumers and it should be run on the real thing.
+  #
+  # This job holds `contents: read` and NOTHING else - deliberately not
+  # `id-token: write`, because it signs nothing and must never be able to produce
+  # a release, only to fail one. It uses no npm token (none exists, and none will),
+  # and it passes no GitHub token to `gh`: with `--bundle`, verification is
+  # offline against the Sigstore public-good trust root, measured token-free on
+  # gh 2.95.0 with an empty config directory and GITHUB_ACTIONS=true.
+  #
+  # `needs: publish` is the only coupling. The publish step gained no new
+  # condition and cannot be blocked by anything here - verification runs after the
+  # artifact exists or it verifies nothing. The consequence is stated rather than
+  # hidden: when this job is red the version IS on npm and IS unverified, and no
+  # workflow can undo that. The failure step at the bottom says so in those words.
+  verify:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # NOT id-token: write - see above
+    steps:
+      # The tree supplies only the EXPECTATIONS - which package name, which
+      # version this tag claims to be. Every byte that gets verified below is
+      # fetched from registry.npmjs.org. `setup-node` deliberately omits
+      # `registry-url` here: that input writes an .npmrc demanding NODE_AUTH_TOKEN,
+      # and this job must work with no credential of any kind.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with: { node-version: 20 }
+
+      - name: Pull the published tarball back out of the registry
+        run: |
+          set -euo pipefail
+          pkg=$(node -p 'require("./package.json").name')
+          ver=$(node -p 'require("./package.json").version')
+          test "v$ver" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != package version $ver"; exit 1; }
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
+          echo "VER=$ver" >> "$GITHUB_ENV"
+          cd "$RUNNER_TEMP"
+
+          # Registry propagation is real, and it is NOT measurable from outside a
+          # release: the only way to time publish-to-visible is to publish. So the
+          # number below is a stated budget, not a measurement - 20 attempts, 15s
+          # apart, five minutes - and what makes this a gate rather than a sleep is
+          # the retry CONDITION. Absence (404, 5xx, a dead connection) is what
+          # propagation looks like, so absence is retried. A 200 whose content is
+          # wrong fails on the first look and is never retried, because waiting
+          # cannot turn a wrong artifact into a right one. Exhausting the budget is
+          # a failure, not a skip: "we could not see it in five minutes" and "it is
+          # correct" are different sentences.
+          await_200() { # url outfile
+            url="$1"; out="$2"
+            i=1
+            while [ "$i" -le 20 ]; do
+              code=$(curl -sS -L -o "$out" -w '%{http_code}' "$url" || echo 000)
+              if [ "$code" = "200" ]; then echo "  200 on attempt $i: $url"; return 0; fi
+              echo "  $code on attempt $i/20, not served yet: $url"
+              [ "$i" -lt 20 ] && sleep 15
+              i=$((i + 1))
+            done
+            echo "FAIL: $url never returned 200 within the 5-minute budget."
+            return 1
+          }
+
+          await_200 "https://registry.npmjs.org/$pkg/$ver" version.json
+          tarball=$(node -p 'JSON.parse(require("fs").readFileSync("version.json","utf8")).dist.tarball')
+          stated=$(node -p 'JSON.parse(require("fs").readFileSync("version.json","utf8")).dist.integrity')
+          curl -sS -fL -o artifact.tgz "$tarball"
+          # Computed in node rather than openssl/base64 so the same line means the
+          # same thing on any runner: `base64 -w0` is GNU-only and this check is
+          # worthless if it silently differs by host.
+          got=$(node -e 'const c=require("crypto"),f=require("fs");process.stdout.write("sha512-"+c.createHash("sha512").update(f.readFileSync("artifact.tgz")).digest("base64"))')
+          test "$got" = "$stated" || { echo "tarball bytes do not match the integrity the registry states: $got != $stated"; exit 1; }
+          echo "pulled $tarball ($(wc -c < artifact.tgz) bytes), integrity $got"
+
+          await_200 "https://registry.npmjs.org/-/npm/v1/attestations/$pkg@$ver" attestations.json
+          # A 404 here is the SECURITY.md failure verbatim - published, no
+          # attestation - and `await_200` has already turned it into a red job.
+          # This asserts the shape: exactly one SLSA v1 provenance statement, so a
+          # version carrying only npm's publish attestation cannot pass as attested.
+          node -e '
+            const fs = require("fs");
+            const all = (JSON.parse(fs.readFileSync("attestations.json", "utf8")).attestations || []);
+            const slsa = all.filter((a) => a.predicateType === "https://slsa.dev/provenance/v1");
+            if (slsa.length !== 1) {
+              console.error(`expected exactly 1 SLSA v1 provenance attestation, got ${slsa.length} of ${all.length}: ` +
+                            JSON.stringify(all.map((a) => a.predicateType)));
+              process.exit(1);
+            }
+            fs.writeFileSync("provenance.sigstore.json", JSON.stringify(slsa[0].bundle));
+          '
+
+      - name: The attestation must name this tag, this repository and this workflow
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          want="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF"
+          # GITHUB_WORKFLOW_REF is `<owner>/<repo>/<path>@<ref>` for the workflow
+          # running right now, which is the same file that signed the attestation.
+          # Asserting the literal path against it means renaming this file fails
+          # HERE instead of quietly making SECURITY.md's sentence untrue.
+          test "https://github.com/$GITHUB_WORKFLOW_REF" = "$want" || {
+            echo "this workflow is $GITHUB_WORKFLOW_REF, but SECURITY.md and the line above name $want"; exit 1; }
+          # --cert-identity is an exact match on the certificate's SAN, which comes
+          # from the OIDC token GitHub issued and is the one field a compromised
+          # build could not have written. --digest-alg sha512 because npm's subject
+          # digest is sha512; the default sha256 does not fail open, it fails the
+          # verification outright (measured). --source-digest binds the tarball to
+          # this commit, so a stale or foreign attestation served for this version
+          # is rejected rather than accepted as "some attestation exists".
+          gh attestation verify artifact.tgz \
+            --bundle provenance.sigstore.json \
+            --digest-alg sha512 \
+            --repo "$GITHUB_REPOSITORY" \
+            --cert-identity "$want" \
+            --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners \
+            --format json > verified.json
+          node -e '
+            const v = JSON.parse(require("fs").readFileSync("verified.json", "utf8"));
+            if (v.length !== 1) { console.error(`expected 1 verified attestation, got ${v.length}`); process.exit(1); }
+            const r = v[0].verificationResult, c = r.signature.certificate;
+            const want = `pkg:npm/${process.env.PKG}@${process.env.VER}`;
+            const names = (r.statement.subject || []).map((s) => s.name);
+            if (!names.includes(want)) {
+              console.error(`the verified statement names ${JSON.stringify(names)}, not ${want}`);
+              process.exit(1);
+            }
+            for (const [k, val] of [["subject", want], ["signer SAN", c.subjectAlternativeName],
+                                    ["repository", c.sourceRepositoryURI], ["ref", c.sourceRepositoryRef],
+                                    ["commit", c.sourceRepositoryDigest], ["runner", c.runnerEnvironment],
+                                    ["OIDC issuer", c.issuer]]) {
+              console.log(`  ${k.padEnd(12)} ${val}`);
+            }
+          '
+
+      - name: npm audit signatures, the command SECURITY.md gives consumers
+        run: |
+          set -euo pipefail
+          # No npm pin here, unlike the publish job. That one needs npm >= 11.5.1
+          # because trusted publishing does; this needs `audit signatures` to
+          # verify attestations, which node 20's bundled npm already does -
+          # measured on npm 10.9.9 against the published 0.5.0: exit 0, "1 package
+          # has a verified registry signature", "1 package has a verified
+          # attestation". Pinning here would add a moving part to a job whose whole
+          # value is being simpler than the thing it checks.
+          box="$RUNNER_TEMP/auditbox"; rm -rf "$box"; mkdir -p "$box"; cd "$box"
+          npm init -y > /dev/null
+          # A second propagation surface, and a different document: the steps above
+          # read `/<pkg>/<ver>`, but resolution reads the full packument `/<pkg>`,
+          # which is cached separately and can lag it. Same budget, same rule -
+          # retry only while npm cannot find the version at all.
+          i=1
+          while [ "$i" -le 20 ]; do
+            if npm install "$PKG@$VER" --omit=optional --ignore-scripts --no-fund --no-audit --prefer-online; then break; fi
+            echo "  install failed on attempt $i/20, the packument may not list $VER yet"
+            [ "$i" -lt 20 ] && sleep 15
+            i=$((i + 1))
+          done
+          # `npm audit signatures` exits 1 on an empty tree, so it cannot pass
+          # vacuously - but it also cannot tell you WHICH version it audited, and
+          # auditing the wrong one would look identical. Pin that first.
+          got=$(node -p "require('$box/node_modules/$PKG/package.json').version")
+          test "$got" = "$VER" || { echo "installed $PKG@$got, expected $VER"; exit 1; }
+          npm audit signatures
+
+      - name: The dist-tag must point where the publish said it would
+        run: |
+          set -euo pipefail
+          case "$VER" in
+            *-*) want=$(printf '%s' "${VER#*-}" | cut -d. -f1) ;;
+            *)   want=latest ;;
+          esac
+          # The tarball, the version document and the attestation are immutable
+          # once written, so for those a wrong 200 is wrong forever and is failed
+          # immediately. dist-tags is a MUTABLE pointer, and a stale edge serving
+          # the previous version is indistinguishable by inspection from a publish
+          # that landed on the wrong tag - only time separates them. This is
+          # therefore the one read whose retry condition is a mismatch rather than
+          # an absence, and the reason is that difference, not convenience.
+          got=""; err="$RUNNER_TEMP/npm-view.err"
+          i=1
+          while [ "$i" -le 20 ]; do
+            # Discarding npm's stderr here turns "npm is broken" into "the tag has
+            # not arrived", burns the whole budget printing the wrong reason, and
+            # names nothing. Measured while rehearsing this job by hand: a bad npm
+            # config produced twenty identical "waiting for 0.5.0" lines over a
+            # registry that was serving the tag correctly the entire time.
+            if got=$(npm view "$PKG" "dist-tags.$want" --prefer-online 2>"$err"); then
+              [ "$got" = "$VER" ] && break
+              echo "  dist-tag $want is '${got:-<unset>}', waiting for $VER (attempt $i/20)"
+            else
+              got=""
+              echo "  npm view failed on attempt $i/20: $(tr '\n' ' ' < "$err" | cut -c1-200)"
+            fi
+            [ "$i" -lt 20 ] && sleep 15
+            i=$((i + 1))
+          done
+          if [ "$got" != "$VER" ]; then
+            echo "FAIL: dist-tag $want never became $VER within the 5-minute budget."
+            echo "last npm stderr:"; cat "$err"
+            exit 1
+          fi
+          echo "dist-tag $want -> $VER"
+          # The property that actually protects users is the negative one, so it is
+          # the one that must not be able to pass vacuously. A `|| true` on this
+          # read would leave $latest empty, empty is not $VER, and a prerelease that
+          # HAD moved latest would report clean.
+          if [ "$want" != latest ]; then
+            latest=$(npm view "$PKG" dist-tags.latest --prefer-online)
+            test -n "$latest" || { echo "FAIL: could not read the latest dist-tag, so this check would pass without checking"; exit 1; }
+            test "$latest" != "$VER" || { echo "FAIL: prerelease $VER moved the latest dist-tag"; exit 1; }
+            echo "latest is still $latest, unmoved by the prerelease"
+          fi
+
+      # A red job here is not "the release failed". The release SUCCEEDED and is
+      # unverified, which is a worse state and a different one, and nothing in a
+      # workflow can undo it. Say that in the words a person needs at the moment
+      # they read it, and hand them the commands rather than a link to go find.
+      - name: What a red verification means
+        if: failure()
+        run: |
+          echo "::error::${GITHUB_REF_NAME} is PUBLISHED AND UNVERIFIED on npm. Publishing cannot be undone from here and this job does not try."
+          # `gh attestation verify` reports every identity mismatch except the
+          # source digest as the same one generic line - `Error: verifying with
+          # issuer "sigstore.dev"` - and produces no JSON when it fails, so the log alone
+          # cannot tell you WHICH field disagreed. Measured against the real 0.5.0
+          # bundle: a wrong repository, a wrong tag and a tampered tarball are
+          # indistinguishable in that message. Print what the attestation claims so
+          # the reader has a diff instead of a shrug. This is decoded, NOT verified
+          # - the predicate is written by the build that produced it, so read it as
+          # the assertion under suspicion, never as a second opinion.
+          if [ -f "$RUNNER_TEMP/provenance.sigstore.json" ]; then
+            echo "--- what the attestation claims (DECODED, NOT VERIFIED - diagnosis only) ---"
+            node -e '
+              const b = JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP + "/provenance.sigstore.json", "utf8"));
+              const s = JSON.parse(Buffer.from(b.dsseEnvelope.payload, "base64").toString());
+              console.log("  subject  ", (s.subject || []).map((x) => x.name).join(", "));
+              console.log("  workflow ", JSON.stringify(s.predicate?.buildDefinition?.externalParameters?.workflow));
+              console.log("  source   ", JSON.stringify(s.predicate?.buildDefinition?.resolvedDependencies));
+            ' || echo "  (the bundle could not be decoded, which is itself the finding)"
+            echo "--- what this job required ---"
+            echo "  subject   pkg:npm/${PKG:-?}@${VER:-?}"
+            echo "  identity  https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF"
+            echo "  commit    $GITHUB_SHA"
+          fi
+          echo "--- reproduce by hand, with v=${VER:-${GITHUB_REF_NAME#v}} ---"
+          cat <<'EOF'
+          No credential is needed for any of it - the registry, the attestation
+          endpoint and the Sigstore trust root are all public. The same recipe is
+          in .github/SECURITY.md, which is where consumers are told to find it:
+
+            v=<the version above>
+            curl -sSfL -o pkg.tgz "https://registry.npmjs.org/keeldocs/-/keeldocs-$v.tgz"
+            curl -sSfL "https://registry.npmjs.org/-/npm/v1/attestations/keeldocs@$v" \
+              | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+                  const a=JSON.parse(s).attestations.find(x=>x.predicateType==="https://slsa.dev/provenance/v1");
+                  if(!a){console.error("NO SLSA PROVENANCE ATTESTATION");process.exit(1)}
+                  process.stdout.write(JSON.stringify(a.bundle))})' > provenance.sigstore.json
+            gh attestation verify pkg.tgz --bundle provenance.sigstore.json --digest-alg sha512 \
+              --repo SherifMoShalaby/keeldocs \
+              --cert-identity "https://github.com/SherifMoShalaby/keeldocs/.github/workflows/release.yml@refs/tags/v$v"
+
+          If the attestation is genuinely absent, or names another repository or
+          another workflow, this is the compromised-artifact case in
+          .github/SECURITY.md and it is worked ahead of everything else: deprecate
+          the version on npm naming the advisory, revoke the trusted-publisher
+          configuration at npmjs.com so no further release can be produced, and
+          publish a GitHub advisory. There is no publish token to rotate.
+          EOF

@@ -47,6 +47,81 @@ change, and a rename of `SKILL.md`. The ROADMAP gate is therefore **half met**,
 and says which half. `experiments/r7-break-drill/RESULTS.md` carries the limits;
 they belong wherever the result is quoted.
 
+**The release workflow ended at `npm publish`, so every release's only evidence
+was the log line saying the artifact was made.** That is the one thing this
+project's own rule tells you not to accept — check the artifact, not the log
+that says the artifact was made — and it was the release path, applied to the
+tool whose entire argument is that documentation should not be able to lie.
+Nothing pulled the tarball back. Nothing verified a signature. Nothing confirmed
+that a provenance attestation existed at all, while `.github/SECURITY.md` told
+consumers the attestation is the thing to trust and named the exact failure it
+protects against: *if a published keeldocs version carries no provenance
+attestation naming `.github/workflows/release.yml`, do not install it.* A
+release that lost its attestation — a mis-set `id-token` permission, an npm that
+quietly dropped `--provenance`, a registry that took the tarball and not the
+bundle — would have shipped green, and that sentence would have become false
+with no red job anywhere.
+
+*Measured, and it is the reason this is not a one-line fix.* SECURITY.md's
+answer to "check it yourself" was `npm audit signatures`, and **that command
+does not check for an attestation.** On 2026-08-08 it exits **0** over a tree
+holding `lodash@4.17.21` — a package with a valid registry signature and no
+provenance attestation of any kind. It answers "did npm sign this", not "did
+that workflow build it", so the command the policy handed consumers could not
+detect the failure the policy named. The obvious substitute does not work
+either: `gh attestation verify --repo` fetches from GitHub's attestation store,
+which returns **HTTP 404** for this tarball's digest, because npm provenance
+lives at the registry's attestation endpoint and in Sigstore and not in
+GitHub's store. Both measurements are now in SECURITY.md, with the recipe that
+does work.
+
+*After.* A `verify` job runs on `needs: publish`, pulls the published tarball
+out of the registry, checks its bytes against the integrity the registry states,
+requires **exactly one** `https://slsa.dev/provenance/v1` attestation at npm's
+endpoint, and verifies it with `gh attestation verify --digest-alg sha512
+--cert-identity ... --source-digest ... --deny-self-hosted-runners`. The
+identity asserted is the certificate SAN, which is derived from the OIDC token
+GitHub issued and is the field a compromised build could not have written; it
+names this repository, this workflow path and this tag in one string. Then it
+runs `npm audit signatures` on the real published version, because that is what
+consumers are told to run, and asserts the dist-tag landed where the publish
+said it would — so a prerelease that moved `latest` is a red job rather than a
+discovery.
+
+*The propagation problem is designed for rather than slept through.* Publish-to-
+visible cannot be measured without publishing, so the five-minute budget is
+stated as a budget. What makes it a gate is the retry **condition**: the tarball,
+the version document and the attestation are immutable once written, so absence
+is retried and a wrong 200 fails on the first look, because waiting cannot turn
+a wrong artifact right. The dist-tag is the one mutable pointer, where a stale
+edge and a wrong value are indistinguishable by inspection and only time
+separates them, so it alone retries on mismatch. Exhausting the budget is a
+failure, never a skip.
+
+*What this does not claim.* The job cannot unpublish, and does not pretend to: a
+red verification means the version **is** on npm and **is** unverified, and the
+failure step says that in those words, prints what the attestation claims beside
+what was required — `gh` reports every identity mismatch except the source
+digest as one generic line, `Error: verifying with issuer "sigstore.dev"`, and
+emits no JSON when it fails — and gives the by-hand recipe. It has also never
+run in a real release, because that needs a tag. It was verified by running its
+steps by hand against the already-published `keeldocs@0.5.0`: all four green,
+credential-free, and red on each of nine targeted mutations including a
+one-byte-appended tarball, an attestation for another tag, another repository,
+another commit, and a real package that has no attestation at all.
+
+*And the gate on the gate was vacuous three times before it was not.* A harness
+check holds the verify job in place — it must run after publish, must hold no
+`id-token`, must not have made publish conditional, and must still carry each
+flag the claim rests on. Three drafts of it stayed **green** through a mutation
+that deleted the thing being asserted: the failure step's by-hand recipe repeats
+the same command and flags, the comments explaining each flag quote the flag,
+and the audit step's own *name* is `npm audit signatures`. So the check read a
+description of itself and called it a check — which is this project's recurring
+defect, wearing the costume of the fix for it. It now reads only step bodies with
+comments and headings stripped, and twelve mutations were each confirmed red on
+their own assertion with the tree green before and after.
+
 ## 0.5.0 — 2026-08-08
 
 **The twenty-four were never twenty-four bugs. They were one missing

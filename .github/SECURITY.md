@@ -147,10 +147,48 @@ knows what is already covered and what is not.
   through this repository's own controls.
 - **A SLSA v1 provenance attestation on every release**, first verified on
   2026-08-03, naming the workflow file, the repository and the tag ref that
-  produced the tarball. Check it yourself with `npm audit signatures`, or read
-  the provenance on the npm page. **If a published keeldocs version carries no
+  produced the tarball. **If a published keeldocs version carries no
   provenance attestation naming `.github/workflows/release.yml`, do not install
   it — report it.**
+
+  **`npm audit signatures` does not check that.** It is worth running and it is
+  named again below, but it answers "did npm sign this", not "did that workflow
+  build it": measured on 2026-08-08, it exits 0 over a tree holding
+  `lodash@4.17.21`, which carries a valid registry signature and no provenance
+  attestation at all. A version of keeldocs that lost its attestation would pass
+  it. This is the command that checks the sentence above, and it needs no
+  credential — the registry, the attestation endpoint and the Sigstore trust
+  root are all public:
+
+  ```sh
+  v=$(npm view keeldocs version)   # or the exact version you pin
+  curl -sSfL -o pkg.tgz "https://registry.npmjs.org/keeldocs/-/keeldocs-$v.tgz"
+  curl -sSfL "https://registry.npmjs.org/-/npm/v1/attestations/keeldocs@$v" \
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+        const a=JSON.parse(s).attestations.find(x=>x.predicateType==="https://slsa.dev/provenance/v1");
+        if(!a){console.error("NO SLSA PROVENANCE ATTESTATION");process.exit(1)}
+        process.stdout.write(JSON.stringify(a.bundle))})' > provenance.sigstore.json
+  gh attestation verify pkg.tgz --bundle provenance.sigstore.json --digest-alg sha512 \
+    --repo SherifMoShalaby/keeldocs \
+    --cert-identity "https://github.com/SherifMoShalaby/keeldocs/.github/workflows/release.yml@refs/tags/v$v"
+  ```
+
+  A silent exit 0 is the pass; every mismatch exits 1. `--digest-alg sha512` is
+  not optional, because npm's subject digest is sha512 and the default sha256
+  fails rather than verifying. Ignoring the first `curl` and asking `gh` to fetch
+  the attestation from GitHub would also fail: npm's provenance lives at the
+  registry endpoint above and in Sigstore, not in GitHub's attestation store.
+
+- **`release.yml` verifies its own release, after publishing it.** Until
+  2026-08-08 the workflow ended at `npm publish`, so the only evidence a release
+  had was the log line saying the artifact was made — and the promise three
+  paragraphs up was enforced by nothing. A `verify` job now pulls the published
+  tarball back out of the registry and runs exactly the check above against it,
+  asserting the attestation names this tag, this repository and this workflow
+  path. It holds `contents: read` and no OIDC token, so it can fail a release and
+  can never produce one. What it cannot do is unpublish: when it is red, the
+  version is on npm and unverified, and the job says so in those words rather
+  than implying the release was stopped.
 - **Zero install scripts, zero runtime dependencies, one optional dependency.**
   `package.json` declares no `dependencies` at all. `@electric-sql/pglite` is
   the single `optionalDependency`, exact-version pinned, used by the
@@ -232,8 +270,10 @@ The provenance attestations are the audit trail: every legitimate tarball names
 the tag and the workflow that built it, so "was this build ours" is a question
 with an answer rather than a judgement call.
 
-If you consume keeldocs in CI, the two things that help most are pinning an
-exact version and running `npm audit signatures`.
+If you consume keeldocs in CI, the three things that help most are pinning an
+exact version, running `npm audit signatures`, and — because that command does
+not check for an attestation at all — running the `gh attestation verify` recipe
+under "Supply-chain posture" at least once for the version you pin.
 
 ## Disclosure
 

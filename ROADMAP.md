@@ -13,7 +13,7 @@ are each named, with a clean single-package manifest still silent on both.
 Linux and macOS green including
 `action-smoke`; the non-blocking Windows lane is **red again** — one gate, `sarif
 emitter vs a real check run`, since `386aa03`, masked by `continue-on-error` in
-exactly the way §4 item 6 records · 206 unit tests · 40 extractor goldens · 107 harness checks ·
+exactly the way §4 item 6 records · 206 unit tests · 40 extractor goldens · 109 harness checks ·
 **E7 passed 2 of 3, so nothing gates the `0.2.0` cut**.
 *(This header names counts and the release tag, not a HEAD SHA — a header that
 quotes its own commit is false the moment it lands and needs a second commit to
